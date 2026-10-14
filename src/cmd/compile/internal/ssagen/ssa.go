@@ -4127,7 +4127,7 @@ func (s *state) append(n *ir.CallExpr, inplace bool) *ssa.Value {
 				s.vars[memVar] = s.newValue1A(ssaop.OpVarDef, types.TypeMem, sn, s.mem())
 			}
 		}
-		capaddr := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.IntPtr, types.SliceCapOffset, addr)
+		capaddr := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.IntPtr, s.curfn.Target.TypeContext.SliceCapOffset, addr)
 		s.store(s.curfn.Target.Type(types.TINT), capaddr, c)
 		s.store(pt, addr, p)
 	}
@@ -4146,7 +4146,7 @@ func (s *state) append(n *ir.CallExpr, inplace bool) *ssa.Value {
 	if inplace {
 		// Update length in place.
 		// We have to wait until here to make sure growslice succeeded.
-		lenaddr := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.IntPtr, types.SliceLenOffset, addr)
+		lenaddr := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.IntPtr, s.curfn.Target.TypeContext.SliceLenOffset, addr)
 		s.store(s.curfn.Target.Type(types.TINT), lenaddr, l)
 	}
 

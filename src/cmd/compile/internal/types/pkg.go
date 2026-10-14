@@ -12,6 +12,8 @@ import (
 )
 
 type Pkg struct {
+	Context *Context // type and layout context that owns this package
+
 	Path    string // string literal used in import statement, e.g. "internal/runtime/sys"
 	Name    string // package name, e.g. "sys"
 	Prefix  string // escaped path for use in symbol table
@@ -28,6 +30,13 @@ type Pkg struct {
 // the compilation context, which keeps its own package registry.
 func NewPkgInstance(path, name string) *Pkg {
 	return newPkg(path, name)
+}
+
+// NewPkgInstanceFor returns a fresh package object owned by context.
+func NewPkgInstanceFor(context *Context, path, name string) *Pkg {
+	p := newPkg(path, name)
+	p.Context = context
+	return p
 }
 
 func newPkg(path, name string) *Pkg {

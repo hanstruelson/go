@@ -181,7 +181,7 @@ func compileFunctions(target *ir.Package, queue *[]*ir.Func, backend *ssagen.Con
 		})
 	}
 
-	types.CalcSizeDisabled = true // not safe to calculate sizes concurrently
+	target.TypeContext.CalcSizeDisabled = true // not safe to calculate sizes concurrently
 	target.Ctxt.InParallel = true
 
 	mu.Unlock()
@@ -189,7 +189,7 @@ func compileFunctions(target *ir.Package, queue *[]*ir.Func, backend *ssagen.Con
 	*queue = nil
 
 	target.Ctxt.InParallel = false
-	types.CalcSizeDisabled = false
+	target.TypeContext.CalcSizeDisabled = false
 
 	ssaCompiler.PostCompile()
 }

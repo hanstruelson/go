@@ -24,7 +24,7 @@ func RangeExprType(t *types.Type) *types.Type {
 // fill in the var's type.
 func tcAssign(curfunc *ir.Func, n *ir.AssignStmt) {
 	if base.EnableTrace {
-		defer tracePrint("tcAssign", n)(nil)
+		defer tracePrint("tcAssign", n, contextForFunc(curfunc))(nil)
 	}
 
 	if n.Y == nil {
@@ -44,7 +44,7 @@ func tcAssign(curfunc *ir.Func, n *ir.AssignStmt) {
 
 func tcAssignList(curfunc *ir.Func, n *ir.AssignListStmt) {
 	if base.EnableTrace {
-		defer tracePrint("tcAssignList", n)(nil)
+		defer tracePrint("tcAssignList", n, contextForFunc(curfunc))(nil)
 	}
 
 	assign(curfunc, n, n.Lhs, n.Rhs)
@@ -224,7 +224,7 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 	}
 
 	// Create a new wrapper function without parameters or results.
-	wrapperFn := ir.NewClosureFunc(pos, pos, op, types.NewSignature(nil, nil, nil), curfunc, curfunc.Target, 0)
+	wrapperFn := ir.NewClosureFunc(pos, pos, op, types.NewSignatureIn(curfunc.Target.TypeContext, nil, nil, nil), curfunc, curfunc.Target, 0)
 	wrapperFn.DeclareParams(true)
 	wrapperFn.SetWrapper(true)
 

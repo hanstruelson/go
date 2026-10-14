@@ -160,7 +160,7 @@ func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir
 //	n.Left = tcCompLit(n.Left)
 func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 	if base.EnableTrace {
-		defer tracePrint("tcCompLit", n)(&res)
+		defer tracePrint("tcCompLit", n, contextForFunc(curfunc))(&res)
 	}
 
 	lno := ir.SetPosIn(curfunc, n)

@@ -590,7 +590,7 @@ func (r *reader) interfaceType() *types.Type {
 	methods, embeddeds := fields[:nmethods], fields[nmethods:]
 
 	for i := range methods {
-		methods[i] = types.NewField(r.pos(), r.selector(), r.signature(types.FakeRecv()))
+		methods[i] = types.NewField(r.pos(), r.selector(), r.signature(types.FakeRecvFor(r.ctx.Target.TypeContext)))
 	}
 	for i := range embeddeds {
 		embeddeds[i] = types.NewField(src.NoXPos, nil, r.typ())
@@ -599,7 +599,7 @@ func (r *reader) interfaceType() *types.Type {
 	if len(fields) == 0 {
 		return r.ctx.Target.Type(types.TINTER) // empty interface
 	}
-	return types.NewInterface(fields)
+	return types.NewInterfaceIn(r.ctx.Target.TypeContext, fields)
 }
 
 func (r *reader) structType() *types.Type {
@@ -612,7 +612,7 @@ func (r *reader) structType() *types.Type {
 		}
 		fields[i] = field
 	}
-	return types.NewStruct(fields)
+	return types.NewStructIn(r.ctx.Target.TypeContext, fields)
 }
 
 func (r *reader) signature(recv *types.Field) *types.Type {
@@ -624,7 +624,7 @@ func (r *reader) signature(recv *types.Field) *types.Type {
 		params[len(params)-1].SetIsDDD(true)
 	}
 
-	return types.NewSignature(recv, params, results)
+	return types.NewSignatureIn(r.ctx.Target.TypeContext, recv, params, results)
 }
 
 func (r *reader) params() []*types.Field {
@@ -855,9 +855,9 @@ func (pr *pkgReader) objIdxMayFail(idx index, implicits, explicits []*types.Type
 
 		// We need to defer CheckSize until we've called SetUnderlying to
 		// handle recursive types.
-		types.DeferCheckSize()
+		types.DeferCheckSizeFor(r.ctx.Target.TypeContext)
 		typ.SetUnderlying(r.typWrapped(false))
-		types.ResumeCheckSize()
+		types.ResumeCheckSizeFor(r.ctx.Target.TypeContext)
 
 		if r.hasTypeParams() && !r.dict.shaped {
 			r.ctx.todoDicts = append(r.ctx.todoDicts, func() {
@@ -2748,7 +2748,7 @@ func (r *reader) curry(origPos src.XPos, ifaceHack bool, fun ir.Node, arg0, arg1
 
 	params, results := syntheticSig(r.ctx.Target.AutoPos, fun.Type())
 	params = params[len(captured)-1:] // skip curried parameters
-	typ := types.NewSignature(nil, params, results)
+	typ := types.NewSignatureIn(r.ctx.Target.TypeContext, nil, params, results)
 
 	addBody := func(pos src.XPos, r *reader, captured []ir.Node) {
 		fun := captured[0]
@@ -2783,7 +2783,7 @@ func (r *reader) methodExprWrap(origPos src.XPos, recv *types.Type, implicits []
 		params = append(params[:1], params[2:]...)
 	}
 
-	typ := types.NewSignature(nil, params, results)
+	typ := types.NewSignatureIn(r.ctx.Target.TypeContext, nil, params, results)
 
 	addBody := func(pos src.XPos, r *reader, captured []ir.Node) {
 		fn := captured[0]
@@ -3552,7 +3552,7 @@ func (r *reader) pkgInitOrder(target *ir.Package) {
 	pos := r.ctx.Target.AutoPos
 	ir.SetPosValue(r.ctx.Target, pos)
 
-	fn := ir.NewFunc(r.ctx.Target, pos, pos, typecheck.Lookup(r.ctx.Target, "init"), types.NewSignature(nil, nil, nil))
+	fn := ir.NewFunc(r.ctx.Target, pos, pos, typecheck.Lookup(r.ctx.Target, "init"), types.NewSignatureIn(r.ctx.Target.TypeContext, nil, nil, nil))
 	fn.SetIsPackageInit(true)
 	fn.SetInlinabilityChecked(true) // suppress useless "can inline" diagnostics
 
@@ -4248,7 +4248,7 @@ func newWrapperType(recvType *types.Type, method *types.Field) *types.Type {
 	params := clone(sig.Params())
 	results := clone(sig.Results())
 
-	return types.NewSignature(recv, params, results)
+	return types.NewSignatureIn(method.Type.Context(), recv, params, results)
 }
 
 func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
@@ -4332,7 +4332,7 @@ func shapeSig(fn *ir.Func, dict *readerDict) *types.Type {
 		results[i] = types.NewField(result.Pos, result.Sym, result.Type)
 	}
 
-	typ := types.NewSignature(recv, params, results)
+	typ := types.NewSignatureIn(fn.Target.TypeContext, recv, params, results)
 	typ.SetHasShape(true)
 	return typ
 }

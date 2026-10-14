@@ -146,7 +146,7 @@ func dumpdata(target *ir.Package) {
 	dumpembeds(target)
 
 	if target.ZeroSize > 0 {
-		zero := base.PkgLinksym("go:map", "zero", obj.ABI0)
+		zero := target.TypeContext.LinkSym("go:map", "zero", obj.ABI0)
 		objw.Global(target.Ctxt, zero, int32(target.ZeroSize), obj.DUPOK|obj.RODATA)
 		zero.Set(obj.AttrStatic, true)
 	}

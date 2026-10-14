@@ -64,19 +64,19 @@ var unsafeFuncs = [...]struct {
 
 // InitUniverse initializes the universe block.
 func InitUniverse(target *ir.Package) {
-	types.InitTypes(target.BuiltinPkg, target.UnsafePkg, func(sym *types.Sym, typ *types.Type) types.Object {
+	types.InitTypesFor(target.TypeContext, target.BuiltinPkg, target.UnsafePkg, func(sym *types.Sym, typ *types.Type) types.Object {
 		n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, sym)
 		n.SetType(typ)
 		n.SetTypecheck(1)
 		sym.Def = n
 		return n
 	})
-	target.BasicTypes = types.Types
-	target.AnyType = types.AnyType
-	target.ByteType = types.ByteType
-	target.RuneType = types.RuneType
-	target.ErrorType = types.ErrorType
-	target.ComparableType = types.ComparableType
+	target.BasicTypes = target.TypeContext.Types
+	target.AnyType = target.TypeContext.AnyType
+	target.ByteType = target.TypeContext.ByteType
+	target.RuneType = target.TypeContext.RuneType
+	target.ErrorType = target.TypeContext.ErrorType
+	target.ComparableType = target.TypeContext.ComparableType
 
 	for _, s := range &builtinFuncs {
 		ir.NewBuiltin(target.BuiltinPkg.Lookup(s.name), s.op)

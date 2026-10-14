@@ -92,6 +92,7 @@ type Package struct {
 	// Basic and predeclared types for this compilation. These point at the
 	// universe initialized for the target and keep frontend/backend lookups
 	// explicit at call sites.
+	TypeContext    *types.Context
 	BasicTypes     [types.NTYPE]*types.Type
 	AnyType        *types.Type
 	ByteType       *types.Type
@@ -215,7 +216,12 @@ func (target *Package) Pkg(path, name string) *types.Pkg {
 		}
 		return pkg
 	}
-	pkg := types.NewPkgInstance(path, name)
+	var pkg *types.Pkg
+	if target.TypeContext != nil {
+		pkg = types.NewPkgInstanceFor(target.TypeContext, path, name)
+	} else {
+		pkg = types.NewPkgInstance(path, name)
+	}
 	target.Pkgs[path] = pkg
 	return pkg
 }

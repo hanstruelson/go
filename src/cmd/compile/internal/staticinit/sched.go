@@ -1169,7 +1169,7 @@ func tryWrapGlobalInit(target *ir.Package, n ir.Node) *ir.Func {
 	minitsym := target.LocalPkg.LookupNum("map.init.", target.MapInitGen)
 	target.MapInitGen++
 
-	fn := ir.NewFunc(target, n.Pos(), n.Pos(), minitsym, types.NewSignature(nil, nil, nil))
+	fn := ir.NewFunc(target, n.Pos(), n.Pos(), minitsym, types.NewSignatureIn(target.TypeContext, nil, nil, nil))
 	fn.SetInlinabilityChecked(true) // suppress inlining (which would defeat the point)
 	typecheck.DeclFunc(target, fn)
 	if target.Debug.WrapGlobalMapDbg > 0 {
@@ -1262,7 +1262,7 @@ func GenerateVarInitFunc(target *ir.Package) *ir.Func {
 	sym := target.LocalPkg.LookupNum(varInitFuncPrefix, target.VarInitGen)
 	target.VarInitGen++
 
-	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignature(nil, nil, nil))
+	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignatureIn(target.TypeContext, nil, nil, nil))
 	fn.SetInlinabilityChecked(true) // suppress inlining; otherwise, we end up with giant init eventually.
 	fn.SetWrapper(true)             // less disruptive on backtraces.
 

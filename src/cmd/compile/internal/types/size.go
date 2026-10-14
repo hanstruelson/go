@@ -62,10 +62,6 @@ var MaxWidth int64
 // to calculate Types' widths and alignments. See CalcSize.
 var CalcSizeDisabled bool
 
-// machine size and rounding alignment is dictated around
-// the size of a pointer, set in gc.Main (see ../gc/main.go).
-var defercalc int
-
 // RoundUp rounds o to a multiple of r, r is a power of 2.
 func RoundUp(o int64, r int64) int64 {
 	if r < 1 || r > 16 || r&(r-1) != 0 {
@@ -77,6 +73,9 @@ func RoundUp(o int64, r int64) int64 {
 // expandiface computes the method set for interface type t by
 // expanding embedded interfaces.
 func expandiface(t *Type) {
+	context := contextForType(t)
+	ptrSize := ptrSizeFor(context)
+	maxWidth := maxWidthFor(context)
 	seen := make(map[*Sym]*Field)
 	var methods []*Field
 
@@ -149,11 +148,11 @@ func expandiface(t *Type) {
 
 	slices.SortFunc(methods, CompareFields)
 
-	if int64(len(methods)) >= MaxWidth/int64(PtrSize) {
+	if int64(len(methods)) >= maxWidth/int64(ptrSize) {
 		base.ErrorfAt(typePos(t), 0, "interface too large")
 	}
 	for i, m := range methods {
-		m.Offset = int64(i) * int64(PtrSize)
+		m.Offset = int64(i) * int64(ptrSize)
 	}
 
 	t.SetAllMethods(methods)
@@ -163,6 +162,7 @@ func expandiface(t *Type) {
 // starting at the given offset. It returns the resulting offset and
 // maximum field alignment.
 func calcStructOffset(t *Type, fields []*Field, offset int64) int64 {
+	maxWidth := maxWidthFor(contextForType(t))
 	for _, f := range fields {
 		CalcSize(f.Type)
 		offset = RoundUp(offset, int64(f.Type.align))
@@ -181,7 +181,7 @@ func calcStructOffset(t *Type, fields []*Field, offset int64) int64 {
 
 		offset += f.Type.width
 
-		maxwidth := MaxWidth
+		maxwidth := maxWidth
 		// On 32-bit systems, reflect tables impose an additional constraint
 		// that each field start offset must fit in 31 bits.
 		if maxwidth < 1<<32 {
@@ -224,17 +224,21 @@ func isAtomicStdPkg(p *Pkg) bool {
 // have not already been calculated, it calls Fatal.
 // This is used to prevent data races in the back end.
 func CalcSize(t *Type) {
+	if t == nil {
+		return
+	}
+	context := contextForType(t)
+	ptrSize := ptrSizeFor(context)
+	regSize := regSizeFor(context)
+	stringSize := context.StringSize
+	sliceSize := context.SliceSize
 	// Calling CalcSize when typecheck tracing enabled is not safe.
 	// See issue #33658.
-	if base.EnableTrace && SkipSizeForTracing {
+	if base.EnableTrace && (context.SkipSizeForTrace || context == defaultContext && SkipSizeForTracing) {
 		return
 	}
-	if PtrSize == 0 {
+	if ptrSize == 0 {
 		// Assume this is a test.
-		return
-	}
-
-	if t == nil {
 		return
 	}
 
@@ -249,12 +253,12 @@ func CalcSize(t *Type) {
 		return
 	}
 
-	if CalcSizeDisabled {
+	if calcSizeDisabledFor(context) {
 		base.Fatalf("width not calculated: %v", t)
 	}
 
 	// defer CheckSize calls until after we're done
-	DeferCheckSize()
+	DeferCheckSizeFor(context)
 
 	t.width = -2
 	t.align = 0  // 0 means use t.Width, below
@@ -270,7 +274,7 @@ func CalcSize(t *Type) {
 		break
 
 	default:
-		et = simTypeForLayout(t.Kind(), PtrSize)
+		et = simTypeForLayout(t.Kind(), ptrSize)
 	}
 
 	var w int64
@@ -294,8 +298,8 @@ func CalcSize(t *Type) {
 
 	case TINT64, TUINT64:
 		w = 8
-		t.align = uint8(RegSize)
-		t.intRegs = uint8(8 / RegSize)
+		t.align = uint8(regSize)
+		t.intRegs = uint8(8 / regSize)
 
 	case TFLOAT32:
 		w = 4
@@ -304,7 +308,7 @@ func CalcSize(t *Type) {
 
 	case TFLOAT64:
 		w = 8
-		t.align = uint8(RegSize)
+		t.align = uint8(regSize)
 		t.floatRegs = 1
 		t.setAlg(AFLOAT64)
 
@@ -316,24 +320,24 @@ func CalcSize(t *Type) {
 
 	case TCOMPLEX128:
 		w = 16
-		t.align = uint8(RegSize)
+		t.align = uint8(regSize)
 		t.floatRegs = 2
 		t.setAlg(ACPLX128)
 
 	case TPTR:
-		w = int64(PtrSize)
+		w = int64(ptrSize)
 		t.intRegs = 1
 		CheckSize(t.Elem())
-		t.ptrBytes = int64(PtrSize) // See PtrDataSize
+		t.ptrBytes = int64(ptrSize) // See PtrDataSize
 
 	case TUNSAFEPTR:
-		w = int64(PtrSize)
+		w = int64(ptrSize)
 		t.intRegs = 1
-		t.ptrBytes = int64(PtrSize)
+		t.ptrBytes = int64(ptrSize)
 
 	case TINTER: // implemented as 2 pointers
-		w = 2 * int64(PtrSize)
-		t.align = uint8(PtrSize)
+		w = 2 * int64(ptrSize)
+		t.align = uint8(ptrSize)
 		t.intRegs = 2
 		expandiface(t)
 		if len(t.allMethods.Slice()) == 0 {
@@ -341,12 +345,12 @@ func CalcSize(t *Type) {
 		} else {
 			t.setAlg(AINTER)
 		}
-		t.ptrBytes = int64(2 * PtrSize)
+		t.ptrBytes = int64(2 * ptrSize)
 
 	case TCHAN: // implemented as pointer
-		w = int64(PtrSize)
+		w = int64(ptrSize)
 		t.intRegs = 1
-		t.ptrBytes = int64(PtrSize)
+		t.ptrBytes = int64(ptrSize)
 
 		CheckSize(t.Elem())
 
@@ -369,7 +373,7 @@ func CalcSize(t *Type) {
 		w = 1 // anything will do
 
 	case TMAP: // implemented as pointer
-		w = int64(PtrSize)
+		w = int64(ptrSize)
 		t.intRegs = 1
 		CheckSize(t.Elem())
 		CheckSize(t.Key())
@@ -380,7 +384,7 @@ func CalcSize(t *Type) {
 			base.ErrorfAt(t.Key().Pos(), 0, "map key type too large")
 		}
 		t.setAlg(ANOEQ)
-		t.ptrBytes = int64(PtrSize)
+		t.ptrBytes = int64(ptrSize)
 
 	case TFORW: // should have been filled in
 		base.Fatalf("invalid recursive type %v", t)
@@ -389,14 +393,14 @@ func CalcSize(t *Type) {
 		base.Fatalf("CalcSize any")
 
 	case TSTRING:
-		if StringSize == 0 {
+		if stringSize == 0 {
 			base.Fatalf("early CalcSize string")
 		}
-		w = StringSize
-		t.align = uint8(PtrSize)
+		w = stringSize
+		t.align = uint8(ptrSize)
 		t.intRegs = 2
 		t.setAlg(ASTRING)
-		t.ptrBytes = int64(PtrSize)
+		t.ptrBytes = int64(ptrSize)
 
 	case TARRAY:
 		if t.Elem() == nil {
@@ -409,13 +413,13 @@ func CalcSize(t *Type) {
 		if t.Elem() == nil {
 			break
 		}
-		w = SliceSize
+		w = sliceSize
 		CheckSize(t.Elem())
-		t.align = uint8(PtrSize)
+		t.align = uint8(ptrSize)
 		t.intRegs = 3
 		t.setAlg(ANOEQ)
 		if !t.Elem().NotInHeap() {
-			t.ptrBytes = int64(PtrSize)
+			t.ptrBytes = int64(ptrSize)
 		}
 
 	case TSTRUCT:
@@ -430,10 +434,10 @@ func CalcSize(t *Type) {
 	case TFUNC:
 		t1 := NewFuncArgs(t)
 		CheckSize(t1)
-		w = int64(PtrSize) // width of func type is pointer
+		w = int64(ptrSize) // width of func type is pointer
 		t.intRegs = 1
 		t.setAlg(ANOEQ)
-		t.ptrBytes = int64(PtrSize)
+		t.ptrBytes = int64(ptrSize)
 
 	// function is 3 cated structures;
 	// compute their widths as side-effect.
@@ -442,14 +446,14 @@ func CalcSize(t *Type) {
 		// TODO(mdempsky): Should package abi be responsible for computing argwid?
 		w = calcStructOffset(t1, t1.Recvs(), 0)
 		w = calcStructOffset(t1, t1.Params(), w)
-		w = RoundUp(w, int64(RegSize))
+		w = RoundUp(w, int64(regSize))
 		w = calcStructOffset(t1, t1.Results(), w)
-		w = RoundUp(w, int64(RegSize))
+		w = RoundUp(w, int64(regSize))
 		t1.extra.(*Func).Argwid = w
 		t.align = 1
 	}
 
-	if PtrSize == 4 && w != int64(int32(w)) {
+	if ptrSize == 4 && w != int64(int32(w)) {
 		base.ErrorfAt(t.Pos(), 0, "type %v too large", t)
 	}
 
@@ -461,7 +465,7 @@ func CalcSize(t *Type) {
 		t.align = uint8(w)
 	}
 
-	ResumeCheckSize()
+	ResumeCheckSizeFor(context)
 }
 
 // simdify marks as type as "SIMD", either as a tag field,
@@ -613,12 +617,13 @@ func CalcStructSize(t *Type) {
 // filling in t.width, t.align, t.alg, and t.ptrBytes,
 // even if size calculation is otherwise disabled.
 func CalcArraySize(t *Type) {
+	maxWidth := maxWidthFor(contextForType(t))
 	elem := t.Elem()
 	n := t.NumElem()
 	CalcSize(elem)
 	t.SetNotInHeap(elem.NotInHeap())
 	if elem.width != 0 {
-		cap := (uint64(MaxWidth) - 1) / uint64(elem.width)
+		cap := (uint64(maxWidth) - 1) / uint64(elem.width)
 		if uint64(n) > cap {
 			base.ErrorfAt(t.Pos(), 0, "type %L larger than address space", t)
 		}
@@ -686,8 +691,6 @@ func (t *Type) widthCalculated() bool {
 // is needed immediately.  CheckSize makes sure the
 // size is evaluated eventually.
 
-var deferredTypeStack []*Type
-
 func CheckSize(t *Type) {
 	if t == nil {
 		return
@@ -699,7 +702,8 @@ func CheckSize(t *Type) {
 		base.Fatalf("CheckSize %v", t)
 	}
 
-	if defercalc == 0 {
+	context := contextForType(t)
+	if context.defercalc == 0 {
 		CalcSize(t)
 		return
 	}
@@ -707,25 +711,35 @@ func CheckSize(t *Type) {
 	// if type has not yet been pushed on deferredTypeStack yet, do it now
 	if !t.Deferwidth() {
 		t.SetDeferwidth(true)
-		deferredTypeStack = append(deferredTypeStack, t)
+		context.deferredTypeStack = append(context.deferredTypeStack, t)
 	}
 }
 
 func DeferCheckSize() {
-	defercalc++
+	DeferCheckSizeFor(defaultContext)
 }
 
 func ResumeCheckSize() {
-	if defercalc == 1 {
-		for len(deferredTypeStack) > 0 {
-			t := deferredTypeStack[len(deferredTypeStack)-1]
-			deferredTypeStack = deferredTypeStack[:len(deferredTypeStack)-1]
+	ResumeCheckSizeFor(defaultContext)
+}
+
+// DeferCheckSizeFor defers size checks in context until ResumeCheckSizeFor.
+func DeferCheckSizeFor(context *Context) {
+	context.defercalc++
+}
+
+// ResumeCheckSizeFor completes size checks deferred in context.
+func ResumeCheckSizeFor(context *Context) {
+	if context.defercalc == 1 {
+		for len(context.deferredTypeStack) > 0 {
+			t := context.deferredTypeStack[len(context.deferredTypeStack)-1]
+			context.deferredTypeStack = context.deferredTypeStack[:len(context.deferredTypeStack)-1]
 			t.SetDeferwidth(false)
 			CalcSize(t)
 		}
 	}
 
-	defercalc--
+	context.defercalc--
 }
 
 // PtrDataSize returns the length in bytes of the prefix of t

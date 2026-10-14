@@ -65,7 +65,7 @@ func MakeTask(compileCtx *noder.Context) {
 			ir.SetPosValue(compileCtx.Target, pos)
 
 			sym := compileCtx.Renameinit()
-			fnInit := ir.NewFunc(compileCtx.Target, pos, pos, sym, types.NewSignature(nil, nil, nil))
+			fnInit := ir.NewFunc(compileCtx.Target, pos, pos, sym, types.NewSignatureIn(compileCtx.Target.TypeContext, nil, nil, nil))
 			typecheck.DeclFunc(compileCtx.Target, fnInit)
 
 			// Get an array of instrumented global variables.

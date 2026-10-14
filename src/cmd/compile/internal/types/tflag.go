@@ -58,7 +58,7 @@ func computeTFlag(t *Type) abi.TFlag {
 	if t.alg == AMEM {
 		tflag |= abi.TFlagRegularMemory
 	}
-	if PtrDataSize(t)/int64(PtrSize) > abi.MaxPtrmaskBytes*8 {
+	if PtrDataSize(t)/int64(ptrSizeFor(contextForType(t))) > abi.MaxPtrmaskBytes*8 {
 		tflag |= abi.TFlagGCMaskOnDemand
 	}
 	if !strings.HasPrefix(t.NameString(), "*") {

@@ -489,7 +489,7 @@ func dcommontype(target *ir.Package, c rttype.Cursor, t *types.Type) {
 // TrackSym returns the symbol for tracking use of field/method f, assumed
 // to be a member of struct/interface type t.
 func TrackSym(t *types.Type, f *types.Field) *obj.LSym {
-	return base.PkgLinksym("go:track", t.LinkString()+"."+f.Sym.Name, obj.ABI0)
+	return t.Context().LinkSym("go:track", t.LinkString()+"."+f.Sym.Name, obj.ABI0)
 }
 
 func TypeSymPrefix(target *ir.Package, prefix string, t *types.Type) *types.Sym {
@@ -1364,7 +1364,7 @@ func ZeroAddr(curfunc *ir.Func, size int64) ir.Node {
 	if curfunc.Target.ZeroSize < size {
 		curfunc.Target.ZeroSize = size
 	}
-	lsym := base.PkgLinksym("go:map", "zero", obj.ABI0)
+	lsym := curfunc.Target.TypeContext.LinkSym("go:map", "zero", obj.ABI0)
 	x := ir.NewLinksymExpr(curfunc.Target.Pos, lsym, curfunc.Target.Type(types.TUINT8))
 	return typecheck.Expr(curfunc, typecheck.NodAddr(curfunc, x))
 }

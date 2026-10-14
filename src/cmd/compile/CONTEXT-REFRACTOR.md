@@ -2,12 +2,12 @@
 
 ## Current checkout
 
-The working branch `work` has been fast-forwarded from `e60b4c37fa3` to
-`c41f35caca0`. That commit adds the `go build -JIT` option, toolchain/package
-bundling in `cmd/go`, and linker support in `cmd/link`. It does not change
-`cmd/compile`. The JIT commit bundles source and tools for future use; it does
-not add a reusable compiler request API or a code loader for arbitrary source
-strings.
+The working branch `work` contains `c41f35caca0`, which adds the `go build
+-JIT` option, toolchain/package bundling in `cmd/go`, and linker support in
+`cmd/link`. The compiler-context checkpoint `ae057685c22` has been pushed to
+`origin/master`. The JIT commit does not change `cmd/compile`; bundling source
+and tools does not add a reusable compiler request API or a code loader for
+arbitrary source strings.
 
 ## Where one compilation starts and ends
 
@@ -25,11 +25,15 @@ callable request/result boundary today.
   behavior. Most compiler packages read these directly. The timing collector is
   now created in `gc.Main` and passed into the frontend; the former `base.Timer`
   singleton is removed.
-- `types`: target sizes, layout state, and the canonical type universe remain
-  process-wide. Package registries now live on `ir.Package`; the old
-  process-wide `pkgMap` and its `NewPkg` and `PkgMap` APIs are removed. The
-  interned-string table is separately synchronized and may be suitable for
-  sharing.
+- `types`: target layout and the canonical basic-type universe now live in a
+  `types.Context` owned by each `ir.Package`. Each `types.Type` and package
+  retains its context, so sizing, deferred layout, and basic-type identity
+  follow the owning target. Linker-symbol lookup and fake interface receiver
+  types use the same context. Package-level layout variables and legacy
+  constructors remain for standalone utilities and tests; the command
+  compiler no longer configures those globals. Package registries now live on
+  `ir.Package`; the old process-wide `pkgMap` and its `NewPkg` and `PkgMap`
+  APIs are removed. The interned-string table is separately synchronized.
 - `typecheck` and `ir`: the global `typecheck.Target` and mutable stack-size
   limits are removed; phase APIs carry `*ir.Package`, and each `ir.Func`
   records its owning target. Imported type symbol indexes, package-scope
@@ -91,8 +95,8 @@ Default literal selection, constant indexes, closure layouts, and ABI pointer
 bitmap generation also take target state explicitly. The synthetic
 `internal/runtime/math.MulUintptr` symbol is interned in the owning target's
 package registry. `gc.Main` still adapts
-command-line linker and flag state into a target and the type package still
-owns shared layout globals. PGO lookup finds the current local package through
+command-line linker and flag state into a target. The `types` package retains
+legacy default-context globals for callers that have not migrated. PGO lookup finds the current local package through
 its target, and the midway recheck resets only this target's direct-import
 flags.
 
@@ -116,17 +120,14 @@ GOROOT=/workspace/go GOCACHE=/tmp/go-build-cache /workspace/go/bin/go build cmd/
 No tests were run.
 
 The baseline search found 1,712 lines that read selected singleton state.
-After this migration pass, the same broad selector search reports 37 non-test
-Go source lines: 6 direct `types.Types` or target-size selectors and 31
-`base.Ctxt`, `base.Pos`, `base.Flag`, or `base.Debug` selectors. That grep
-includes comments and compatibility fallbacks, and it does not count
-unqualified package globals or state reached through methods. The remaining
-blockers are deeper than those selectors: `types.Type` layout and
-`types.CalcSize` still use package globals, the target basic-type arrays point
-to one shared type universe, and package-level typechecking retains target
-free fallback helpers. Diagnostics, command-line parsing, output and process
-exit are still command-owned. The in-memory API remains a frontend loading
-boundary; it does not return a complete object file from arbitrary source.
+The latest broad selector scan reports 41 non-test lines matching the
+selected `base` and `types` names, including comments, compatibility
+fallbacks, and target setup. Type sizing, deferred layout, basic-type
+universes, and package registries are now target-owned. Remaining blockers
+include diagnostics and error counts, command-line parsing, environment and
+profile configuration, output files, and process exit. The in-memory API
+remains a frontend loading boundary; it does not return a complete object
+file from arbitrary source.
 
 ## Recommended migration
 
@@ -138,8 +139,9 @@ boundary; it does not return a complete object file from arbitrary source.
 2. Keep `main` as a thin adapter that translates flags and files into that
    request. Move initialization and phase orchestration into a `gc.Compiler`
    or equivalent per-request context.
-3. Migrate state by subsystem, starting with `base` and `types`, then remaining
-   `ir` hooks, `ssagen` and optimization passes, and finally object writers.
+3. Migrate state by subsystem, starting with remaining `base` diagnostics and
+   command setup, then remaining `ir` hooks, `ssagen` and optimization passes,
+   and finally object writers.
    Pass context explicitly through phase APIs and callbacks.
    Keep immutable opcode/type tables and safe shared caches at package scope.
 4. Make diagnostics, timers, profiles, and object output request-owned. Remove

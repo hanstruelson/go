@@ -134,7 +134,7 @@ func MethodValueType(target *ir.Package, n *ir.SelectorExpr) *types.Type {
 // (Call typecheck.Func instead.)
 func tcFunc(n *ir.Func) {
 	if base.EnableTrace {
-		defer tracePrint("tcFunc", n)(nil)
+		defer tracePrint("tcFunc", n, contextForFunc(n))(nil)
 	}
 
 	if name := n.Nname; name.Typecheck() == 0 {

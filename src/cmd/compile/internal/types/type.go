@@ -158,6 +158,8 @@ var DefaultKinds = [...]Kind{
 // Local types (which may have the same name as a package-level type) are
 // distinguished by their vargen, which is embedded in their symbol name.
 type Type struct {
+	context *Context
+
 	// extra contains extra etype-specific fields.
 	// As an optimization, those etype-specific structs which contain exactly
 	// one pointer-shaped field are stored as values rather than pointers when possible.
@@ -492,9 +494,14 @@ func (f *fields) Set(s []*Field) {
 
 // newType returns a new Type of the specified kind.
 func newType(et Kind) *Type {
+	return newTypeIn(defaultContext, et)
+}
+
+func newTypeIn(context *Context, et Kind) *Type {
 	t := &Type{
-		kind:  et,
-		width: BADWIDTH,
+		context: context,
+		kind:    et,
+		width:   BADWIDTH,
 	}
 	t.underlying = t
 	// TODO(josharian): lazily initialize some of these?
@@ -530,7 +537,7 @@ func NewArray(elem *Type, bound int64) *Type {
 	if bound < 0 {
 		base.Fatalf("NewArray: invalid bound %v", bound)
 	}
-	t := newType(TARRAY)
+	t := newTypeIn(contextForType(elem), TARRAY)
 	t.extra = &Array{Elem: elem, Bound: bound}
 	if elem.HasShape() {
 		t.SetHasShape(true)
@@ -553,7 +560,7 @@ func NewSlice(elem *Type) *Type {
 		return t
 	}
 
-	t := newType(TSLICE)
+	t := newTypeIn(contextForType(elem), TSLICE)
 	t.extra = Slice{Elem: elem}
 	if elem.HasShape() {
 		t.SetHasShape(true)
@@ -566,7 +573,7 @@ func NewSlice(elem *Type) *Type {
 
 // NewChan returns a new chan Type with direction dir.
 func NewChan(elem *Type, dir ChanDir) *Type {
-	t := newType(TCHAN)
+	t := newTypeIn(contextForType(elem), TCHAN)
 	ct := t.chanType()
 	ct.Elem = elem
 	ct.Dir = dir
@@ -577,7 +584,7 @@ func NewChan(elem *Type, dir ChanDir) *Type {
 }
 
 func NewTuple(t1, t2 *Type) *Type {
-	t := newType(TTUPLE)
+	t := newTypeIn(contextForType(t1), TTUPLE)
 	t.extra.(*Tuple).first = t1
 	t.extra.(*Tuple).second = t2
 	if t1.HasShape() || t2.HasShape() {
@@ -587,7 +594,11 @@ func NewTuple(t1, t2 *Type) *Type {
 }
 
 func newResults(types []*Type) *Type {
-	t := newType(TRESULTS)
+	context := defaultContext
+	if len(types) > 0 {
+		context = contextForType(types[0])
+	}
+	t := newTypeIn(context, TRESULTS)
 	t.extra.(*Results).Types = types
 	return t
 }
@@ -613,7 +624,7 @@ func newSIMD(name string) *Type {
 
 // NewMap returns a new map Type with key type k and element (aka value) type v.
 func NewMap(k, v *Type) *Type {
-	t := newType(TMAP)
+	t := newTypeIn(contextForType(k), TMAP)
 	mt := t.MapType()
 	mt.Key = k
 	mt.Elem = v
@@ -639,10 +650,11 @@ func NewPtr(elem *Type) *Type {
 		return t
 	}
 
-	t := newType(TPTR)
+	t := newTypeIn(contextForType(elem), TPTR)
 	t.extra = Ptr{Elem: elem}
-	t.width = int64(PtrSize)
-	t.align = uint8(PtrSize)
+	ptrSize := ptrSizeFor(t.context)
+	t.width = int64(ptrSize)
+	t.align = uint8(ptrSize)
 	t.intRegs = 1
 	if elem.HasShape() {
 		t.SetHasShape(true)
@@ -654,7 +666,7 @@ func NewPtr(elem *Type) *Type {
 	}
 	// Note: we can't check elem.NotInHeap here because it might
 	// not be set yet. See size.go:PtrDataSize.
-	t.ptrBytes = int64(PtrSize)
+	t.ptrBytes = int64(ptrSize)
 	if elem.cache.ptr.CompareAndSwap(nil, t) {
 		return t
 	}
@@ -663,14 +675,14 @@ func NewPtr(elem *Type) *Type {
 
 // NewChanArgs returns a new TCHANARGS type for channel type c.
 func NewChanArgs(c *Type) *Type {
-	t := newType(TCHANARGS)
+	t := newTypeIn(contextForType(c), TCHANARGS)
 	t.extra = ChanArgs{T: c}
 	return t
 }
 
 // NewFuncArgs returns a new TFUNCARGS type for func type f.
 func NewFuncArgs(f *Type) *Type {
-	t := newType(TFUNCARGS)
+	t := newTypeIn(contextForType(f), TFUNCARGS)
 	t.extra = FuncArgs{T: f}
 	return t
 }
@@ -1119,22 +1131,23 @@ func (t *Type) cmp(x *Type) Cmp {
 	}
 
 	if t.obj != nil || x.obj != nil {
+		context := contextForType(t)
 		// Special case: we keep byte and uint8 separate
 		// for error messages. Treat them as equal.
 		switch t.kind {
 		case TUINT8:
-			if (t == Types[TUINT8] || t == ByteType) && (x == Types[TUINT8] || x == ByteType) {
+			if (t == context.Types[TUINT8] || t == context.ByteType) && (x == context.Types[TUINT8] || x == context.ByteType) {
 				return CMPeq
 			}
 
 		case TINT32:
-			if (t == Types[RuneType.kind] || t == RuneType) && (x == Types[RuneType.kind] || x == RuneType) {
+			if (t == context.Types[context.RuneType.kind] || t == context.RuneType) && (x == context.Types[context.RuneType.kind] || x == context.RuneType) {
 				return CMPeq
 			}
 
 		case TINTER:
 			// Make sure named any type matches any empty interface.
-			if t == AnyType && x.IsEmptyInterface() || x == AnyType && t.IsEmptyInterface() {
+			if t == context.AnyType && x.IsEmptyInterface() || x == context.AnyType && t.IsEmptyInterface() {
 				return CMPeq
 			}
 		}
@@ -1332,7 +1345,7 @@ func (t *Type) ToUnsigned() *Type {
 	if !t.IsInteger() {
 		base.Fatalf("unsignedType(%v)", t)
 	}
-	return Types[unsignedEType[t.kind]]
+	return contextForType(t).Types[unsignedEType[t.kind]]
 }
 
 func (t *Type) IsInteger() bool {
@@ -1607,18 +1620,26 @@ func (t *Type) HasPointers() bool {
 	return PtrDataSize(t) > 0
 }
 
-var recvType *Type
-
 // FakeRecvType returns the singleton type used for interface method receivers.
 func FakeRecvType() *Type {
-	if recvType == nil {
-		recvType = NewPtr(newType(TSTRUCT))
-	}
-	return recvType
+	return FakeRecvTypeFor(defaultContext)
 }
 
 func FakeRecv() *Field {
 	return NewField(src.NoXPos, nil, FakeRecvType())
+}
+
+// FakeRecvTypeFor returns the fake receiver pointer type owned by context.
+func FakeRecvTypeFor(context *Context) *Type {
+	if context.fakeRecvType == nil {
+		context.fakeRecvType = NewPtr(newTypeIn(context, TSTRUCT))
+	}
+	return context.fakeRecvType
+}
+
+// FakeRecvFor returns the fake interface receiver field owned by context.
+func FakeRecvFor(context *Context) *Field {
+	return NewField(src.NoXPos, nil, FakeRecvTypeFor(context))
 }
 
 var (
@@ -1656,7 +1677,11 @@ func init() {
 // maintained until the type is filled in, so those references can be updated when
 // the type is complete.
 func NewNamed(obj Object) *Type {
-	t := newType(TFORW)
+	context := defaultContext
+	if sym := obj.Sym(); sym != nil && sym.Pkg != nil && sym.Pkg.Context != nil {
+		context = sym.Pkg.Context
+	}
+	t := newTypeIn(context, TFORW)
 	t.obj = obj
 	sym := obj.Sym()
 	if sym.Pkg != nil && sym.Pkg.Path == "go.shape" {
@@ -1749,7 +1774,13 @@ func fieldsHasShape(fields []*Field) bool {
 // NewInterface returns a new interface for the given methods and
 // embedded types. Embedded types are specified as fields with no Sym.
 func NewInterface(methods []*Field) *Type {
-	t := newType(TINTER)
+	return NewInterfaceIn(contextForFields(methods), methods)
+}
+
+// NewInterfaceIn creates an interface in context, including when it has no
+// methods from which to infer its owner.
+func NewInterfaceIn(context *Context, methods []*Field) *Type {
+	t := newTypeIn(context, TINTER)
 	t.SetInterface(methods)
 	for _, f := range methods {
 		// f.Type could be nil for a broken interface declaration
@@ -1764,6 +1795,18 @@ func NewInterface(methods []*Field) *Type {
 // NewSignature returns a new function type for the given receiver,
 // parameters, and results, any of which may be nil.
 func NewSignature(recv *Field, params, results []*Field) *Type {
+	fields := make([]*Field, 0, 1+len(params)+len(results))
+	if recv != nil {
+		fields = append(fields, recv)
+	}
+	fields = append(fields, params...)
+	fields = append(fields, results...)
+	return NewSignatureIn(contextForFields(fields), recv, params, results)
+}
+
+// NewSignatureIn creates a function type in context. This is needed for
+// signatures with no receiver, parameters, or results.
+func NewSignatureIn(context *Context, recv *Field, params, results []*Field) *Type {
 	startParams := 0
 	if recv != nil {
 		startParams = 1
@@ -1777,11 +1820,11 @@ func NewSignature(recv *Field, params, results []*Field) *Type {
 	copy(allParams[startParams:], params)
 	copy(allParams[startResults:], results)
 
-	t := newType(TFUNC)
+	t := newTypeIn(context, TFUNC)
 	ft := t.funcType()
 
 	funargs := func(fields []*Field) *Type {
-		s := NewStruct(fields)
+		s := NewStructIn(context, fields)
 		s.StructType().ParamTuple = true
 		return s
 	}
@@ -1801,7 +1844,12 @@ func NewSignature(recv *Field, params, results []*Field) *Type {
 
 // NewStruct returns a new struct with the given fields.
 func NewStruct(fields []*Field) *Type {
-	t := newType(TSTRUCT)
+	return NewStructIn(contextForFields(fields), fields)
+}
+
+// NewStructIn creates a struct in context, including when fields is empty.
+func NewStructIn(context *Context, fields []*Field) *Type {
+	t := newTypeIn(context, TSTRUCT)
 	t.setFields(fields)
 	if fieldsHasShape(fields) {
 		t.SetHasShape(true)
@@ -1900,14 +1948,15 @@ func IsReflexive(t *Type) bool {
 // Can this type be stored directly in an interface word?
 // Yes, if the representation is a single pointer.
 func IsDirectIface(t *Type) bool {
-	return t.Size() == int64(PtrSize) && PtrDataSize(t) == int64(PtrSize)
+	ptrSize := ptrSizeFor(contextForType(t))
+	return t.Size() == int64(ptrSize) && PtrDataSize(t) == int64(ptrSize)
 }
 
 // IsInterfaceMethod reports whether (field) m is
 // an interface method. Such methods have the
 // special receiver type types.FakeRecvType().
 func IsInterfaceMethod(f *Type) bool {
-	return f.Recv().Type == FakeRecvType()
+	return f.Recv().Type == FakeRecvTypeFor(contextForType(f))
 }
 
 // IsMethodApplicable reports whether method m can be called on a
@@ -1989,22 +2038,24 @@ func ReceiverBaseType(t *Type) *Type {
 }
 
 func FloatForComplex(t *Type) *Type {
+	context := contextForType(t)
 	switch t.Kind() {
 	case TCOMPLEX64:
-		return Types[TFLOAT32]
+		return context.Types[TFLOAT32]
 	case TCOMPLEX128:
-		return Types[TFLOAT64]
+		return context.Types[TFLOAT64]
 	}
 	base.Fatalf("unexpected type: %v", t)
 	return nil
 }
 
 func ComplexForFloat(t *Type) *Type {
+	context := contextForType(t)
 	switch t.Kind() {
 	case TFLOAT32:
-		return Types[TCOMPLEX64]
+		return context.Types[TCOMPLEX64]
 	case TFLOAT64:
-		return Types[TCOMPLEX128]
+		return context.Types[TCOMPLEX128]
 	}
 	base.Fatalf("unexpected type: %v", t)
 	return nil

@@ -243,6 +243,7 @@ func tconv2(b *bytes.Buffer, t *Type, verb rune, mode fmtMode, visited map[*Type
 		b.WriteString("<T>")
 		return
 	}
+	context := contextForType(t)
 	if t.Kind() == TSSA {
 		b.WriteString(t.extra.(string))
 		return
@@ -265,23 +266,23 @@ func tconv2(b *bytes.Buffer, t *Type, verb rune, mode fmtMode, visited map[*Type
 		return
 	}
 
-	if t == AnyType || t == ByteType || t == RuneType {
+	if t == context.AnyType || t == context.ByteType || t == context.RuneType {
 		// in %-T mode collapse predeclared aliases with their originals.
 		switch mode {
 		case fmtTypeIDName, fmtTypeID:
-			t = Types[t.Kind()]
+			t = context.Types[t.Kind()]
 		default:
 			sconv2(b, t.Sym(), 'S', mode)
 			return
 		}
 	}
-	if t == ErrorType {
+	if t == context.ErrorType {
 		b.WriteString("error")
 		return
 	}
 
 	// Unless the 'L' flag was specified, if the type has a name, just print that name.
-	if verb != 'L' && t.Sym() != nil && t != Types[t.Kind()] {
+	if verb != 'L' && t.Sym() != nil && t != context.Types[t.Kind()] {
 		// Default to 'v' if verb is invalid.
 		if verb != 'S' {
 			verb = 'v'

@@ -39,24 +39,43 @@ var typedefs = [...]struct {
 }
 
 func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
-	if PtrSize == 0 {
+	InitTypesFor(defaultContext, builtinPkg, unsafePkg, defTypeName)
+	Types = defaultContext.Types
+	AnyType = defaultContext.AnyType
+	ByteType = defaultContext.ByteType
+	RuneType = defaultContext.RuneType
+	ErrorType = defaultContext.ErrorType
+	ComparableType = defaultContext.ComparableType
+}
+
+// InitTypesFor initializes the predeclared type universe for context.
+func InitTypesFor(context *Context, builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
+	ptrSize := ptrSizeFor(context)
+	if ptrSize == 0 {
 		base.Fatalf("InitTypes called before PtrSize was set")
 	}
 
-	SlicePtrOffset = 0
-	SliceLenOffset = RoundUp(SlicePtrOffset+int64(PtrSize), int64(PtrSize))
-	SliceCapOffset = RoundUp(SliceLenOffset+int64(PtrSize), int64(PtrSize))
-	SliceSize = RoundUp(SliceCapOffset+int64(PtrSize), int64(PtrSize))
+	context.SlicePtrOffset = 0
+	context.SliceLenOffset = RoundUp(context.SlicePtrOffset+int64(ptrSize), int64(ptrSize))
+	context.SliceCapOffset = RoundUp(context.SliceLenOffset+int64(ptrSize), int64(ptrSize))
+	context.SliceSize = RoundUp(context.SliceCapOffset+int64(ptrSize), int64(ptrSize))
 
 	// string is same as slice wo the cap
-	StringSize = RoundUp(SliceLenOffset+int64(PtrSize), int64(PtrSize))
+	context.StringSize = RoundUp(context.SliceLenOffset+int64(ptrSize), int64(ptrSize))
+	if context == defaultContext {
+		SlicePtrOffset = context.SlicePtrOffset
+		SliceLenOffset = context.SliceLenOffset
+		SliceCapOffset = context.SliceCapOffset
+		SliceSize = context.SliceSize
+		StringSize = context.StringSize
+	}
 
-	Types[TANY] = newType(TANY) // note: an old placeholder type, NOT the new builtin 'any' alias for interface{}
-	Types[TINTER] = NewInterface(nil)
-	CheckSize(Types[TINTER])
+	context.Types[TANY] = newTypeIn(context, TANY) // note: an old placeholder type, NOT the new builtin 'any' alias for interface{}
+	context.Types[TINTER] = NewInterfaceIn(context, nil)
+	CheckSize(context.Types[TINTER])
 
 	defBasic := func(kind Kind, pkg *Pkg, name string) *Type {
-		typ := newType(kind)
+		typ := newTypeIn(context, kind)
 		obj := defTypeName(pkg.Lookup(name), typ)
 		typ.obj = obj
 		if kind != TANY {
@@ -66,11 +85,11 @@ func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type)
 	}
 
 	for _, s := range &basicTypes {
-		Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
+		context.Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
 	}
 
 	for _, s := range &typedefs {
-		Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
+		context.Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
 	}
 
 	// We create separate byte and rune types for better error messages
@@ -81,44 +100,44 @@ func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type)
 	// NOTE(rsc): No, the error message quality is important.
 	// (Alternatively, we could introduce an OTALIAS node representing
 	// type aliases, albeit at the cost of having to deal with it everywhere).
-	ByteType = defBasic(TUINT8, builtinPkg, "byte")
-	RuneType = defBasic(TINT32, builtinPkg, "rune")
+	context.ByteType = defBasic(TUINT8, builtinPkg, "byte")
+	context.RuneType = defBasic(TINT32, builtinPkg, "rune")
 
 	// error type
-	DeferCheckSize()
-	ErrorType = defBasic(TFORW, builtinPkg, "error")
-	ErrorType.SetUnderlying(makeErrorInterface(builtinPkg))
-	ResumeCheckSize()
+	DeferCheckSizeFor(context)
+	context.ErrorType = defBasic(TFORW, builtinPkg, "error")
+	context.ErrorType.SetUnderlying(makeErrorInterface(context, builtinPkg))
+	ResumeCheckSizeFor(context)
 
 	// comparable type (interface)
-	DeferCheckSize()
-	ComparableType = defBasic(TFORW, builtinPkg, "comparable")
-	ComparableType.SetUnderlying(makeComparableInterface())
-	ResumeCheckSize()
+	DeferCheckSizeFor(context)
+	context.ComparableType = defBasic(TFORW, builtinPkg, "comparable")
+	context.ComparableType.SetUnderlying(makeComparableInterface(context))
+	ResumeCheckSizeFor(context)
 
 	// any type (interface)
-	DeferCheckSize()
-	AnyType = defBasic(TFORW, builtinPkg, "any")
-	AnyType.SetUnderlying(NewInterface(nil))
-	ResumeCheckSize()
+	DeferCheckSizeFor(context)
+	context.AnyType = defBasic(TFORW, builtinPkg, "any")
+	context.AnyType.SetUnderlying(NewInterfaceIn(context, nil))
+	ResumeCheckSizeFor(context)
 
-	Types[TUNSAFEPTR] = defBasic(TUNSAFEPTR, unsafePkg, "Pointer")
+	context.Types[TUNSAFEPTR] = defBasic(TUNSAFEPTR, unsafePkg, "Pointer")
 
-	Types[TBLANK] = newType(TBLANK)
-	Types[TNIL] = newType(TNIL)
+	context.Types[TBLANK] = newTypeIn(context, TBLANK)
+	context.Types[TNIL] = newTypeIn(context, TNIL)
 
 }
 
-func makeErrorInterface(builtinPkg *Pkg) *Type {
-	sig := NewSignature(FakeRecv(), nil, []*Field{
-		NewField(src.NoXPos, nil, Types[TSTRING]),
+func makeErrorInterface(context *Context, builtinPkg *Pkg) *Type {
+	sig := NewSignatureIn(context, FakeRecvFor(context), nil, []*Field{
+		NewField(src.NoXPos, nil, context.Types[TSTRING]),
 	})
 	method := NewField(src.NoXPos, builtinPkg.Lookup("Error"), sig)
-	return NewInterface([]*Field{method})
+	return NewInterfaceIn(context, []*Field{method})
 }
 
 // makeComparableInterface makes the predefined "comparable" interface in the
 // built-in package. It has a unique name, but no methods.
-func makeComparableInterface() *Type {
-	return NewInterface(nil)
+func makeComparableInterface(context *Context) *Type {
+	return NewInterfaceIn(context, nil)
 }

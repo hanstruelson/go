@@ -48,7 +48,14 @@ func Callee(curfunc *ir.Func, n ir.Node) ir.Node {
 
 var traceIndent []byte
 
-func tracePrint(title string, n ir.Node) func(np *ir.Node) {
+func contextForFunc(curfunc *ir.Func) *types.Context {
+	if curfunc != nil && curfunc.Target != nil {
+		return curfunc.Target.TypeContext
+	}
+	return nil
+}
+
+func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Node) {
 	indent := traceIndent
 
 	// guard against nil
@@ -60,8 +67,14 @@ func tracePrint(title string, n ir.Node) func(np *ir.Node) {
 		tc = n.Typecheck()
 	}
 
-	types.SkipSizeForTracing = true
-	defer func() { types.SkipSizeForTracing = false }()
+	if context != nil {
+		old := context.SkipSizeForTrace
+		context.SkipSizeForTrace = true
+		defer func() { context.SkipSizeForTrace = old }()
+	} else {
+		types.SkipSizeForTracing = true
+		defer func() { types.SkipSizeForTracing = false }()
+	}
 	fmt.Printf("%s: %s%s %p %s %v tc=%d\n", pos, indent, title, n, op, n, tc)
 	traceIndent = append(traceIndent, ". "...)
 
@@ -84,8 +97,14 @@ func tracePrint(title string, n ir.Node) func(np *ir.Node) {
 			typ = n.Type()
 		}
 
-		types.SkipSizeForTracing = true
-		defer func() { types.SkipSizeForTracing = false }()
+		if context != nil {
+			old := context.SkipSizeForTrace
+			context.SkipSizeForTrace = true
+			defer func() { context.SkipSizeForTrace = old }()
+		} else {
+			types.SkipSizeForTracing = true
+			defer func() { types.SkipSizeForTracing = false }()
+		}
 		fmt.Printf("%s: %s=> %p %s %v tc=%d type=%L\n", pos, indent, n, op, n, tc, typ)
 	}
 }
@@ -167,7 +186,11 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 
 	// only trace if there's work to do
 	if base.EnableTrace {
-		defer tracePrint("typecheck", n)(&res)
+		context := contextForFunc(curfunc)
+		if context == nil && n.Type() != nil {
+			context = n.Type().Context()
+		}
+		defer tracePrint("typecheck", n, context)(&res)
 	}
 
 	lno := ir.SetPosIn(curfunc, n)
