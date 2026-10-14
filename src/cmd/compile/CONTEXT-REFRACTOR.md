@@ -115,7 +115,7 @@ cleanup does not close another run's dump writers.
 global shape package have been removed. The full compiler tree builds with:
 
 ```sh
-GOROOT=/workspace/go GOCACHE=/workspace/.go-compile-codex-cache TMPDIR=/workspace/.go-compile-tmp /workspace/go/bin/go build cmd/compile/...
+GOROOT=/workspace/go GOCACHE=/workspace/.go-compile-codex-cache TMPDIR=/workspace/.go-compile-tmp /workspace/go/bin/go build cmd/compile/... cmd/go
 ```
 
 No tests were run.
@@ -134,7 +134,9 @@ profiling during a request.
 ## Reusable source compilation API
 
 `gc.Compile` accepts an architecture initializer, package path, named source
-strings, and compiler options in `-name=value` form. It creates fresh target,
+strings, and compiler options in `-name=value` form. The
+`cmd/compile/compiler` facade hides that initializer and exposes a request
+that chooses the toolchain's target architecture. It creates fresh target,
 frontend, IR, type-universe, and linker contexts for each request. Its result
 contains the Go object archive, captured diagnostic text, and error counts.
 Output and profiling flags, `-p`, `-o`, and environment mutation are managed
@@ -150,10 +152,9 @@ Runtime profiling is skipped in a request. This permits sequential reuse in
 one process; full context propagation is still required for concurrent
 compilation without the serialization lock.
 
-`gc` is under `cmd/compile/internal`, so Go's internal-package rule currently
-limits direct callers to the `cmd/compile` subtree. Using this API from
-`cmd/go` or an external program requires moving the compiler API across that
-package boundary or adding a supported facade.
+The facade is outside the `internal` directory, so other toolchain packages
+such as `cmd/go` can import it. The `cmd/compile` path is toolchain source,
+not a stable public library contract for third-party applications.
 
 ## Recommended migration
 
