@@ -38,16 +38,16 @@ type names struct {
 // It also reclassifies selected variables (for example, tagging
 // coverage counter variables with flags so that they can be handled
 // properly downstream).
-func Fixup() {
-	if base.Flag.Cfg.CoverageInfo == nil {
+func Fixup(target *ir.Package) {
+	if target.Flags.Cfg.CoverageInfo == nil {
 		return // not using coverage
 	}
 
-	metaVarName := base.Flag.Cfg.CoverageInfo.MetaVar
-	pkgIdVarName := base.Flag.Cfg.CoverageInfo.PkgIdVar
-	counterMode := base.Flag.Cfg.CoverageInfo.CounterMode
-	counterGran := base.Flag.Cfg.CoverageInfo.CounterGranularity
-	counterPrefix := base.Flag.Cfg.CoverageInfo.CounterPrefix
+	metaVarName := target.Flags.Cfg.CoverageInfo.MetaVar
+	pkgIdVarName := target.Flags.Cfg.CoverageInfo.PkgIdVar
+	counterMode := target.Flags.Cfg.CoverageInfo.CounterMode
+	counterGran := target.Flags.Cfg.CoverageInfo.CounterGranularity
+	counterPrefix := target.Flags.Cfg.CoverageInfo.CounterPrefix
 	var metavar *ir.Name
 	var pkgidvar *ir.Name
 
@@ -57,7 +57,7 @@ func Fixup() {
 		}
 	}
 
-	for _, nm := range typecheck.Target.Externs {
+	for _, nm := range target.Externs {
 		s := nm.Sym()
 		switch s.Name {
 		case metaVarName:
@@ -103,7 +103,7 @@ func Fixup() {
 		CounterGran: cg,
 	}
 
-	for _, fn := range typecheck.Target.Funcs {
+	for _, fn := range target.Funcs {
 		if ir.FuncName(fn) == "init" {
 			cnames.InitFn = fn
 			break
@@ -113,19 +113,19 @@ func Fixup() {
 		panic("unexpected (no init func for -cover build)")
 	}
 
-	hashv, len := metaHashAndLen()
+	hashv, len := metaHashAndLen(target)
 	if cnames.CounterMode != coverage.CtrModeTestMain {
-		registerMeta(cnames, hashv, len)
+		registerMeta(target, cnames, hashv, len)
 	}
-	if base.Ctxt.Pkgpath == "main" {
-		addInitHookCall(cnames.InitFn, cnames.CounterMode)
+	if target.Ctxt.Pkgpath == "main" {
+		addInitHookCall(target, cnames.InitFn, cnames.CounterMode)
 	}
 }
 
-func metaHashAndLen() ([16]byte, int) {
+func metaHashAndLen(target *ir.Package) ([16]byte, int) {
 
 	// Read meta-data hash from config entry.
-	mhash := base.Flag.Cfg.CoverageInfo.MetaHash
+	mhash := target.Flags.Cfg.CoverageInfo.MetaHash
 	if len(mhash) != 32 {
 		base.Fatalf("unexpected: got metahash length %d want 32", len(mhash))
 	}
@@ -140,37 +140,37 @@ func metaHashAndLen() ([16]byte, int) {
 	}
 
 	// Return hash and meta-data len
-	return hv, base.Flag.Cfg.CoverageInfo.MetaLen
+	return hv, target.Flags.Cfg.CoverageInfo.MetaLen
 }
 
-func registerMeta(cnames names, hashv [16]byte, mdlen int) {
+func registerMeta(target *ir.Package, cnames names, hashv [16]byte, mdlen int) {
 	// Materialize expression for hash (an array literal)
 	pos := cnames.InitFn.Pos()
 	elist := make([]ir.Node, 0, 16)
 	for i := 0; i < 16; i++ {
-		elem := ir.NewInt(base.Pos, int64(hashv[i]))
+		elem := ir.NewInt(target.Pos, int64(hashv[i]))
 		elist = append(elist, elem)
 	}
-	ht := types.NewArray(types.Types[types.TUINT8], 16)
+	ht := types.NewArray(target.Type(types.TUINT8), 16)
 	hashx := ir.NewCompLitExpr(pos, ir.OCOMPLIT, ht, elist)
 
 	// Materalize expression corresponding to address of the meta-data symbol.
 	mdax := typecheck.NodAddr(cnames.InitFn, cnames.MetaVar)
-	mdauspx := typecheck.ConvNop(cnames.InitFn, mdax, types.Types[types.TUNSAFEPTR])
+	mdauspx := typecheck.ConvNop(cnames.InitFn, mdax, target.Type(types.TUNSAFEPTR))
 
 	// Materialize expression for length.
-	lenx := ir.NewInt(base.Pos, int64(mdlen)) // untyped
+	lenx := ir.NewInt(target.Pos, int64(mdlen)) // untyped
 
 	// Generate a call to runtime.addCovMeta, e.g.
 	//
 	//   pkgIdVar = runtime.addCovMeta(&sym, len, hash, pkgpath, pkid, cmode, cgran)
 	//
-	fn := typecheck.LookupRuntime("addCovMeta")
-	pkid := coverage.HardCodedPkgID(base.Ctxt.Pkgpath)
-	pkIdNode := ir.NewInt(base.Pos, int64(pkid))
-	cmodeNode := ir.NewInt(base.Pos, int64(cnames.CounterMode))
-	cgranNode := ir.NewInt(base.Pos, int64(cnames.CounterGran))
-	pkPathNode := ir.NewString(base.Pos, base.Ctxt.Pkgpath)
+	fn := typecheck.LookupRuntime(cnames.InitFn.Target, "addCovMeta")
+	pkid := coverage.HardCodedPkgID(target.Ctxt.Pkgpath)
+	pkIdNode := ir.NewInt(target.Pos, int64(pkid))
+	cmodeNode := ir.NewInt(target.Pos, int64(cnames.CounterMode))
+	cgranNode := ir.NewInt(target.Pos, int64(cnames.CounterGran))
+	pkPathNode := ir.NewString(target.Pos, target.Ctxt.Pkgpath)
 	callx := typecheck.Call(cnames.InitFn, pos, fn, []ir.Node{mdauspx, lenx, hashx,
 		pkPathNode, pkIdNode, cmodeNode, cgranNode}, false)
 	assign := callx
@@ -188,12 +188,12 @@ func registerMeta(cnames names, hashv [16]byte, mdlen int) {
 // inserts it into the package main init function, which will kick off
 // the process for coverage data writing (emit meta data, and register
 // an exit hook to emit counter data).
-func addInitHookCall(initfn *ir.Func, cmode coverage.CounterMode) {
-	typecheck.InitCoverage()
+func addInitHookCall(target *ir.Package, initfn *ir.Func, cmode coverage.CounterMode) {
+	typecheck.InitCoverage(target)
 	pos := initfn.Pos()
 	istest := cmode == coverage.CtrModeTestMain
-	initf := typecheck.LookupCoverage("initHook")
-	istestNode := ir.NewBool(base.Pos, istest)
+	initf := typecheck.LookupCoverage(target, "initHook")
+	istestNode := ir.NewBool(target.Pos, istest)
 	args := []ir.Node{istestNode}
 	callx := typecheck.Call(initfn, pos, initf, args, false)
 	initfn.Body.Append(callx)

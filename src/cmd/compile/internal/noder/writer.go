@@ -19,7 +19,6 @@ import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
-	"cmd/compile/internal/types"
 	"cmd/compile/internal/types2"
 )
 
@@ -68,6 +67,7 @@ func assert(p bool) { base.Assert(p) }
 // running the types2 type checker on a Go compilation unit.
 type pkgWriter struct {
 	pkgbits.PkgEncoder
+	target *ir.Package
 
 	m                     posMap
 	curpkg                *types2.Package
@@ -101,9 +101,10 @@ type pkgWriter struct {
 
 // newPkgWriter returns an initialized pkgWriter for the specified
 // package.
-func newPkgWriter(m posMap, pkg *types2.Package, info *types2.Info, otherInfo map[*syntax.FuncLit]bool) *pkgWriter {
+func newPkgWriter(target *ir.Package, m posMap, pkg *types2.Package, info *types2.Info, otherInfo map[*syntax.FuncLit]bool) *pkgWriter {
 	return &pkgWriter{
-		PkgEncoder: pkgbits.NewPkgEncoder(uirVersion, base.Debug.SyncFrames),
+		target:     target,
+		PkgEncoder: pkgbits.NewPkgEncoder(uirVersion, target.Debug.SyncFrames),
 
 		m:                     m,
 		curpkg:                pkg,
@@ -418,7 +419,7 @@ func (pw *pkgWriter) posBaseIdx(b *syntax.PosBase) index {
 	w := pw.newWriter(pkgbits.SectionPosBase, pkgbits.SyncPosBase)
 	w.p.posBasesIdx[b] = w.Idx
 
-	w.String(trimFilename(b))
+	w.String(trimFilename(pw.m.target, b))
 
 	if !w.Bool(b.IsFileBase()) {
 		w.pos(b)
@@ -862,7 +863,7 @@ func (w *writer) doObj(wext *writer, obj types2.Object) pkgbits.CodeObj {
 		return pkgbits.ObjConst
 
 	case *types2.Func:
-		if base.Flag.LowerH > 0 {
+		if w.p.target.Flags.LowerH > 0 {
 			// Unified IR panics are the worst; this is a huge help in debugging them.
 			defer func() {
 				if p := recover(); p != nil {
@@ -1189,7 +1190,7 @@ func (w *writer) funcExt(obj *types2.Func) {
 			w.p.errorf(decl, "go:uintptrkeepalive requires go:nosplit")
 		}
 	} else {
-		if base.Flag.Complete || decl.Name.Value == "init" {
+		if w.p.target.Flags.Complete || decl.Name.Value == "init" {
 			// Linknamed functions are allowed to have no body. Hopefully
 			// the linkname target has a body. See issue 23311.
 			// Wasmimport functions are also allowed to have no body.
@@ -1655,7 +1656,7 @@ func (w *writer) forStmt(stmt *syntax.ForStmt) {
 }
 
 func (w *writer) distinctVars(stmt *syntax.ForStmt) bool {
-	lv := base.Debug.LoopVar
+	lv := w.p.target.Debug.LoopVar
 	fileVersion := w.p.info.FileVersions[stmt.Pos().FileBase()]
 	is122 := fileVersion == "" || version.Compare(fileVersion, "go1.22") >= 0
 
@@ -2886,7 +2887,7 @@ func (c *declCollector) Visit(n syntax.Node) syntax.Visitor {
 		pw.checkPragmas(n.Pragma, 0, true)
 
 		if p, ok := n.Pragma.(*pragmas); ok && len(p.Embeds) > 0 {
-			if err := checkEmbed(n, c.file.importedEmbed, c.withinFunc); err != nil {
+			if err := checkEmbed(pw.target, n, c.file.importedEmbed, c.withinFunc); err != nil {
 				pw.errorf(p.Embeds[0].Pos, "%s", err)
 			}
 		}
@@ -2941,7 +2942,7 @@ func (pw *pkgWriter) collectDecls(noders []*noder) {
 				}
 
 			default:
-				if types.AllowsGoVersion(1, 18) {
+				if pw.target.LangVersion.AllowsGoVersion(1, 18) {
 					pw.errorf(l.pos, "//%s must refer to declared function or variable", directive)
 				}
 			}

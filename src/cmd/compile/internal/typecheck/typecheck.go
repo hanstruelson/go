@@ -22,6 +22,20 @@ func Stmt(curfunc *ir.Func, n ir.Node) ir.Node       { return typecheck(curfunc,
 func Exprs(curfunc *ir.Func, exprs []ir.Node) { typecheckslice(curfunc, exprs, ctxExpr) }
 func Stmts(curfunc *ir.Func, stmts []ir.Node) { typecheckslice(curfunc, stmts, ctxStmt) }
 
+// targetType returns the basic type for curfunc's target. Package-level
+// expressions temporarily fall back to the command-line target until their
+// callers pass a compilation context explicitly.
+func targetType(curfunc *ir.Func, kind types.Kind) *types.Type {
+	return basicType(targetForFunc(curfunc), kind)
+}
+
+func targetForFunc(curfunc *ir.Func) *ir.Package {
+	if curfunc != nil {
+		return curfunc.Target
+	}
+	return nil
+}
+
 func Call(curfunc *ir.Func, pos src.XPos, callee ir.Node, args []ir.Node, dots bool) ir.Node {
 	call := ir.NewCallExpr(pos, ir.OCALL, callee, args)
 	call.IsDDD = dots
@@ -152,12 +166,12 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 	}
 
 	// only trace if there's work to do
-	if base.EnableTrace && base.Flag.LowerT {
+	if base.EnableTrace {
 		defer tracePrint("typecheck", n)(&res)
 	}
 
-	lno := ir.SetPos(n)
-	defer func() { base.Pos = lno }()
+	lno := ir.SetPosIn(curfunc, n)
+	defer ir.SetPosValueIn(curfunc, lno)
 
 	// Skip typecheck if already done.
 	// But re-typecheck ONAME/OTYPE/OLITERAL/OPACK node in case context has changed.
@@ -201,9 +215,9 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 // The result of indexlit MUST be assigned back to n, e.g.
 //
 //	n.Left = indexlit(n.Left)
-func indexlit(n ir.Node) ir.Node {
+func indexlit(curfunc *ir.Func, n ir.Node) ir.Node {
 	if n != nil && n.Type() != nil && n.Type().Kind() == types.TIDEAL {
-		return DefaultLit(n, types.Types[types.TINT])
+		return DefaultLitFor(targetForFunc(curfunc), n, targetType(curfunc, types.TINT))
 	}
 	return n
 }
@@ -258,9 +272,9 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		}
 		switch n.AsOp {
 		case ir.OLSH, ir.ORSH:
-			n.X, n.Y, _ = tcShift(n, n.X, n.Y)
+			n.X, n.Y, _ = tcShift(curfunc, n, n.X, n.Y)
 		case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OMOD, ir.OMUL, ir.OOR, ir.OSUB, ir.OXOR:
-			n.X, n.Y, _ = tcArith(n, n.AsOp, n.X, n.Y)
+			n.X, n.Y, _ = tcArith(targetForFunc(curfunc), n, n.AsOp, n.X, n.Y)
 		default:
 			base.Fatalf("invalid assign op: %v", n.AsOp)
 		}
@@ -287,7 +301,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 			n.SetType(nil)
 			return n
 		}
-		l, r, t := tcArith(n, n.Op(), n.X, n.Y)
+		l, r, t := tcArith(targetForFunc(curfunc), n, n.Op(), n.X, n.Y)
 		n.X, n.Y = l, r
 		n.SetType(t)
 		return n
@@ -296,7 +310,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OLSH, ir.ORSH:
 		n := n.(*ir.BinaryExpr)
 		n.X, n.Y = Expr(curfunc, n.X), Expr(curfunc, n.Y)
-		l, r, t := tcShift(n, n.X, n.Y)
+		l, r, t := tcShift(curfunc, n, n.X, n.Y)
 		n.X, n.Y = l, r
 		n.SetType(t)
 		return n
@@ -305,11 +319,11 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OEQ, ir.OGE, ir.OGT, ir.OLE, ir.OLT, ir.ONE:
 		n := n.(*ir.BinaryExpr)
 		n.X, n.Y = Expr(curfunc, n.X), Expr(curfunc, n.Y)
-		l, r, t := tcArith(n, n.Op(), n.X, n.Y)
+		l, r, t := tcArith(targetForFunc(curfunc), n, n.Op(), n.X, n.Y)
 		if t != nil {
 			n.X, n.Y = l, r
 			n.SetType(types.UntypedBool)
-			n.X, n.Y = defaultlit2(l, r, true)
+			n.X, n.Y = defaultlit2(targetForFunc(curfunc), l, r, true)
 		}
 		return n
 
@@ -317,7 +331,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OMOD, ir.OMUL, ir.OOR, ir.OSUB, ir.OXOR:
 		n := n.(*ir.BinaryExpr)
 		n.X, n.Y = Expr(curfunc, n.X), Expr(curfunc, n.Y)
-		l, r, t := tcArith(n, n.Op(), n.X, n.Y)
+		l, r, t := tcArith(targetForFunc(curfunc), n, n.Op(), n.X, n.Y)
 		if t != nil && t.Kind() == types.TSTRING && n.Op() == ir.OADD {
 			// create or update OADDSTR node with list of strings in x + y + z + (w + v) + ...
 			var add *ir.AddStringExpr
@@ -447,7 +461,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 
 	case ir.ORECOVER:
 		n := n.(*ir.CallExpr)
-		return tcRecover(n)
+		return tcRecover(curfunc, n)
 
 	case ir.OUNSAFEADD:
 		n := n.(*ir.BinaryExpr)
@@ -487,7 +501,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OCFUNC:
 		n := n.(*ir.UnaryExpr)
 		n.X = Expr(curfunc, n.X)
-		n.SetType(types.Types[types.TUINTPTR])
+		n.SetType(curfunc.Target.Type(types.TUINTPTR))
 		return n
 
 	case ir.OGETCALLERSP:
@@ -495,7 +509,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		if len(n.Args) != 0 {
 			base.FatalfAt(n.Pos(), "unexpected arguments: %v", n)
 		}
-		n.SetType(types.Types[types.TUINTPTR])
+		n.SetType(curfunc.Target.Type(types.TUINTPTR))
 		return n
 
 	case ir.OCONVNOP:
@@ -637,8 +651,8 @@ func RewriteNonNameCall(curfunc *ir.Func, n *ir.CallExpr) {
 		return
 	}
 
-	tmp := TempAt(base.Pos, curfunc, (*np).Type())
-	as := ir.NewAssignStmt(base.Pos, tmp, *np)
+	tmp := TempAt(ir.CurrentPos(curfunc), curfunc, (*np).Type())
+	as := ir.NewAssignStmt(ir.CurrentPos(curfunc), tmp, *np)
 	as.PtrInit().Append(Stmt(curfunc, ir.NewDecl(n.Pos(), ir.ODCL, tmp)))
 	*np = tmp
 
@@ -648,12 +662,12 @@ func RewriteNonNameCall(curfunc *ir.Func, n *ir.CallExpr) {
 // RewriteMultiValueCall rewrites multi-valued f() to use temporaries,
 // so the backend wouldn't need to worry about tuple-valued expressions.
 func RewriteMultiValueCall(curfunc *ir.Func, n ir.InitNode, call ir.Node) {
-	as := ir.NewAssignListStmt(base.Pos, ir.OAS2, nil, []ir.Node{call})
+	as := ir.NewAssignListStmt(ir.CurrentPos(curfunc), ir.OAS2, nil, []ir.Node{call})
 	results := call.Type().Fields()
 	list := make([]ir.Node, len(results))
 	for i, result := range results {
-		tmp := TempAt(base.Pos, curfunc, result.Type)
-		as.PtrInit().Append(ir.NewDecl(base.Pos, ir.ODCL, tmp))
+		tmp := TempAt(ir.CurrentPos(curfunc), curfunc, result.Type)
+		as.PtrInit().Append(ir.NewDecl(ir.CurrentPos(curfunc), ir.ODCL, tmp))
 		as.Lhs.Append(tmp)
 		list[i] = tmp
 	}
@@ -708,7 +722,7 @@ func implicitstar(curfunc *ir.Func, n ir.Node) ir.Node {
 	if !t.IsArray() {
 		return n
 	}
-	star := ir.NewStarExpr(base.Pos, n)
+	star := ir.NewStarExpr(ir.CurrentPos(curfunc), n)
 	star.SetImplicit(true)
 	return Expr(curfunc, star)
 }
@@ -801,7 +815,7 @@ func NewMethodExpr(pos src.XPos, recv *types.Type, sym *types.Sym) *ir.SelectorE
 
 	n := ir.NewSelectorExpr(pos, ir.OMETHEXPR, ir.TypeNode(recv), sym)
 	n.Selection = m
-	n.SetType(NewMethodType(m.Type, recv))
+	n.SetType(NewMethodType(pos, m.Type, recv))
 	n.SetTypecheck(1)
 	return n
 }
@@ -853,7 +867,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 		n.SetType(f1.Type)
 		if t.IsInterface() {
 			if n.X.Type().IsPtr() {
-				star := ir.NewStarExpr(base.Pos, n.X)
+				star := ir.NewStarExpr(ir.CurrentPos(curfunc), n.X)
 				star.SetImplicit(true)
 				n.X = Expr(curfunc, star)
 			}
@@ -879,7 +893,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 				addr.SetImplicit(true)
 				n.X = typecheck(curfunc, addr, ctxType|ctxExpr)
 			} else if tt.IsPtr() && (!rcvr.IsPtr() || rcvr.IsPtr() && rcvr.Elem().NotInHeap()) && types.Identical(tt.Elem(), rcvr) {
-				star := ir.NewStarExpr(base.Pos, n.X)
+				star := ir.NewStarExpr(ir.CurrentPos(curfunc), n.X)
 				star.SetImplicit(true)
 				n.X = typecheck(curfunc, star, ctxType|ctxExpr)
 			} else if tt.IsPtr() && tt.Elem().IsPtr() && types.Identical(derefall(tt), derefall(rcvr)) {
@@ -889,7 +903,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 					if rcvr.IsPtr() && !tt.Elem().IsPtr() {
 						break
 					}
-					star := ir.NewStarExpr(base.Pos, n.X)
+					star := ir.NewStarExpr(ir.CurrentPos(curfunc), n.X)
 					star.SetImplicit(true)
 					n.X = typecheck(curfunc, star, ctxType|ctxExpr)
 					tt = tt.Elem()
@@ -954,12 +968,12 @@ func hasddd(params []*types.Field) bool {
 }
 
 // typecheck assignment: type list = expression list
-func typecheckaste(op ir.Op, call ir.Node, isddd bool, params []*types.Field, nl ir.Nodes, desc func() string) {
+func typecheckaste(curfunc *ir.Func, op ir.Op, call ir.Node, isddd bool, params []*types.Field, nl ir.Nodes, desc func() string) {
 	var t *types.Type
 	var i int
 
-	lno := base.Pos
-	defer func() { base.Pos = lno }()
+	lno := ir.CurrentPos(curfunc)
+	defer ir.SetPosValueIn(curfunc, lno)
 
 	var n ir.Node
 	if len(nl) == 1 {
@@ -1005,7 +1019,7 @@ func typecheckaste(op ir.Op, call ir.Node, isddd bool, params []*types.Field, nl
 					goto toomany
 				}
 				n = nl[i]
-				ir.SetPos(n)
+				ir.SetPosIn(curfunc, n)
 				if n.Type() != nil {
 					nl[i] = assignconvfn(n, t, desc)
 				}
@@ -1015,7 +1029,7 @@ func typecheckaste(op ir.Op, call ir.Node, isddd bool, params []*types.Field, nl
 			// TODO(mdempsky): Make into ... call with implicit slice.
 			for ; i < len(nl); i++ {
 				n = nl[i]
-				ir.SetPos(n)
+				ir.SetPosIn(curfunc, n)
 				if n.Type() != nil {
 					nl[i] = assignconvfn(n, t.Elem(), desc)
 				}
@@ -1027,7 +1041,7 @@ func typecheckaste(op ir.Op, call ir.Node, isddd bool, params []*types.Field, nl
 			goto notenough
 		}
 		n = nl[i]
-		ir.SetPos(n)
+		ir.SetPosIn(curfunc, n)
 		if n.Type() != nil {
 			nl[i] = assignconvfn(n, t, desc)
 		}
@@ -1081,13 +1095,13 @@ func typecheckarraylit(curfunc *ir.Func, elemType *types.Type, bound int64, elts
 
 	var key, length int64
 	for i, elt := range elts {
-		ir.SetPos(elt)
+		ir.SetPosIn(curfunc, elt)
 		r := elts[i]
 		var kv *ir.KeyExpr
 		if elt.Op() == ir.OKEY {
 			elt := elt.(*ir.KeyExpr)
 			elt.Key = Expr(curfunc, elt.Key)
-			key = IndexConst(elt.Key)
+			key = IndexConstFor(targetForFunc(curfunc), elt.Key)
 			kv = elt
 			r = elt.Value
 		}
@@ -1125,8 +1139,8 @@ func typecheckarraylit(curfunc *ir.Func, elemType *types.Type, bound int64, elts
 }
 
 // visible reports whether sym is exported or locally defined.
-func visible(sym *types.Sym) bool {
-	return sym != nil && (types.IsExported(sym.Name) || sym.Pkg == types.LocalPkg)
+func visible(curfunc *ir.Func, sym *types.Sym) bool {
+	return sym != nil && (types.IsExported(sym.Name) || sym.Pkg == curfunc.Target.LocalPkg)
 }
 
 // nonexported reports whether sym is an unexported field.
@@ -1195,14 +1209,15 @@ func stringtoruneslit(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 	var l []ir.Node
 	i := 0
 	for _, r := range ir.StringVal(n.X) {
-		l = append(l, ir.NewKeyExpr(base.Pos, ir.NewInt(base.Pos, int64(i)), ir.NewInt(base.Pos, int64(r))))
+		pos := ir.CurrentPos(curfunc)
+		l = append(l, ir.NewKeyExpr(pos, ir.NewInt(pos, int64(i)), ir.NewInt(pos, int64(r))))
 		i++
 	}
 
-	return Expr(curfunc, ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, n.Type(), l))
+	return Expr(curfunc, ir.NewCompLitExpr(ir.CurrentPos(curfunc), ir.OCOMPLIT, n.Type(), l))
 }
 
-func checkmake(t *types.Type, arg string, np *ir.Node) bool {
+func checkmake(curfunc *ir.Func, t *types.Type, arg string, np *ir.Node) bool {
 	n := *np
 	if !n.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
 		base.Errorf("non-integer %s argument in make(%v) - %v", arg, t, n.Type())
@@ -1214,14 +1229,14 @@ func checkmake(t *types.Type, arg string, np *ir.Node) bool {
 	// are the same as for index expressions. Factor the code better;
 	// for instance, indexlit might be called here and incorporate some
 	// of the bounds checks done for make.
-	n = DefaultLit(n, types.Types[types.TINT])
+	n = DefaultLitFor(targetForFunc(curfunc), n, curfunc.Target.Type(types.TINT))
 	*np = n
 
 	return true
 }
 
 // checkunsafesliceorstring is like checkmake but for unsafe.{Slice,String}.
-func checkunsafesliceorstring(op ir.Op, np *ir.Node) bool {
+func checkunsafesliceorstring(curfunc *ir.Func, op ir.Op, np *ir.Node) bool {
 	n := *np
 	if !n.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
 		base.Errorf("non-integer len argument in %v - %v", op, n.Type())
@@ -1229,7 +1244,7 @@ func checkunsafesliceorstring(op ir.Op, np *ir.Node) bool {
 	}
 
 	// DefaultLit is necessary for non-constants too: n might be 1.1<<k.
-	n = DefaultLit(n, types.Types[types.TINT])
+	n = DefaultLitFor(targetForFunc(curfunc), n, curfunc.Target.Type(types.TINT))
 	*np = n
 
 	return true
@@ -1239,7 +1254,7 @@ func Conv(curfunc *ir.Func, n ir.Node, t *types.Type) ir.Node {
 	if types.IdenticalStrict(n.Type(), t) {
 		return n
 	}
-	n = ir.NewConvExpr(base.Pos, ir.OCONV, nil, n)
+	n = ir.NewConvExpr(ir.CurrentPos(curfunc), ir.OCONV, nil, n)
 	n.SetType(t)
 	n = Expr(curfunc, n)
 	return n
@@ -1251,7 +1266,7 @@ func ConvNop(curfunc *ir.Func, n ir.Node, t *types.Type) ir.Node {
 	if types.IdenticalStrict(n.Type(), t) {
 		return n
 	}
-	n = ir.NewConvExpr(base.Pos, ir.OCONVNOP, nil, n)
+	n = ir.NewConvExpr(ir.CurrentPos(curfunc), ir.OCONVNOP, nil, n)
 	n.SetType(t)
 	n = Expr(curfunc, n)
 	return n

@@ -407,14 +407,14 @@ func writebarrier(f *ssa.Func) {
 				return
 			}
 			// Issue a call to get a write barrier buffer.
-			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
+			t := types.NewTuple(f.Config.Target.Type(types.TUINTPTR).PtrTo(), types.TypeMem)
 			call := bThen.NewValue1I(pos, ssaop.OpWB, t, int64(len(writes)), memThen)
-			curPtr := bThen.NewValue1(pos, ssaop.OpSelect0, types.Types[types.TUINTPTR].PtrTo(), call)
+			curPtr := bThen.NewValue1(pos, ssaop.OpSelect0, f.Config.Target.Type(types.TUINTPTR).PtrTo(), call)
 			memThen = bThen.NewValue1(pos, ssaop.OpSelect1, types.TypeMem, call)
 			// Write each pending pointer to a slot in the buffer.
 			for i, write := range writes {
-				wbuf := bThen.NewValue1I(write.pos, ssaop.OpOffPtr, types.Types[types.TUINTPTR].PtrTo(), int64(i)*f.Config.PtrSize, curPtr)
-				memThen = bThen.NewValue3A(write.pos, ssaop.OpStore, types.TypeMem, types.Types[types.TUINTPTR], wbuf, write.ptr, memThen)
+				wbuf := bThen.NewValue1I(write.pos, ssaop.OpOffPtr, f.Config.Target.Type(types.TUINTPTR).PtrTo(), int64(i)*f.Config.PtrSize, curPtr)
+				memThen = bThen.NewValue3A(write.pos, ssaop.OpStore, types.TypeMem, f.Config.Target.Type(types.TUINTPTR), wbuf, write.ptr, memThen)
 			}
 			writes = writes[:0]
 		}
@@ -449,7 +449,7 @@ func writebarrier(f *ssa.Func) {
 				if ptr == nilcheck {
 					ptr = nilcheckThen
 				}
-				oldVal := bThen.NewValue2(pos, ssaop.OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
+				oldVal := bThen.NewValue2(pos, ssaop.OpLoad, f.Config.Target.Type(types.TUINTPTR), ptr, memThen)
 				// Save old value to write buffer.
 				addEntry(pos, oldVal)
 			}
@@ -467,7 +467,7 @@ func writebarrier(f *ssa.Func) {
 			}
 			switch w.Op {
 			case ssaop.OpZeroWB:
-				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
+				typ := reflectdata.TypeLinksym(f.Config.Target, w.Aux.(*types.Type))
 				// zeroWB(&typ, dst)
 				taddr := b.NewValue1A(pos, ssaop.OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
 				memThen = wbcall(pos, bThen, wbZero, sp, memThen, taddr, dst)
@@ -483,7 +483,7 @@ func writebarrier(f *ssa.Func) {
 						}
 					}
 				}
-				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
+				typ := reflectdata.TypeLinksym(f.Config.Target, w.Aux.(*types.Type))
 				// moveWB(&typ, dst, src)
 				taddr := b.NewValue1A(pos, ssaop.OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
 				memThen = wbcall(pos, bThen, wbMove, sp, memThen, taddr, dst, src)
@@ -529,7 +529,7 @@ func writebarrier(f *ssa.Func) {
 				}
 				if buildcfg.Experiment.CgoCheck2 {
 					// Issue cgo checking code.
-					typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
+					typ := reflectdata.TypeLinksym(f.Config.Target, w.Aux.(*types.Type))
 					taddr := b.NewValue1A(pos, ssaop.OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
 					mem = wbcall(pos, bEnd, cgoCheckMemmove, sp, mem, taddr, dst, src)
 				}

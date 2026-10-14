@@ -14,9 +14,11 @@ import (
 	"strings"
 
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
+	"cmd/internal/obj"
 )
 
-func profileName(fn, suffix string) string {
+func profileName(ctxt *obj.Link, fn, suffix string) string {
 	if strings.HasSuffix(fn, string(os.PathSeparator)) {
 		err := os.MkdirAll(fn, 0755)
 		if err != nil {
@@ -24,14 +26,15 @@ func profileName(fn, suffix string) string {
 		}
 	}
 	if fi, statErr := os.Stat(fn); statErr == nil && fi.IsDir() {
-		fn = filepath.Join(fn, url.PathEscape(base.Ctxt.Pkgpath)+suffix)
+		fn = filepath.Join(fn, url.PathEscape(ctxt.Pkgpath)+suffix)
 	}
 	return fn
 }
 
-func startProfile() {
-	if base.Flag.CPUProfile != "" {
-		fn := profileName(base.Flag.CPUProfile, ".cpuprof")
+func startProfile(target *ir.Package) {
+	ctxt := target.Ctxt
+	if target.Flags.CPUProfile != "" {
+		fn := profileName(ctxt, target.Flags.CPUProfile, ".cpuprof")
 		f, err := os.Create(fn)
 		if err != nil {
 			base.Fatalf("%v", err)
@@ -46,9 +49,9 @@ func startProfile() {
 			}
 		})
 	}
-	if base.Flag.MemProfile != "" {
-		if base.Flag.MemProfileRate != 0 {
-			runtime.MemProfileRate = base.Flag.MemProfileRate
+	if target.Flags.MemProfile != "" {
+		if target.Flags.MemProfileRate != 0 {
+			runtime.MemProfileRate = target.Flags.MemProfileRate
 		}
 		const (
 			gzipFormat = 0
@@ -59,7 +62,7 @@ func startProfile() {
 		// See golang.org/issue/18641 and runtime/pprof/pprof.go:writeHeap.
 		// gzipFormat is what most people want, otherwise
 		var format = textFormat
-		fn := base.Flag.MemProfile
+		fn := target.Flags.MemProfile
 		if strings.HasSuffix(fn, string(os.PathSeparator)) {
 			err := os.MkdirAll(fn, 0755)
 			if err != nil {
@@ -67,7 +70,7 @@ func startProfile() {
 			}
 		}
 		if fi, statErr := os.Stat(fn); statErr == nil && fi.IsDir() {
-			fn = filepath.Join(fn, url.PathEscape(base.Ctxt.Pkgpath)+".memprof")
+			fn = filepath.Join(fn, url.PathEscape(ctxt.Pkgpath)+".memprof")
 			format = gzipFormat
 		}
 
@@ -90,8 +93,8 @@ func startProfile() {
 		// Not doing memory profiling; disable it entirely.
 		runtime.MemProfileRate = 0
 	}
-	if base.Flag.BlockProfile != "" {
-		f, err := os.Create(profileName(base.Flag.BlockProfile, ".blockprof"))
+	if target.Flags.BlockProfile != "" {
+		f, err := os.Create(profileName(ctxt, target.Flags.BlockProfile, ".blockprof"))
 		if err != nil {
 			base.Fatalf("%v", err)
 		}
@@ -101,8 +104,8 @@ func startProfile() {
 			f.Close()
 		})
 	}
-	if base.Flag.MutexProfile != "" {
-		f, err := os.Create(profileName(base.Flag.MutexProfile, ".mutexprof"))
+	if target.Flags.MutexProfile != "" {
+		f, err := os.Create(profileName(ctxt, target.Flags.MutexProfile, ".mutexprof"))
 		if err != nil {
 			base.Fatalf("%v", err)
 		}
@@ -112,8 +115,8 @@ func startProfile() {
 			f.Close()
 		})
 	}
-	if base.Flag.TraceProfile != "" {
-		f, err := os.Create(profileName(base.Flag.TraceProfile, ".trace"))
+	if target.Flags.TraceProfile != "" {
+		f, err := os.Create(profileName(ctxt, target.Flags.TraceProfile, ".trace"))
 		if err != nil {
 			base.Fatalf("%v", err)
 		}

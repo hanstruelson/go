@@ -6,12 +6,14 @@
 
 package inlheur
 
+import "cmd/compile/internal/ir"
+
 const debugTrace = 0
 
 func enableDebugTrace(x int) {
 }
 
-func enableDebugTraceIfEnv() {
+func enableDebugTraceIfEnv(target *ir.Package) {
 }
 
 func disableDebugTrace() {

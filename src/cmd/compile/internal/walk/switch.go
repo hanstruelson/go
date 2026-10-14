@@ -20,7 +20,6 @@ import (
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/rttype"
-	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/staticdata"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -46,16 +45,16 @@ func (w *walkState) walkSwitch(sw *ir.SwitchStmt) {
 // walkSwitchExpr generates an AST implementing sw.  sw is an
 // expression switch.
 func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
-	lno := ir.SetPos(sw)
+	lno := ir.SetPosFor(w.curfunc.Target, sw)
 
 	cond := sw.Tag
 	sw.Tag = nil
 
 	// convert switch {...} to switch true {...}
 	if cond == nil {
-		cond = ir.NewBool(base.Pos, true)
+		cond = ir.NewBool(w.curfunc.Target.Pos, true)
 		cond = typecheck.Expr(w.curfunc, cond)
-		cond = typecheck.DefaultLit(cond, nil)
+		cond = typecheck.DefaultLitFor(w.curfunc.Target, cond, nil)
 	}
 
 	// Given "switch string(byteslice)",
@@ -75,13 +74,14 @@ func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
 		cond = w.copyExpr(cond, cond.Type(), &sw.Compiled)
 	}
 
-	base.Pos = lno
+	ir.SetPosValue(w.curfunc.Target, lno)
 
 	w.tryLookupTable(sw, cond)
 
 	s := exprSwitch{
 		pos:      lno,
 		exprname: cond,
+		target:   w.curfunc.Target,
 	}
 
 	var defaultGoto ir.Node
@@ -110,7 +110,7 @@ func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
 		body.Append(ir.NewLabelStmt(ncase.Pos(), label))
 		body.Append(ncase.Body...)
 		if fall, pos := endsInFallthrough(ncase.Body); !fall {
-			br := ir.NewBranchStmt(base.Pos, ir.OBREAK, nil)
+			br := ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil)
 			br.SetPos(pos)
 			body.Append(br)
 		}
@@ -118,7 +118,7 @@ func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
 	sw.Cases = nil
 
 	if defaultGoto == nil {
-		br := ir.NewBranchStmt(base.Pos, ir.OBREAK, nil)
+		br := ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil)
 		br.SetPos(br.Pos().WithNotStmt())
 		defaultGoto = br
 	}
@@ -133,6 +133,7 @@ func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
 type exprSwitch struct {
 	pos      src.XPos
 	exprname ir.Node // value being switched on
+	target   *ir.Package
 
 	done    ir.Nodes
 	clauses []exprClause
@@ -232,7 +233,7 @@ func (s *exprSwitch) flush(walkstate *walkState) {
 
 		var outer exprSwitch
 		outer.exprname = ir.NewUnaryExpr(s.pos, ir.OLEN, s.exprname)
-		outer.exprname.SetType(types.Types[types.TINT])
+		outer.exprname.SetType(walkstate.curfunc.Target.Type(types.TINT))
 
 		for _, run := range runs {
 			// Target label to jump to when we match this length.
@@ -287,7 +288,7 @@ func (s *exprSwitch) search(curfunc *ir.Func, cc []exprClause, out *ir.Nodes) {
 	}
 	binarySearch(curfunc, len(cc), out,
 		func(i int) ir.Node {
-			return ir.NewBinaryExpr(base.Pos, ir.OLE, s.exprname, cc[i-1].hi)
+			return ir.NewBinaryExpr(curfunc.Target.Pos, ir.OLE, s.exprname, cc[i-1].hi)
 		},
 		func(i int, nif *ir.IfStmt) {
 			c := &cc[i]
@@ -302,7 +303,7 @@ func (s *exprSwitch) tryJumpTable(cc []exprClause, out *ir.Nodes) bool {
 	const minCases = 8   // have at least minCases cases in the switch
 	const minDensity = 4 // use at least 1 out of every minDensity entries
 
-	if base.Flag.N != 0 || !ssagen.Arch.LinkArch.CanJumpTable || base.Ctxt.Retpoline {
+	if s.target.Flags.N != 0 || !s.target.Ctxt.Arch.CanJumpTable || s.target.Ctxt.Retpoline {
 		return false
 	}
 	if len(cc) < minCases {
@@ -311,7 +312,7 @@ func (s *exprSwitch) tryJumpTable(cc []exprClause, out *ir.Nodes) bool {
 	if cc[0].lo.Val().Kind() != constant.Int {
 		return false // e.g. float
 	}
-	if s.exprname.Type().Size() > int64(types.PtrSize) {
+	if s.exprname.Type().Size() > int64(s.target.PtrSize) {
 		return false // 64-bit switches on 32-bit archs
 	}
 	min := cc[0].lo.Val()
@@ -323,7 +324,7 @@ func (s *exprSwitch) tryJumpTable(cc []exprClause, out *ir.Nodes) bool {
 		// i.e. for switch x {case 0: case 1000: case 2000:} we don't want to use a jump table.
 		return false
 	}
-	jt := ir.NewJumpTableStmt(base.Pos, s.exprname)
+	jt := ir.NewJumpTableStmt(s.target.Pos, s.exprname)
 	for _, c := range cc {
 		jmp := c.jmp.(*ir.BranchStmt)
 		if jmp.Op() != ir.OGOTO || jmp.Label == nil {
@@ -378,13 +379,13 @@ func (s *exprSwitch) tryJumpTable(cc []exprClause, out *ir.Nodes) bool {
 func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 	const minCases = 4 // need enough cases to justify a table
 
-	if base.Flag.N != 0 {
+	if w.curfunc.Target.Flags.N != 0 {
 		return // optimizations disabled
 	}
 	if !cond.Type().IsInteger() {
 		return
 	}
-	if cond.Type().Size() > int64(types.PtrSize) {
+	if cond.Type().Size() > int64(w.curfunc.Target.PtrSize) {
 		return // 64-bit switches on 32-bit archs
 	}
 
@@ -486,15 +487,15 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 	// Build static lookup table and determine which slots are valid.
 	// Also build the bitmask inline if the table is small enough.
 	tabType := types.NewArray(resultType, tableSize)
-	tabName := readonlystaticname(tabType)
+	tabName := readonlystaticname(w.curfunc.Target, tabType)
 	elemSize := int(resultType.Size())
-	maxBitmaskSize := int64(types.PtrSize * 8) // 32 or 64
+	maxBitmaskSize := int64(w.curfunc.Target.PtrSize * 8) // 32 or 64
 
 	var needMask bool
 	var bitmask uint64
 	validSlots := make([]bool, tableSize)
 	// Pre-size the symbol to cover the full table.
-	tabName.Linksym().WriteInt(base.Ctxt, tableSize*int64(elemSize)-1, 1, 0)
+	tabName.Linksym().WriteInt(w.curfunc.Target.Ctxt, tableSize*int64(elemSize)-1, 1, 0)
 	for i := range tableSize {
 		caseVal := minVal + i
 		if excludeSet[caseVal] {
@@ -510,7 +511,7 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 				}
 				val = defaultVal // gap filled with default constant value
 			}
-			staticdata.InitConst(tabName, i*int64(elemSize), val, elemSize)
+			staticdata.InitConst(w.curfunc.Target, tabName, i*int64(elemSize), val, elemSize)
 			validSlots[i] = true
 			bitmask |= 1 << uint(i)
 		}
@@ -523,15 +524,15 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 	var maskName *ir.Name
 	useBitmask := needMask && tableSize <= maxBitmaskSize
 	if needMask && !useBitmask {
-		maskType := types.NewArray(types.Types[types.TUINT8], tableSize)
-		maskName = readonlystaticname(maskType)
+		maskType := types.NewArray(w.curfunc.Target.Type(types.TUINT8), tableSize)
+		maskName = readonlystaticname(w.curfunc.Target, maskType)
 		maskSym := maskName.Linksym()
 		for i := range tableSize {
 			var v uint8
 			if validSlots[i] {
 				v = 1
 			}
-			maskSym.WriteInt(base.Ctxt, i, 1, int64(v))
+			maskSym.WriteInt(w.curfunc.Target.Ctxt, i, 1, int64(v))
 		}
 	}
 
@@ -541,7 +542,7 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 	pos := sw.Pos()
 
 	// Widen cond to int to avoid overflow in small integer types.
-	intType := types.Types[types.TINT]
+	intType := w.curfunc.Target.Type(types.TINT)
 	wideCond := typecheck.Conv(w.curfunc, cond, intType)
 
 	// Compute idx = int(cond) - minVal.
@@ -555,14 +556,14 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 
 	// Convert to uint for the one-sided bounds check and store in a temp
 	// so the index can be shared across the bounds check, table, and mask.
-	uintType := types.Types[types.TUINT]
+	uintType := w.curfunc.Target.Type(types.TUINT)
 	uidx := typecheck.Conv(w.curfunc, idx, uintType)
 	uidx = w.copyExpr(uidx, uintType, &sw.Compiled)
 
 	// Bounds check: uint(idx) <= uint(maxVal - minVal).
 	rangeLit := ir.NewBasicLit(pos, uintType, constant.MakeUint64(uint64(maxVal-minVal)))
 	boundsCheck := typecheck.Expr(w.curfunc, ir.NewBinaryExpr(pos, ir.OLE, uidx, rangeLit))
-	boundsCheck = typecheck.DefaultLit(boundsCheck, nil)
+	boundsCheck = typecheck.DefaultLitFor(w.curfunc.Target, boundsCheck, nil)
 
 	// Table lookup: table[idx] with bounds elided (already checked).
 	lookup := ir.NewIndexExpr(pos, tabName, uidx)
@@ -583,7 +584,7 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 		if useBitmask {
 			// Bitmask check: (bitmask >> idx) & 1 != 0.
 			// Use uintptr so the operation is register-width on all architectures.
-			bitmaskType := types.Types[types.TUINTPTR]
+			bitmaskType := w.curfunc.Target.Type(types.TUINTPTR)
 			bitmaskLit := ir.NewBasicLit(pos, bitmaskType, constant.MakeUint64(bitmask))
 			shifted := typecheck.Expr(w.curfunc, ir.NewBinaryExpr(pos, ir.ORSH, bitmaskLit, uidx))
 			one := ir.NewOne(pos, bitmaskType)
@@ -598,7 +599,7 @@ func (w *walkState) tryLookupTable(sw *ir.SwitchStmt, cond ir.Node) {
 			zero := ir.NewZero(pos, maskLookup.Type())
 			maskCheck = typecheck.Expr(w.curfunc, ir.NewBinaryExpr(pos, ir.ONE, maskLookup, zero))
 		}
-		condition := typecheck.DefaultLit(typecheck.Expr(w.curfunc, ir.NewLogicalExpr(pos, ir.OANDAND, boundsCheck, maskCheck)), nil)
+		condition := typecheck.DefaultLitFor(w.curfunc.Target, typecheck.Expr(w.curfunc, ir.NewLogicalExpr(pos, ir.OANDAND, boundsCheck, maskCheck)), nil)
 		sw.Compiled.Append(ir.NewIfStmt(pos, condition, resultBody, nil))
 	} else {
 		sw.Compiled.Append(ir.NewIfStmt(pos, boundsCheck, resultBody, nil))
@@ -728,15 +729,15 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 	s.srcName = origSrc
 	s.srcName = w.walkExpr(s.srcName, sw.PtrInit())
 	s.srcName = w.copyExpr(s.srcName, s.srcName.Type(), &sw.Compiled)
-	s.okName = typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TBOOL])
-	s.itabName = typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TUINT8].PtrTo())
+	s.okName = typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TBOOL))
+	s.itabName = typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TUINT8).PtrTo())
 
 	// Get interface descriptor word.
 	// For empty interfaces this will be the type.
 	// For non-empty interfaces this will be the itab.
-	srcItab := ir.NewUnaryExpr(base.Pos, ir.OITAB, s.srcName)
-	srcData := ir.NewUnaryExpr(base.Pos, ir.OIDATA, s.srcName)
-	srcData.SetType(types.Types[types.TUINT8].PtrTo())
+	srcItab := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OITAB, s.srcName)
+	srcData := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OIDATA, s.srcName)
+	srcData.SetType(w.curfunc.Target.Type(types.TUINT8).PtrTo())
 	srcData.SetTypecheck(1)
 
 	// For empty interfaces, do:
@@ -745,16 +746,16 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 	//     }
 	//     h := e._type.hash
 	// Use a similar strategy for non-empty interfaces.
-	ifNil := ir.NewIfStmt(base.Pos, nil, nil, nil)
-	ifNil.Cond = ir.NewBinaryExpr(base.Pos, ir.OEQ, srcItab, typecheck.NodNil())
-	base.Pos = base.Pos.WithNotStmt() // disable statement marks after the first check.
+	ifNil := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+	ifNil.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OEQ, srcItab, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos))
+	ir.SetPosValue(w.curfunc.Target, w.curfunc.Target.Pos.WithNotStmt()) // disable statement marks after the first check.
 	ifNil.Cond = typecheck.Expr(w.curfunc, ifNil.Cond)
-	ifNil.Cond = typecheck.DefaultLit(ifNil.Cond, nil)
+	ifNil.Cond = typecheck.DefaultLitFor(w.curfunc.Target, ifNil.Cond, nil)
 	// ifNil.Nbody assigned later.
 	sw.Compiled.Append(ifNil)
 
 	// Load hash from type or itab.
-	dotHash := typeHashFieldOf(base.Pos, srcItab)
+	dotHash := typeHashFieldOf(w.curfunc.Target, w.curfunc.Target.Pos, srcItab)
 	s.hashName = w.copyExpr(dotHash, dotHash.Type(), &sw.Compiled)
 
 	// Make a label for each case body.
@@ -764,7 +765,7 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 	}
 
 	// "jump" to execute if no case matches.
-	br := ir.NewBranchStmt(base.Pos, ir.OBREAK, nil)
+	br := ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil)
 
 	// Assemble a list of all the types we're looking for.
 	// This pass flattens the case lists, as well as handles
@@ -840,7 +841,7 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 			var clauses []typeClause
 			for _, c := range concreteCases {
 				as := ir.NewAssignListStmt(c.pos, ir.OAS2,
-					[]ir.Node{ir.BlankNode, s.okName},                               // _, ok =
+					[]ir.Node{w.curfunc.Target.BlankNode, s.okName},                 // _, ok =
 					[]ir.Node{ir.NewTypeAssertExpr(c.pos, s.srcName, c.typ.Type())}) // iface.(type)
 				nif := ir.NewIfStmt(c.pos, s.okName, []ir.Node{c.jmp}, nil)
 				clauses = append(clauses, typeClause{
@@ -865,43 +866,44 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 		if len(interfaceCases) > 0 {
 
 			// Build an internal/abi.InterfaceSwitch descriptor to pass to the runtime.
-			lsym := types.LocalPkg.Lookup(fmt.Sprintf(".interfaceSwitch.%d", interfaceSwitchGen)).LinksymABI(obj.ABI0)
-			interfaceSwitchGen++
-			c := rttype.NewCursor(lsym, 0, rttype.InterfaceSwitch)
+			lsym := w.curfunc.Target.LocalPkg.Lookup(fmt.Sprintf(".interfaceSwitch.%d", w.curfunc.Target.InterfaceSwitchGen)).LinksymABI(obj.ABI0)
+			w.curfunc.Target.InterfaceSwitchGen++
+			rt := rttype.For(w.curfunc.Target)
+			c := rttype.NewCursor(w.curfunc.Target.Ctxt, lsym, 0, rt.InterfaceSwitch)
 			c.Field("Cache").WritePtr(typecheck.LookupRuntimeVar("emptyInterfaceSwitchCache"))
 			c.Field("NCases").WriteInt(int64(len(interfaceCases)))
 			array, sizeDelta := c.Field("Cases").ModifyArray(len(interfaceCases))
 			for i, c := range interfaceCases {
-				array.Elem(i).WritePtr(reflectdata.TypeLinksym(c.typ.Type()))
+				array.Elem(i).WritePtr(reflectdata.TypeLinksym(w.curfunc.Target, c.typ.Type()))
 			}
-			objw.Global(lsym, int32(rttype.InterfaceSwitch.Size()+sizeDelta), obj.LOCAL)
+			objw.Global(w.curfunc.Target.Ctxt, lsym, int32(rt.InterfaceSwitch.Size()+sizeDelta), obj.LOCAL)
 			// The GC only needs to see the first pointer in the structure (all the others
 			// are to static locations). So the InterfaceSwitch type itself is fine, even
 			// though it might not cover the whole array we wrote above.
-			lsym.Gotype = reflectdata.TypeLinksym(rttype.InterfaceSwitch)
+			lsym.Gotype = reflectdata.TypeLinksym(w.curfunc.Target, rt.InterfaceSwitch)
 
 			// Call runtime to do switch
 			// case, itab = runtime.interfaceSwitch(&descriptor, typeof(arg))
 			var typeArg ir.Node
 			if s.srcName.Type().IsEmptyInterface() {
-				typeArg = ir.NewConvExpr(base.Pos, ir.OCONVNOP, types.Types[types.TUINT8].PtrTo(), srcItab)
+				typeArg = ir.NewConvExpr(w.curfunc.Target.Pos, ir.OCONVNOP, w.curfunc.Target.Type(types.TUINT8).PtrTo(), srcItab)
 			} else {
-				typeArg = itabType(srcItab)
+				typeArg = itabType(w.curfunc.Target, srcItab)
 			}
-			caseVar := typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TINT])
-			isw := ir.NewInterfaceSwitchStmt(base.Pos, caseVar, s.itabName, typeArg, dotHash, lsym)
+			caseVar := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+			isw := ir.NewInterfaceSwitchStmt(w.curfunc.Target.Pos, caseVar, s.itabName, typeArg, dotHash, lsym)
 			sw.Compiled.Append(isw)
 
 			// Switch on the result of the call (or cache lookup).
 			var newCases []*ir.CaseClause
 			for i, c := range interfaceCases {
 				newCases = append(newCases, &ir.CaseClause{
-					List: []ir.Node{ir.NewInt(base.Pos, int64(i))},
+					List: []ir.Node{ir.NewInt(w.curfunc.Target.Pos, int64(i))},
 					Body: []ir.Node{c.jmp},
 				})
 			}
 			// TODO: add len(newCases) case, mark switch as bounded
-			sw2 := ir.NewSwitchStmt(base.Pos, caseVar, newCases)
+			sw2 := ir.NewSwitchStmt(w.curfunc.Target.Pos, caseVar, newCases)
 			sw.Compiled.Append(typecheck.Stmt(w.curfunc, sw2))
 			interfaceCases = interfaceCases[:0]
 		}
@@ -923,7 +925,7 @@ caseLoop:
 			dot.SetTypecheck(1)
 
 			as := ir.NewAssignListStmt(c.pos, ir.OAS2, nil, nil)
-			as.Lhs = []ir.Node{ir.BlankNode, s.okName} // _, ok =
+			as.Lhs = []ir.Node{w.curfunc.Target.BlankNode, s.okName} // _, ok =
 			if c.val != nil {
 				as.Lhs[0] = c.val // tmpVar, ok =
 			}
@@ -988,7 +990,7 @@ caseLoop:
 								typ = srcItab
 							} else {
 								// I->E, load type out of itab
-								typ = itabType(srcItab)
+								typ = itabType(w.curfunc.Target, srcItab)
 								typ.SetPos(ncase.Pos())
 							}
 							val = ir.NewBinaryExpr(ncase.Pos(), ir.OMAKEFACE, typ, srcData)
@@ -1036,33 +1038,29 @@ caseLoop:
 	sw.Cases = nil
 }
 
-var interfaceSwitchGen int
-
 // typeHashFieldOf returns an expression to select the type hash field
 // from an interface's descriptor word (whether a *runtime._type or
 // *runtime.itab pointer).
-func typeHashFieldOf(pos src.XPos, itab *ir.UnaryExpr) *ir.SelectorExpr {
+func typeHashFieldOf(target *ir.Package, pos src.XPos, itab *ir.UnaryExpr) *ir.SelectorExpr {
 	if itab.Op() != ir.OITAB {
 		base.Fatalf("expected OITAB, got %v", itab.Op())
 	}
 	var hashField *types.Field
 	if itab.X.Type().IsEmptyInterface() {
 		// runtime._type's hash field
-		if rtypeHashField == nil {
-			rtypeHashField = runtimeField("hash", rttype.Type.OffsetOf("Hash"), types.Types[types.TUINT32])
+		if target.RTypeHashField == nil {
+			target.RTypeHashField = runtimeField(target, "hash", rttype.For(target).Type.OffsetOf("Hash"), target.Type(types.TUINT32))
 		}
-		hashField = rtypeHashField
+		hashField = target.RTypeHashField
 	} else {
 		// runtime.itab's hash field
-		if itabHashField == nil {
-			itabHashField = runtimeField("hash", rttype.ITab.OffsetOf("Hash"), types.Types[types.TUINT32])
+		if target.ItabHashField == nil {
+			target.ItabHashField = runtimeField(target, "hash", rttype.For(target).ITab.OffsetOf("Hash"), target.Type(types.TUINT32))
 		}
-		hashField = itabHashField
+		hashField = target.ItabHashField
 	}
 	return boundedDotPtr(pos, itab, hashField)
 }
-
-var rtypeHashField, itabHashField *types.Field
 
 // A typeSwitch walks a type switch.
 type typeSwitch struct {
@@ -1102,13 +1100,13 @@ func (s *typeSwitch) flush(walkstate *walkState, cc []typeClause, compiled *ir.N
 	}
 	binarySearch(walkstate.curfunc, len(cc), compiled,
 		func(i int) ir.Node {
-			return ir.NewBinaryExpr(base.Pos, ir.OLE, s.hashName, ir.NewInt(base.Pos, int64(cc[i-1].hash)))
+			return ir.NewBinaryExpr(walkstate.curfunc.Target.Pos, ir.OLE, s.hashName, ir.NewInt(walkstate.curfunc.Target.Pos, int64(cc[i-1].hash)))
 		},
 		func(i int, nif *ir.IfStmt) {
 			// TODO(mdempsky): Omit hash equality check if
 			// there's only one type.
 			c := cc[i]
-			nif.Cond = ir.NewBinaryExpr(base.Pos, ir.OEQ, s.hashName, ir.NewInt(base.Pos, int64(c.hash)))
+			nif.Cond = ir.NewBinaryExpr(walkstate.curfunc.Target.Pos, ir.OEQ, s.hashName, ir.NewInt(walkstate.curfunc.Target.Pos, int64(c.hash)))
 			nif.Body.Append(c.body.Take()...)
 		},
 	)
@@ -1117,7 +1115,7 @@ func (s *typeSwitch) flush(walkstate *walkState, cc []typeClause, compiled *ir.N
 // Try to implement the clauses with a jump table. Returns true if successful.
 func (s *typeSwitch) tryJumpTable(walkstate *walkState, cc []typeClause, out *ir.Nodes) bool {
 	const minCases = 5 // have at least minCases cases in the switch
-	if base.Flag.N != 0 || !ssagen.Arch.LinkArch.CanJumpTable || base.Ctxt.Retpoline {
+	if walkstate.curfunc.Target.Flags.N != 0 || !walkstate.curfunc.Target.Ctxt.Arch.CanJumpTable || walkstate.curfunc.Target.Ctxt.Retpoline {
 		return false
 	}
 	if len(cc) < minCases {
@@ -1149,13 +1147,13 @@ func (s *typeSwitch) tryJumpTable(walkstate *walkState, cc []typeClause, out *ir
 			// All hashes are distinct. Use these values of b and i.
 			h := s.hashName
 			if i != 0 {
-				h = ir.NewBinaryExpr(base.Pos, ir.ORSH, h, ir.NewInt(base.Pos, int64(i)))
+				h = ir.NewBinaryExpr(walkstate.curfunc.Target.Pos, ir.ORSH, h, ir.NewInt(walkstate.curfunc.Target.Pos, int64(i)))
 			}
-			h = ir.NewBinaryExpr(base.Pos, ir.OAND, h, ir.NewInt(base.Pos, int64(1<<b-1)))
+			h = ir.NewBinaryExpr(walkstate.curfunc.Target.Pos, ir.OAND, h, ir.NewInt(walkstate.curfunc.Target.Pos, int64(1<<b-1)))
 			h = typecheck.Expr(walkstate.curfunc, h)
 
 			// Build jump table.
-			jt := ir.NewJumpTableStmt(base.Pos, h)
+			jt := ir.NewJumpTableStmt(walkstate.curfunc.Target.Pos, h)
 			jt.Cases = make([]constant.Value, 1<<b)
 			jt.Targets = make([]*types.Sym, 1<<b)
 			out.Append(jt)
@@ -1168,20 +1166,20 @@ func (s *typeSwitch) tryJumpTable(walkstate *walkState, cc []typeClause, out *ir
 			}
 			// This statement is not reachable, but it will make it obvious that we don't
 			// fall through to the first case.
-			out.Append(ir.NewBranchStmt(base.Pos, ir.OGOTO, noMatch))
+			out.Append(ir.NewBranchStmt(walkstate.curfunc.Target.Pos, ir.OGOTO, noMatch))
 
 			// Emit each of the actual cases.
 			for _, c := range cc {
 				h := c.hash >> i & (1<<b - 1)
 				label := walkstate.autoLabel(".s")
 				jt.Targets[h] = label
-				out.Append(ir.NewLabelStmt(base.Pos, label))
+				out.Append(ir.NewLabelStmt(walkstate.curfunc.Target.Pos, label))
 				out.Append(c.body...)
 				// We reach here if the hash matches but the type equality test fails.
-				out.Append(ir.NewBranchStmt(base.Pos, ir.OGOTO, noMatch))
+				out.Append(ir.NewBranchStmt(walkstate.curfunc.Target.Pos, ir.OGOTO, noMatch))
 			}
 			// Emit point to go to if type doesn't match any case.
-			out.Append(ir.NewLabelStmt(base.Pos, noMatch))
+			out.Append(ir.NewLabelStmt(walkstate.curfunc.Target.Pos, noMatch))
 			return true
 		}
 	}
@@ -1206,11 +1204,11 @@ func binarySearch(curfunc *ir.Func, n int, out *ir.Nodes, less func(i int) ir.No
 		n := hi - lo
 		if n < binarySearchMin {
 			for i := lo; i < hi; i++ {
-				nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
+				nif := ir.NewIfStmt(curfunc.Target.Pos, nil, nil, nil)
 				leaf(i, nif)
-				base.Pos = base.Pos.WithNotStmt()
+				ir.SetPosValue(curfunc.Target, curfunc.Target.Pos.WithNotStmt())
 				nif.Cond = typecheck.Expr(curfunc, nif.Cond)
-				nif.Cond = typecheck.DefaultLit(nif.Cond, nil)
+				nif.Cond = typecheck.DefaultLitFor(curfunc.Target, nif.Cond, nil)
 				out.Append(nif)
 				out = &nif.Else
 			}
@@ -1218,11 +1216,11 @@ func binarySearch(curfunc *ir.Func, n int, out *ir.Nodes, less func(i int) ir.No
 		}
 
 		half := lo + n/2
-		nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
+		nif := ir.NewIfStmt(curfunc.Target.Pos, nil, nil, nil)
 		nif.Cond = less(half)
-		base.Pos = base.Pos.WithNotStmt()
+		ir.SetPosValue(curfunc.Target, curfunc.Target.Pos.WithNotStmt())
 		nif.Cond = typecheck.Expr(curfunc, nif.Cond)
-		nif.Cond = typecheck.DefaultLit(nif.Cond, nil)
+		nif.Cond = typecheck.DefaultLitFor(curfunc.Target, nif.Cond, nil)
 		do(lo, half, &nif.Body)
 		do(half, hi, &nif.Else)
 		out.Append(nif)
@@ -1235,7 +1233,7 @@ func stringSearch(curfunc *ir.Func, expr ir.Node, cc []exprClause, out *ir.Nodes
 	if len(cc) < 4 {
 		// Short list, just do brute force equality checks.
 		for _, c := range cc {
-			nif := ir.NewIfStmt(base.Pos.WithNotStmt(), typecheck.DefaultLit(typecheck.Expr(curfunc, c.test(expr)), nil), []ir.Node{c.jmp}, nil)
+			nif := ir.NewIfStmt(curfunc.Target.Pos.WithNotStmt(), typecheck.DefaultLitFor(curfunc.Target, typecheck.Expr(curfunc, c.test(expr)), nil), []ir.Node{c.jmp}, nil)
 			out.Append(nif)
 			out = &nif.Else
 		}
@@ -1291,15 +1289,15 @@ func stringSearch(curfunc *ir.Func, expr ir.Node, cc []exprClause, out *ir.Nodes
 	}
 
 	// Convert expr to a []int8
-	slice := ir.NewConvExpr(base.Pos, ir.OSTR2BYTESTMP, types.NewSlice(types.Types[types.TINT8]), expr)
+	slice := ir.NewConvExpr(curfunc.Target.Pos, ir.OSTR2BYTESTMP, types.NewSlice(curfunc.Target.Type(types.TINT8)), expr)
 	slice.SetTypecheck(1) // legacy typechecker doesn't handle this op
 	slice.MarkNonNil()
 	// Load the byte we're splitting on.
-	load := ir.NewIndexExpr(base.Pos, slice, ir.NewInt(base.Pos, int64(bestIdx)))
+	load := ir.NewIndexExpr(curfunc.Target.Pos, slice, ir.NewInt(curfunc.Target.Pos, int64(bestIdx)))
 	// Compare with the value we're splitting on.
-	cmp := ir.Node(ir.NewBinaryExpr(base.Pos, ir.OLE, load, ir.NewInt(base.Pos, int64(bestByte))))
-	cmp = typecheck.DefaultLit(typecheck.Expr(curfunc, cmp), nil)
-	nif := ir.NewIfStmt(base.Pos, cmp, nil, nil)
+	cmp := ir.Node(ir.NewBinaryExpr(curfunc.Target.Pos, ir.OLE, load, ir.NewInt(curfunc.Target.Pos, int64(bestByte))))
+	cmp = typecheck.DefaultLitFor(curfunc.Target, typecheck.Expr(curfunc, cmp), nil)
+	nif := ir.NewIfStmt(curfunc.Target.Pos, cmp, nil, nil)
 
 	var le []exprClause
 	var gt []exprClause

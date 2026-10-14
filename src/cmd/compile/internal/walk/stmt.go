@@ -18,7 +18,7 @@ func (w *walkState) walkStmt(n ir.Node) ir.Node {
 		return n
 	}
 
-	ir.SetPos(n)
+	ir.SetPosFor(w.curfunc.Target, n)
 
 	w.walkStmtList(n.Init())
 

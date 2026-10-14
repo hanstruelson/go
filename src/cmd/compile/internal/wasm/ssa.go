@@ -221,7 +221,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	switch v.Op {
 	case ssaop.OpWasmLoweredStaticCall, ssaop.OpWasmLoweredClosureCall, ssaop.OpWasmLoweredInterCall, ssaop.OpWasmLoweredTailCall, ssaop.OpWasmLoweredTailCallInter:
 		s.PrepareCall(v)
-		if call, ok := v.Aux.(*ssa.AuxCall); ok && call.Fn == ir.Syms.Deferreturn {
+		if call, ok := v.Aux.(*ssa.AuxCall); ok && call.Fn == s.Target().Symbols.Deferreturn {
 			// The runtime needs to inject jumps to
 			// deferreturn calls using the address in
 			// _func.deferreturn. Hence, the call to
@@ -268,19 +268,19 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		s.Prog(wasm.AI64Eqz)
 		s.Prog(wasm.AIf)
 		p := s.Prog(wasm.ACALLNORESUME)
-		p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ir.Syms.SigPanic}
+		p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: s.Target().Symbols.SigPanic}
 		s.Prog(wasm.AEnd)
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 
 	case ssaop.OpWasmLoweredWB:
 		p := s.Prog(wasm.ACall)
 		// AuxInt encodes how many buffer entries we need.
-		p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ir.Syms.GCWriteBarrier[v.AuxInt-1]}
+		p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]}
 		setReg(s, v.Reg0()) // move result from wasm stack to register local
 
 	case ssaop.OpWasmI64Store8, ssaop.OpWasmI64Store16, ssaop.OpWasmI64Store32, ssaop.OpWasmI64Store, ssaop.OpWasmF32Store, ssaop.OpWasmF64Store:
@@ -440,7 +440,7 @@ func ssaGenValueOnStack(s *ssagen.State, v *ssa.Value, extend bool) {
 		if v.Type.Size() == 8 {
 			// Division of int64 needs helper function wasmDiv to handle the MinInt64 / -1 case.
 			p := s.Prog(wasm.ACall)
-			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ir.Syms.WasmDiv}
+			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: s.Target().Symbols.WasmDiv}
 			break
 		}
 		s.Prog(wasm.AI64DivS)

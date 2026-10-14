@@ -249,7 +249,7 @@ func isFixedLoad(v *ssa.Value, sym ssa.Sym, off int64) bool {
 
 		t := ti.Type.(*types.Type)
 
-		for _, f := range rttype.Type.Fields() {
+		for _, f := range rttype.For(v.Block.Func.Config.Target).Type.Fields() {
 			if f.Offset == off && copyCompatibleType(v.Type, f.Type) {
 				switch f.Sym.Name {
 				case "Size_", "PtrBytes", "Hash", "Kind_", "GCData":
@@ -265,7 +265,7 @@ func isFixedLoad(v *ssa.Value, sym ssa.Sym, off int64) bool {
 			}
 		}
 
-		if t.IsPtr() && off == rttype.PtrType.OffsetOf("Elem") {
+		if t.IsPtr() && off == rttype.For(v.Block.Func.Config.Target).PtrType.OffsetOf("Elem") {
 			return true
 		}
 
@@ -526,11 +526,11 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 					// That information is currently recorded in relocations in the dictionary,
 					// but if we perform this load at compile time then the dictionary
 					// might be dead.
-					reflectdata.MarkTypeSymUsedInInterface(r.Sym, f.Fe.Func().Linksym())
+					reflectdata.MarkTypeSymUsedInInterface(f.Fe.Func().Target, r.Sym, f.Fe.Func().Linksym())
 				} else if strings.HasPrefix(r.Sym.Name, "go:itab") {
 					// Same, but if we're using an itab we need to record that the
 					// itab._type might be put in an interface.
-					reflectdata.MarkTypeSymUsedInInterface(r.Sym, f.Fe.Func().Linksym())
+					reflectdata.MarkTypeSymUsedInInterface(f.Fe.Func().Target, r.Sym, f.Fe.Func().Linksym())
 				}
 				v.Reset(ssaop.OpAddr)
 				v.Aux = ssa.SymToAux(r.Sym)
@@ -553,7 +553,7 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 			ptrSizedOpConst = ssaop.OpConst32
 		}
 
-		for _, f := range rttype.Type.Fields() {
+		for _, f := range rttype.For(v.Block.Func.Config.Target).Type.Fields() {
 			if f.Offset == off && copyCompatibleType(v.Type, f.Type) {
 				switch f.Sym.Name {
 				case "Size_":
@@ -577,7 +577,7 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 					v.AuxInt = int64(int8(reflectdata.ABIKindOfType(t)))
 					return v
 				case "GCData":
-					gcdata, _ := reflectdata.GCSym(t, true)
+					gcdata, _ := reflectdata.GCSym(b.Func.Config.Target, t, true)
 					v.Reset(ssaop.OpAddr)
 					v.Aux = ssa.SymToAux(gcdata)
 					v.AddArg(sb)
@@ -588,9 +588,9 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 			}
 		}
 
-		if t.IsPtr() && off == rttype.PtrType.OffsetOf("Elem") {
-			elemSym := reflectdata.TypeLinksym(t.Elem())
-			reflectdata.MarkTypeSymUsedInInterface(elemSym, f.Fe.Func().Linksym())
+		if t.IsPtr() && off == rttype.For(v.Block.Func.Config.Target).PtrType.OffsetOf("Elem") {
+			elemSym := reflectdata.TypeLinksym(b.Func.Config.Target, t.Elem())
+			reflectdata.MarkTypeSymUsedInInterface(f.Fe.Func().Target, elemSym, f.Fe.Func().Linksym())
 			v.Reset(ssaop.OpAddr)
 			v.Aux = ssa.SymToAux(elemSym)
 			v.AddArg(sb)

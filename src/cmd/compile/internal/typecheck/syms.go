@@ -14,8 +14,8 @@ import (
 // LookupRuntime returns a function or variable declared in
 // _builtin/runtime.go. If types_ is non-empty, successive occurrences
 // of the "any" placeholder type will be substituted.
-func LookupRuntime(name string, types_ ...*types.Type) *ir.Name {
-	s := ir.Pkgs.Runtime.Lookup(name)
+func LookupRuntime(target *ir.Package, name string, types_ ...*types.Type) *ir.Name {
+	s := target.RuntimePkg.Lookup(name)
 	if s == nil || s.Def == nil {
 		base.Fatalf("LookupRuntime: can't find runtime.%s", name)
 	}
@@ -58,26 +58,28 @@ func AutoLabel(curfunc *ir.Func, prefix string) *types.Sym {
 	}
 	n := fn.Label
 	fn.Label++
-	return LookupNum(prefix, int(n))
+	return LookupNum(fn.Target, prefix, int(n))
 }
 
-func Lookup(name string) *types.Sym {
-	return types.LocalPkg.Lookup(name)
+func Lookup(target *ir.Package, name string) *types.Sym {
+	return target.LocalPkg.Lookup(name)
 }
 
 // InitRuntime loads the definitions for the low-level runtime functions,
 // so that the compiler can generate calls to them,
 // but does not make them visible to user code.
-func InitRuntime() {
-	base.Timer.Start("fe", "loadsys")
+func InitRuntime(target *ir.Package, timer *base.Timings) {
+	timer.Start("fe", "loadsys")
+	target.RuntimePkg = target.Pkg("go.runtime", "runtime")
+	target.RuntimePkg.Prefix = "runtime"
 
-	typs := runtimeTypes()
+	typs := runtimeTypes(target)
 	for _, d := range &runtimeDecls {
-		sym := ir.Pkgs.Runtime.Lookup(d.name)
+		sym := target.RuntimePkg.Lookup(d.name)
 		typ := typs[d.typ]
 		switch d.tag {
 		case funcTag:
-			importfunc(sym, typ)
+			importfunc(target, sym, typ)
 		case varTag:
 			importvar(sym, typ)
 		default:
@@ -106,14 +108,14 @@ func LookupRuntimeABI(name string, abi obj.ABI) *obj.LSym {
 
 // InitCoverage loads the definitions for routines called
 // by code coverage instrumentation (similar to InitRuntime above).
-func InitCoverage() {
-	typs := coverageTypes()
+func InitCoverage(target *ir.Package) {
+	typs := coverageTypes(target)
 	for _, d := range &coverageDecls {
-		sym := ir.Pkgs.Coverage.Lookup(d.name)
+		sym := target.CoveragePkg.Lookup(d.name)
 		typ := typs[d.typ]
 		switch d.tag {
 		case funcTag:
-			importfunc(sym, typ)
+			importfunc(target, sym, typ)
 		case varTag:
 			importvar(sym, typ)
 		default:
@@ -125,8 +127,8 @@ func InitCoverage() {
 // LookupCoverage looks up the Go function 'name' in package
 // runtime/coverage. This function must follow the internal calling
 // convention.
-func LookupCoverage(name string) *ir.Name {
-	sym := ir.Pkgs.Coverage.Lookup(name)
+func LookupCoverage(target *ir.Package, name string) *ir.Name {
+	sym := target.CoveragePkg.Lookup(name)
 	if sym == nil {
 		base.Fatalf("LookupCoverage: can't find runtime/coverage.%s", name)
 	}

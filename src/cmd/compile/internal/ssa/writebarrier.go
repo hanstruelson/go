@@ -134,7 +134,7 @@ func (f *Func) ComputeZeroMap(select1 []*Value) map[ID]ZeroRegion {
 				// calls to newobject, which will have result type
 				// unsafe.Pointer instead. We can't easily infer how large the
 				// allocated memory is, so just skip it.
-				if types.LocalPkg.Path == "runtime" && v.Type.IsUnsafePtr() {
+				if f.Fe.Func().Target.LocalPkg.Path == "runtime" && v.Type.IsUnsafePtr() {
 					continue
 				}
 

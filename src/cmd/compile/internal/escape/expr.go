@@ -24,11 +24,12 @@ func (e *escape) exprSkipInit(k hole, n ir.Node) {
 	if n == nil {
 		return
 	}
+	if k.target == nil {
+		k.target = e.target
+	}
 
-	lno := ir.SetPos(n)
-	defer func() {
-		base.Pos = lno
-	}()
+	lno := ir.SetPosFor(e.curfn.Target, n)
+	defer ir.SetPosValue(e.curfn.Target, lno)
 
 	if k.derefs >= 0 && !n.Type().IsUntyped() && !n.Type().HasPointers() {
 		k.dst = &e.blankLoc
@@ -298,7 +299,7 @@ func (e *escape) unsafeValue(k hole, n ir.Node) {
 		}
 	case ir.ODOTPTR:
 		n := n.(*ir.SelectorExpr)
-		if ir.IsReflectHeaderDataField(n) {
+		if ir.IsReflectHeaderDataField(e.curfn.Target, n) {
 			e.expr(k.deref(n, "reflect.Header.Data"), n.X)
 		} else {
 			e.discard(n.X)

@@ -5,7 +5,6 @@
 package ssacompile
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssaop"
 )
@@ -16,7 +15,7 @@ import (
 // A Value can be moved to any block that
 // dominates all blocks in which it is used.
 func tighten(f *ssa.Func) {
-	if base.Flag.N != 0 && len(f.Blocks) < 10000 {
+	if f.Config.Target.Flags.N != 0 && len(f.Blocks) < 10000 {
 		// Skip the optimization in -N mode, except for huge functions.
 		// Too many values live across blocks can cause pathological
 		// behavior in the register allocator (see issue 52180).

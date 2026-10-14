@@ -16,6 +16,7 @@ import (
 // computing flags/properties for the return values of a specific Go
 // function, as part of inline heuristics synthesis.
 type resultsAnalyzer struct {
+	ctx             *Context
 	fname           string
 	props           []ResultPropBits
 	values          []resultVal
@@ -41,8 +42,8 @@ type resultVal struct {
 // new list. If the function in question doesn't have any returns (or
 // any interesting returns) then the analyzer list is left as is, and
 // the result flags in "fp" are updated accordingly.
-func addResultsAnalyzer(fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, inlineMaxBudget int, nf *nameFinder) []propAnalyzer {
-	ra, props := makeResultsAnalyzer(fn, inlineMaxBudget, nf)
+func addResultsAnalyzer(ctx *Context, fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, inlineMaxBudget int, nf *nameFinder) []propAnalyzer {
+	ra, props := makeResultsAnalyzer(ctx, fn, inlineMaxBudget, nf)
 	if ra != nil {
 		analyzers = append(analyzers, ra)
 	} else {
@@ -55,7 +56,7 @@ func addResultsAnalyzer(fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, in
 // in function fn. If the function doesn't have any interesting
 // results, a nil helper is returned along with a set of default
 // result flags for the func.
-func makeResultsAnalyzer(fn *ir.Func, inlineMaxBudget int, nf *nameFinder) (*resultsAnalyzer, []ResultPropBits) {
+func makeResultsAnalyzer(ctx *Context, fn *ir.Func, inlineMaxBudget int, nf *nameFinder) (*resultsAnalyzer, []ResultPropBits) {
 	results := fn.Type().Results()
 	if len(results) == 0 {
 		return nil, nil
@@ -82,6 +83,7 @@ func makeResultsAnalyzer(fn *ir.Func, inlineMaxBudget int, nf *nameFinder) (*res
 		return nil, props
 	}
 	ra := &resultsAnalyzer{
+		ctx:             ctx,
 		props:           props,
 		values:          vals,
 		inlineMaxBudget: inlineMaxBudget,
@@ -266,7 +268,7 @@ func (ra *resultsAnalyzer) deriveReturnFlagsFromCallee(n ir.Node) (ResultPropBit
 	if cname == nil {
 		return 0, false
 	}
-	calleeProps := propsForFunc(cname.Func)
+	calleeProps := propsForFunc(ra.ctx, cname.Func)
 	if calleeProps == nil {
 		return 0, false
 	}

@@ -248,7 +248,7 @@ nextblock:
 							}
 							// TODO(1.27): investigate passing a smaller-magnitude overflow limit to addU
 							// for addWillOverflow.
-							v = addU(init.AuxInt, diff(v, init.AuxInt)/uint64(step)*uint64(step))
+							v = addU(f.Config.Target.Type(types.TINT64), init.AuxInt, diff(v, init.AuxInt)/uint64(step)*uint64(step))
 						}
 						if addWillOverflow(v, step, maxSignedValue(ind.Type)) {
 							return false
@@ -300,7 +300,7 @@ nextblock:
 							}
 							// TODO(1.27): investigate passing a smaller-magnitude underflow limit to subU
 							// for subWillUnderflow.
-							v = subU(init.AuxInt, diff(init.AuxInt, v)/uint64(-step)*uint64(-step))
+							v = subU(f.Config.Target.Type(types.TINT64), init.AuxInt, diff(init.AuxInt, v)/uint64(-step)*uint64(-step))
 						}
 						if subWillUnderflow(v, -step, minSignedValue(ind.Type)) {
 							return false
@@ -389,7 +389,7 @@ func diff(x, y int64) uint64 {
 }
 
 // addU returns x+y. Requires that x+y does not overflow an int64.
-func addU(x int64, y uint64) int64 {
+func addU(int64Type *types.Type, x int64, y uint64) int64 {
 	if y >= 1<<63 {
 		if x >= 0 {
 			base.Fatalf("addU overflowed %d + %d", x, y)
@@ -399,14 +399,14 @@ func addU(x int64, y uint64) int64 {
 		y -= 1 << 63
 	}
 	// TODO(1.27): investigate passing a smaller-magnitude overflow limit in here.
-	if addWillOverflow(x, int64(y), maxSignedValue(types.Types[types.TINT64])) {
+	if addWillOverflow(x, int64(y), maxSignedValue(int64Type)) {
 		base.Fatalf("addU overflowed %d + %d", x, y)
 	}
 	return x + int64(y)
 }
 
 // subU returns x-y. Requires that x-y does not underflow an int64.
-func subU(x int64, y uint64) int64 {
+func subU(int64Type *types.Type, x int64, y uint64) int64 {
 	if y >= 1<<63 {
 		if x < 0 {
 			base.Fatalf("subU underflowed %d - %d", x, y)
@@ -416,7 +416,7 @@ func subU(x int64, y uint64) int64 {
 		y -= 1 << 63
 	}
 	// TODO(1.27): investigate passing a smaller-magnitude underflow limit in here.
-	if subWillUnderflow(x, int64(y), minSignedValue(types.Types[types.TINT64])) {
+	if subWillUnderflow(x, int64(y), minSignedValue(int64Type)) {
 		base.Fatalf("subU underflowed %d - %d", x, y)
 	}
 	return x - int64(y)

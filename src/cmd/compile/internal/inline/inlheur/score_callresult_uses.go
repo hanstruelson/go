@@ -37,6 +37,7 @@ type resultPropAndCS struct {
 }
 
 type resultUseAnalyzer struct {
+	ctx           *Context
 	resultNameTab map[*ir.Name]resultPropAndCS
 	fn            *ir.Func
 	cstab         CallSiteTab
@@ -47,8 +48,9 @@ type resultUseAnalyzer struct {
 // and tries to update the scores of calls based on how their results
 // are used in the function.
 func (csa *callSiteAnalyzer) rescoreBasedOnCallResultUses(fn *ir.Func, resultNameTab map[*ir.Name]resultPropAndCS, cstab CallSiteTab) {
-	enableDebugTraceIfEnv()
+	enableDebugTraceIfEnv(csa.ctx.Target)
 	rua := &resultUseAnalyzer{
+		ctx:              csa.ctx,
 		resultNameTab:    resultNameTab,
 		fn:               fn,
 		cstab:            cstab,
@@ -77,7 +79,7 @@ func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[
 	// variables in question are not newly defined, then we'll receive
 	// an empty list here.
 	//
-	names, autoTemps, props := namesDefined(cs)
+	names, autoTemps, props := namesDefined(csa.ctx, cs)
 	if len(names) == 0 {
 		return resultNameTab
 	}
@@ -144,13 +146,13 @@ func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[
 // to the user-level variables. In such cases we return
 // first the user-level variable (in the first func result)
 // and then the auto-temp name in the second result.
-func namesDefined(cs *CallSite) ([]*ir.Name, []*ir.Name, *FuncProps) {
+func namesDefined(ctx *Context, cs *CallSite) ([]*ir.Name, []*ir.Name, *FuncProps) {
 	// If this call doesn't feed into an assignment (and of course not
 	// all calls do), then we don't have anything to work with here.
 	if cs.Assign == nil {
 		return nil, nil, nil
 	}
-	funcInlHeur, ok := fpmap[cs.Callee]
+	funcInlHeur, ok := ctx.fpmap[cs.Callee]
 	if !ok {
 		// TODO: add an assert/panic here.
 		return nil, nil, nil
@@ -269,7 +271,7 @@ func (rua *resultUseAnalyzer) callTargetCheckResults(call ir.Node) {
 		if cs := rua.returnHasProp(rname, ResultIsConcreteTypeConvertedToInterface); cs != nil {
 
 			adj := returnFeedsConcreteToInterfaceCallAdj
-			cs.Score, cs.ScoreMask = adjustScore(adj, cs.Score, cs.ScoreMask)
+			cs.Score, cs.ScoreMask = adjustScore(rua.ctx, adj, cs.Score, cs.ScoreMask)
 		}
 	case ir.OCALLFUNC:
 		if debugTrace&debugTraceScoring != 0 {
@@ -284,10 +286,10 @@ func (rua *resultUseAnalyzer) callTargetCheckResults(call ir.Node) {
 		}
 		if cs := rua.returnHasProp(rname, ResultAlwaysSameInlinableFunc); cs != nil {
 			adj := returnFeedsInlinableFuncToIndCallAdj
-			cs.Score, cs.ScoreMask = adjustScore(adj, cs.Score, cs.ScoreMask)
+			cs.Score, cs.ScoreMask = adjustScore(rua.ctx, adj, cs.Score, cs.ScoreMask)
 		} else if cs := rua.returnHasProp(rname, ResultAlwaysSameFunc); cs != nil {
 			adj := returnFeedsFuncToIndCallAdj
-			cs.Score, cs.ScoreMask = adjustScore(adj, cs.Score, cs.ScoreMask)
+			cs.Score, cs.ScoreMask = adjustScore(rua.ctx, adj, cs.Score, cs.ScoreMask)
 
 		}
 	}
@@ -345,7 +347,7 @@ func (rua *resultUseAnalyzer) foldCheckResults(cond ir.Node) {
 		return
 	}
 	adj := returnFeedsConstToIfAdj
-	cs.Score, cs.ScoreMask = adjustScore(adj, cs.Score, cs.ScoreMask)
+	cs.Score, cs.ScoreMask = adjustScore(rua.ctx, adj, cs.Score, cs.ScoreMask)
 }
 
 func collectNamesUsed(expr ir.Node) []*ir.Name {
@@ -401,7 +403,7 @@ func (rua *resultUseAnalyzer) getCallResultName(ce *ir.CallExpr) *ir.Name {
 		if !ok {
 			return nil
 		}
-		names, _, _ := namesDefined(cs)
+		names, _, _ := namesDefined(rua.ctx, cs)
 		if len(names) == 0 {
 			return nil
 		}

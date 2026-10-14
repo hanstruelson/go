@@ -7,13 +7,9 @@ package types
 import (
 	"cmd/internal/obj"
 	"cmd/internal/objabi"
-	"fmt"
 	"strconv"
 	"sync"
 )
-
-// pkgMap maps a package path to a package.
-var pkgMap = make(map[string]*Pkg)
 
 type Pkg struct {
 	Path    string // string literal used in import statement, e.g. "internal/runtime/sys"
@@ -23,19 +19,18 @@ type Pkg struct {
 	Pathsym *obj.LSym
 
 	Direct bool // imported directly
+	Local  bool // package being compiled in this compiler context
+
+	SlicedataGen int // next generated mutable string or embed data symbol suffix
 }
 
-// NewPkg returns a new Pkg for the given package path and name.
-// Unless name is the empty string, if the package exists already,
-// the existing package name and the provided name must match.
-func NewPkg(path, name string) *Pkg {
-	if p := pkgMap[path]; p != nil {
-		if name != "" && p.Name != name {
-			panic(fmt.Sprintf("conflicting package names %s and %s for path %q", p.Name, name, path))
-		}
-		return p
-	}
+// NewPkgInstance returns a fresh package object. Package identity belongs to
+// the compilation context, which keeps its own package registry.
+func NewPkgInstance(path, name string) *Pkg {
+	return newPkg(path, name)
+}
 
+func newPkg(path, name string) *Pkg {
 	p := new(Pkg)
 	p.Path = path
 	p.Name = name
@@ -49,13 +44,7 @@ func NewPkg(path, name string) *Pkg {
 		p.Prefix = objabi.PathToPrefix(path)
 	}
 	p.Syms = make(map[string]*Sym)
-	pkgMap[path] = p
-
 	return p
-}
-
-func PkgMap() map[string]*Pkg {
-	return pkgMap
 }
 
 var nopkg = &Pkg{
@@ -107,9 +96,9 @@ func (pkg *Pkg) LookupNum(prefix string, n int) *Sym {
 }
 
 // Selector looks up a selector identifier.
-func (pkg *Pkg) Selector(name string) *Sym {
+func (pkg *Pkg) Selector(localPkg *Pkg, name string) *Sym {
 	if IsExported(name) {
-		pkg = LocalPkg
+		pkg = localPkg
 	}
 	return pkg.Lookup(name)
 }

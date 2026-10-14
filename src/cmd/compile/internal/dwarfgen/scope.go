@@ -7,7 +7,6 @@ package dwarfgen
 import (
 	"sort"
 
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/internal/dwarf"
 	"cmd/internal/obj"
@@ -15,13 +14,13 @@ import (
 )
 
 // See golang.org/issue/20390.
-func xposBefore(p, q src.XPos) bool {
-	return base.Ctxt.PosTable.Pos(p).Before(base.Ctxt.PosTable.Pos(q))
+func xposBefore(ctxt *obj.Link, p, q src.XPos) bool {
+	return ctxt.PosTable.Pos(p).Before(ctxt.PosTable.Pos(q))
 }
 
-func findScope(marks []ir.Mark, pos src.XPos) ir.ScopeID {
+func findScope(ctxt *obj.Link, marks []ir.Mark, pos src.XPos) ir.ScopeID {
 	i := sort.Search(len(marks), func(i int) bool {
-		return xposBefore(pos, marks[i].Pos)
+		return xposBefore(ctxt, pos, marks[i].Pos)
 	})
 	if i == 0 {
 		return 0
@@ -29,7 +28,7 @@ func findScope(marks []ir.Mark, pos src.XPos) ir.ScopeID {
 	return marks[i-1].Scope
 }
 
-func assembleScopes(fnsym *obj.LSym, fn *ir.Func, dwarfVars []*dwarf.Var, varScopes []ir.ScopeID) []dwarf.Scope {
+func assembleScopes(ctxt *obj.Link, fnsym *obj.LSym, fn *ir.Func, dwarfVars []*dwarf.Var, varScopes []ir.ScopeID) []dwarf.Scope {
 	// Initialize the DWARF scope tree based on lexical scopes.
 	dwarfScopes := make([]dwarf.Scope, 1+len(fn.Parents))
 	for i, parent := range fn.Parents {
@@ -38,7 +37,7 @@ func assembleScopes(fnsym *obj.LSym, fn *ir.Func, dwarfVars []*dwarf.Var, varSco
 
 	scopeVariables(dwarfVars, varScopes, dwarfScopes, fnsym.ABI() != obj.ABI0)
 	if fnsym.Func().Text != nil {
-		scopePCs(fnsym, fn.Marks, dwarfScopes)
+		scopePCs(ctxt, fnsym, fn.Marks, dwarfScopes)
 	}
 	return compactScopes(dwarfScopes)
 }
@@ -65,21 +64,21 @@ func scopeVariables(dwarfVars []*dwarf.Var, varScopes []ir.ScopeID, dwarfScopes 
 }
 
 // scopePCs assigns PC ranges to their scopes.
-func scopePCs(fnsym *obj.LSym, marks []ir.Mark, dwarfScopes []dwarf.Scope) {
+func scopePCs(ctxt *obj.Link, fnsym *obj.LSym, marks []ir.Mark, dwarfScopes []dwarf.Scope) {
 	// If there aren't any child scopes (in particular, when scope
 	// tracking is disabled), we can skip a whole lot of work.
 	if len(marks) == 0 {
 		return
 	}
 	p0 := fnsym.Func().Text
-	scope := findScope(marks, p0.Pos)
+	scope := findScope(ctxt, marks, p0.Pos)
 	for p := p0; p != nil; p = p.Link {
 		if p.Pos == p0.Pos {
 			continue
 		}
 		dwarfScopes[scope].AppendRange(dwarf.Range{Start: p0.Pc, End: p.Pc})
 		p0 = p
-		scope = findScope(marks, p0.Pos)
+		scope = findScope(ctxt, marks, p0.Pos)
 	}
 	if p0.Pc < fnsym.Size {
 		dwarfScopes[scope].AppendRange(dwarf.Range{Start: p0.Pc, End: fnsym.Size})

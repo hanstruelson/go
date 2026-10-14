@@ -6,12 +6,14 @@ package midway
 
 import (
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
 	"cmd/compile/internal/types2"
 )
 
 // Analyzer holds the state for SIMD dependency analysis
 type Analyzer struct {
+	target             *ir.Package
 	pkg                *types2.Package
 	info               *types2.Info
 	isDependentObj     map[types2.Object]bool // does an Object depend on a simd type in some way?
@@ -21,8 +23,9 @@ type Analyzer struct {
 	inSimd             bool                   // true if the current package is the simd package (which is a special case)
 }
 
-func NewAnalyzer(pkg *types2.Package, info *types2.Info) *Analyzer {
+func NewAnalyzer(target *ir.Package, pkg *types2.Package, info *types2.Info) *Analyzer {
 	return &Analyzer{
+		target:             target,
 		pkg:                pkg,
 		info:               info,
 		isDependentObj:     make(map[types2.Object]bool),
@@ -52,7 +55,7 @@ func (a *Analyzer) Analyze(files []*syntax.File) bool {
 		if hdmsize == len(a.hasDependentMethod) {
 			break
 		}
-		if base.Debug.Simd > 0 {
+		if a.target.Debug.Simd > 0 {
 			base.Warn("hasDependentMethod increased from %d to %d", hdmsize, len(a.hasDependentMethod))
 		}
 		hdmsize = len(a.hasDependentMethod)
@@ -173,13 +176,13 @@ func (a *Analyzer) markIfDependent(obj types2.Object) bool {
 	}
 
 	if isDep {
-		if base.Debug.Simd > 0 {
+		if a.target.Debug.Simd > 0 {
 			base.Warn("%s: %v is simd-dependent", obj.Pos().String(), obj)
 		}
 		a.isDependentObj[obj] = true
 	}
 	if isDepMeth {
-		if base.Debug.Simd > 0 {
+		if a.target.Debug.Simd > 0 {
 			base.Warn("%s: %v is simd-dependent method", obj.Pos().String(), obj)
 		}
 		a.isDependentMethod[obj] = true

@@ -10,9 +10,6 @@ import (
 	"slices"
 )
 
-// If true, check poset integrity after every mutation
-var DebugPoset = false
-
 // Poset is a union-find data structure that can represent a partially ordered set
 // of SSA values. Given a binary relation that creates a partial order (eg: '<'),
 // clients can record relations between SSA values using SetOrder, and later
@@ -54,6 +51,7 @@ var DebugPoset = false
 //	    /  \
 //	   J    K
 type Poset struct {
+	debug   bool              // check integrity after every mutation
 	lastidx uint32            // last generated dense index
 	values  map[ID]uint32     // map SSA values to dense indexes
 	nodes   []posetNode       // nodes (in all DAGs)
@@ -695,7 +693,7 @@ func (po *Poset) DotDump(fn string, title string) error {
 // to tell.
 // Complexity is O(n).
 func (po *Poset) Ordered(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -716,7 +714,7 @@ func (po *Poset) Ordered(n1, n2 *Value) bool {
 // to tell.
 // Complexity is O(n).
 func (po *Poset) OrderedOrEqual(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -737,7 +735,7 @@ func (po *Poset) OrderedOrEqual(n1, n2 *Value) bool {
 // to tell.
 // Complexity is O(1).
 func (po *Poset) Equal(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -755,7 +753,7 @@ func (po *Poset) Equal(n1, n2 *Value) bool {
 // Complexity is O(n) (because it internally calls Ordered to see if we
 // can infer n1!=n2 from n1<n2 or n2<n1).
 func (po *Poset) NonEqual(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -915,7 +913,7 @@ func (po *Poset) setOrder(n1, n2 *Value, strict bool) bool {
 // SetOrder records that n1<n2. Returns false if this is a contradiction
 // Complexity is O(1) if n2 was never seen before, or O(n) otherwise.
 func (po *Poset) SetOrder(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -927,7 +925,7 @@ func (po *Poset) SetOrder(n1, n2 *Value) bool {
 // SetOrderOrEqual records that n1<=n2. Returns false if this is a contradiction
 // Complexity is O(1) if n2 was never seen before, or O(n) otherwise.
 func (po *Poset) SetOrderOrEqual(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -940,7 +938,7 @@ func (po *Poset) SetOrderOrEqual(n1, n2 *Value) bool {
 // (that is, if it is already recorded that n1<n2 or n2<n1).
 // Complexity is O(1) if n2 was never seen before, or O(n) otherwise.
 func (po *Poset) SetEqual(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -1000,7 +998,7 @@ func (po *Poset) SetEqual(n1, n2 *Value) bool {
 // (that is, if it is already recorded that n1==n2).
 // Complexity is O(n).
 func (po *Poset) SetNonEqual(n1, n2 *Value) bool {
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 	if n1.ID == n2.ID {
@@ -1060,7 +1058,7 @@ func (po *Poset) Undo() {
 	if len(po.undo) == 0 {
 		panic("empty undo stack")
 	}
-	if DebugPoset {
+	if po.debug {
 		defer po.CheckIntegrity()
 	}
 
@@ -1137,7 +1135,7 @@ func (po *Poset) Undo() {
 		}
 	}
 
-	if DebugPoset && po.CheckEmpty() != nil {
+	if po.debug && po.CheckEmpty() != nil {
 		panic("poset not empty at the end of undo")
 	}
 }

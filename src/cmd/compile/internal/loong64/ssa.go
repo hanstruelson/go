@@ -157,7 +157,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		for _, a := range v.Block.Func.RegArgs {
 			// Pass the spill/unspill information along to the assembler, offset by size of
 			// the saved LR slot.
-			addr := ssagen.SpillSlotAddr(a, loong64.REGSP, base.Ctxt.Arch.FixedFrameSize)
+			addr := ssagen.SpillSlotAddr(a, loong64.REGSP, s.Target().Ctxt.Arch.FixedFrameSize)
 			s.FuncInfo().AddSpill(
 				obj.RegSpill{Reg: a.Reg, Addr: addr, Unspill: loadByType(a.Type, a.Reg), Spill: storeByType(a.Type, a.Reg)})
 		}
@@ -621,7 +621,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		}
 
 		//    ADDV    n - n%loopSize, ptrReg, endReg
-		//    MOVBU   ir.Syms.Loong64HasLSX, flagReg
+		//    MOVBU   s.Target().Symbols.Loong64HasLSX, flagReg
 		//    BNE     flagReg, lsxInit
 		// genericLoop:
 		//    for off = 0; off < loopSize; off += 8 {
@@ -658,7 +658,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p2 := s.Prog(loong64.AMOVBU)
 		p2.From.Type = obj.TYPE_MEM
 		p2.From.Name = obj.NAME_EXTERN
-		p2.From.Sym = ir.Syms.Loong64HasLSX
+		p2.From.Sym = s.Target().Symbols.Loong64HasLSX
 		p2.To.Type = obj.TYPE_REG
 		p2.To.Reg = flagReg
 
@@ -847,7 +847,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.OpLOONG64LoweredPubBarrier:
 		// DBAR 0x1A
@@ -939,7 +939,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.PanicBounds
+		p.To.Sym = s.Target().Symbols.PanicBounds
 
 	case ssaop.OpLOONG64LoweredAtomicLoad8, ssaop.OpLOONG64LoweredAtomicLoad32, ssaop.OpLOONG64LoweredAtomicLoad64:
 		// MOVB	(Rarg0), Rout
@@ -1190,7 +1190,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpLOONG64FPFlagTrue,
@@ -1223,7 +1223,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(loong64.AMOVV)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()

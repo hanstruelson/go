@@ -6,6 +6,7 @@ package compare
 
 import (
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
@@ -13,6 +14,8 @@ import (
 	"cmd/internal/sys"
 	"testing"
 )
+
+var testTarget *ir.Package
 
 type typefn func() *types.Type
 
@@ -24,7 +27,9 @@ func init() {
 	types.RegSize = 8
 	types.MaxWidth = 1 << 50
 	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
-	typecheck.InitUniverse()
+	testTarget = &ir.Package{LocalPkg: types.NewPkgInstance("compare/test", "test")}
+	testTarget.LocalPkg.Local = true
+	typecheck.InitUniverse(testTarget)
 }
 
 func TestEqStructCost(t *testing.T) {
@@ -78,21 +83,21 @@ func TestEqStructCost(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fields := make([]*types.Field, len(tc.fieldTypes))
 			for i, ftyp := range tc.fieldTypes {
-				fields[i] = types.NewField(src.NoXPos, typecheck.LookupNum("f", i), ftyp)
+				fields[i] = types.NewField(src.NoXPos, typecheck.LookupNum(testTarget, "f", i), ftyp)
 			}
 			typ := types.NewStruct(fields)
 			types.CalcSize(typ)
 
 			want := tc.cost
 			base.Ctxt.Arch.CanMergeLoads = true
-			actual := EqStructCost(typ)
+			actual := EqStructCost(base.Ctxt.Arch, typ)
 			if actual != want {
 				t.Errorf("CanMergeLoads=true EqStructCost(%v) = %d, want %d", typ, actual, want)
 			}
 
 			base.Ctxt.Arch.CanMergeLoads = false
 			want = tc.nonMergeLoadCost
-			actual = EqStructCost(typ)
+			actual = EqStructCost(base.Ctxt.Arch, typ)
 			if actual != want {
 				t.Errorf("CanMergeLoads=false EqStructCost(%v) = %d, want %d", typ, actual, want)
 			}

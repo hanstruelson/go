@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"internal/abi"
 
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/bitvec"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
@@ -82,7 +81,7 @@ type argLiveness struct {
 // Returns the liveness map indices at each Block entry and at each Value (where
 // it changes).
 func ArgLiveness(fn *ir.Func, f *ssa.Func, pp *objw.Progs) (blockIdx, valueIdx map[ssa.ID]int) {
-	if f.OwnAux.ABIInfo().InRegistersUsed() == 0 || base.Flag.N != 0 {
+	if f.OwnAux.ABIInfo().InRegistersUsed() == 0 || fn.Target.Flags.N != 0 {
 		// No register args. Nothing to emit.
 		// Or if -N is used we spill everything upfront so it is always live.
 		return nil, nil
@@ -117,7 +116,7 @@ func ArgLiveness(fn *ir.Func, f *ssa.Func, pp *objw.Progs) (blockIdx, valueIdx m
 	}
 
 	// We spill address-taken or non-SSA-able value upfront, so they are always live.
-	alwaysLive := func(n *ir.Name) bool { return n.Addrtaken() || !ssa.CanSSA(n.Type()) }
+	alwaysLive := func(n *ir.Name) bool { return n.Addrtaken() || !ssa.CanSSA(int64(fn.Target.PtrSize), n.Type()) }
 
 	// We'll emit the smallest offset for the slots that need liveness info.
 	// No need to include a slot with a lower offset if it is always live.
@@ -315,14 +314,14 @@ func (lv *argLiveness) emit() *obj.LSym {
 
 	idx2off := make([]int, len(livenessMaps))
 
-	lsym := base.Ctxt.Lookup(lv.fn.LSym.Name + ".argliveinfo")
+	lsym := lv.fn.Target.Ctxt.Lookup(lv.fn.LSym.Name + ".argliveinfo")
 	lsym.Set(obj.AttrContentAddressable, true)
 	lsym.Align = 1
 
-	off := objw.Uint8(lsym, 0, argOffsets[0]) // smallest offset that needs liveness info.
+	off := objw.Uint8(lv.fn.Target.Ctxt, lsym, 0, argOffsets[0]) // smallest offset that needs liveness info.
 	for idx, live := range livenessMaps {
 		idx2off[idx] = off
-		off = objw.BitVec(lsym, off, live)
+		off = objw.BitVec(lv.fn.Target.Ctxt, lsym, off, live)
 	}
 
 	// Update liveness indices to offsets.

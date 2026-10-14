@@ -99,6 +99,7 @@ type Func struct {
 	FieldTrack map[*obj.LSym]struct{}
 	DebugInfo  any
 	LSym       *obj.LSym // Linker object in this function's native ABI (Func.ABI)
+	Target     *Package  // package being compiled that owns this function
 
 	Inl *Inline
 
@@ -180,12 +181,13 @@ type WasmExport struct {
 //
 // TODO(mdempsky): I suspect there's no need for separate fpos and
 // npos.
-func NewFunc(fpos, npos src.XPos, sym *types.Sym, typ *types.Type) *Func {
+func NewFunc(target *Package, fpos, npos src.XPos, sym *types.Sym, typ *types.Type) *Func {
 	name := NewNameAt(npos, sym, typ)
 	name.Class = PFUNC
 	sym.SetFunc(true)
 
 	fn := &Func{Nname: name}
+	fn.Target = target
 	fn.pos = fpos
 	fn.op = ODCLFUNC
 	// Most functions are ABIInternal. The importer or symabis
@@ -195,7 +197,7 @@ func NewFunc(fpos, npos src.XPos, sym *types.Sym, typ *types.Type) *Func {
 
 	name.Func = fn
 
-	if base.Flag.Stats {
+	if target != nil && target.Flags.Stats {
 		fn.Stats = new(stats.Stats)
 	}
 
@@ -261,6 +263,7 @@ const (
 	funcOpenCodedDeferDisallowed             // can't do open-coded defers
 	funcClosureResultsLost                   // closure is called indirectly and we lost track of its results; used by escape analysis
 	funcPackageInit                          // compiler emitted .init func for package
+	funcInlineBodyAvailable                  // imported inlining body is available in the current package reader
 )
 
 type SymAndPos struct {
@@ -279,6 +282,9 @@ func (f *Func) NeverReturns() bool             { return f.flags&funcNeverReturns
 func (f *Func) OpenCodedDeferDisallowed() bool { return f.flags&funcOpenCodedDeferDisallowed != 0 }
 func (f *Func) ClosureResultsLost() bool       { return f.flags&funcClosureResultsLost != 0 }
 func (f *Func) IsPackageInit() bool            { return f.flags&funcPackageInit != 0 }
+func (f *Func) HasInlineBody() bool {
+	return f.Inl != nil && f.flags&funcInlineBodyAvailable != 0
+}
 
 func (f *Func) SetDupok(b bool)                    { f.flags.set(funcDupok, b) }
 func (f *Func) SetWrapper(b bool)                  { f.flags.set(funcWrapper, b) }
@@ -291,9 +297,10 @@ func (f *Func) SetNeverReturns(b bool)             { f.flags.set(funcNeverReturn
 func (f *Func) SetOpenCodedDeferDisallowed(b bool) { f.flags.set(funcOpenCodedDeferDisallowed, b) }
 func (f *Func) SetClosureResultsLost(b bool)       { f.flags.set(funcClosureResultsLost, b) }
 func (f *Func) SetIsPackageInit(b bool)            { f.flags.set(funcPackageInit, b) }
+func (f *Func) SetInlineBodyAvailable(b bool)      { f.flags.set(funcInlineBodyAvailable, b) }
 
 func (f *Func) SetWBPos(pos src.XPos) {
-	if base.Debug.WB != 0 {
+	if f.Target.Debug.WB != 0 {
 		base.WarnfAt(pos, "write barrier")
 	}
 	if !f.WBPos.IsKnown() {
@@ -412,9 +419,21 @@ func splitPkg(name string) (pkgpath, sym string) {
 // restores its previous value before returning.
 func WithPos(curfn *Func, do func()) {
 	oldpos := base.Pos
-	defer func() { base.Pos = oldpos }()
+	target := curfn.Target
+	if target == nil {
+		defer func() { base.Pos = oldpos }()
+		base.Pos = curfn.Pos()
+		do()
+		return
+	}
+	oldTargetPos := target.Pos
+	defer func() {
+		base.Pos = oldpos
+		target.Pos = oldTargetPos
+	}()
 
-	base.Pos = curfn.Pos()
+	target.Pos = curfn.Pos()
+	base.Pos = target.Pos
 	do()
 }
 
@@ -425,26 +444,26 @@ func FuncSymName(s *types.Sym) string {
 // ClosureDebugRuntimeCheck applies boilerplate checks for debug flags
 // and compiling runtime.
 func ClosureDebugRuntimeCheck(clo *ClosureExpr) {
-	if base.Debug.Closure > 0 {
+	if clo.Func.Target.Debug.Closure > 0 {
 		if clo.Esc() == EscHeap {
 			base.WarnfAt(clo.Pos(), "heap closure, captured vars = %v", clo.Func.ClosureVars)
 		} else {
 			base.WarnfAt(clo.Pos(), "stack closure, captured vars = %v", clo.Func.ClosureVars)
 		}
 	}
-	if base.Flag.CompilingRuntime && clo.Esc() == EscHeap && !clo.IsGoWrap {
+	if clo.Func.Target.Flags.CompilingRuntime && clo.Esc() == EscHeap && !clo.IsGoWrap {
 		base.ErrorfAt(clo.Pos(), 0, "heap-allocated closure %s, not allowed in runtime", FuncName(clo.Func))
 	}
 }
 
-// globClosgen is like Func.Closgen, but for the global scope.
-var globClosgen int32
-
 // closureName generates a new unique name for a closure within outerfn at pos.
 // gen is an optional counter for the closure name. If it is 0, the counter
 // will be computed based on outerfn.
-func closureName(outerfn *Func, pos src.XPos, why Op, gen int) *types.Sym {
-	pkg := types.LocalPkg
+func closureName(target *Package, outerfn *Func, pos src.XPos, why Op, gen int) *types.Sym {
+	pkg := target.LocalPkg
+	if pkg == nil {
+		base.FatalfAt(pos, "closureName without a local package")
+	}
 	outer := "glob."
 	var suffix string = "."
 	switch why {
@@ -473,7 +492,7 @@ func closureName(outerfn *Func, pos src.XPos, why Op, gen int) *types.Sym {
 	// If this closure was created due to inlining, find the original
 	// outer function's name for the closure (#60324).
 	var inlHash string
-	if inlIndex := base.Ctxt.InnermostPos(pos).Base().InliningIndex(); inlIndex >= 0 {
+	if inlIndex := target.Ctxt.InnermostPos(pos).Base().InliningIndex(); inlIndex >= 0 {
 		// The compiler doesn't like multiple symbols with the same
 		// name. We make a unique suffix temporarily for the
 		// compiler, and strip it during object file writing, so
@@ -482,21 +501,21 @@ func closureName(outerfn *Func, pos src.XPos, why Op, gen int) *types.Sym {
 		// We choose the suffix as a hash of the inline call stack.
 		h := hash.New32()
 		fmt.Fprint(h, inlIndex)
-		base.Ctxt.InlTree.AllParents(inlIndex, func(call obj.InlinedCall) {
+		target.Ctxt.InlTree.AllParents(inlIndex, func(call obj.InlinedCall) {
 			if call.Parent >= 0 {
 				fmt.Fprint(h, " ", call.Parent)
 			}
 		})
 		inlHash = base64.StdEncoding.EncodeToString(h.Sum(nil)[:8])
 
-		outer = base.Ctxt.InlTree.InlinedFuncName(inlIndex)
-		if pkgPath := base.Ctxt.InlTree.InlinedFuncPkg(inlIndex); pkgPath != "" {
-			pkg = types.NewPkg(pkgPath, "")
+		outer = target.Ctxt.InlTree.InlinedFuncName(inlIndex)
+		if pkgPath := target.Ctxt.InlTree.InlinedFuncPkg(inlIndex); pkgPath != "" {
+			pkg = target.Pkg(pkgPath, "")
 		}
 	}
 
 	if gen == 0 {
-		p := &globClosgen
+		p := &target.Closgen
 		if !IsBlank(outerfn.Nname) {
 			switch why {
 			case OCLOSURE:
@@ -564,7 +583,7 @@ func NewClosureFunc(fpos, cpos src.XPos, why Op, typ *types.Type, outerfn *Func,
 		base.FatalfAt(fpos, "outerfn is nil")
 	}
 
-	fn := NewFunc(fpos, fpos, closureName(outerfn, cpos, why, gen), typ)
+	fn := NewFunc(pkg, fpos, fpos, closureName(pkg, outerfn, cpos, why, gen), typ)
 	fn.SetDupok(outerfn.Dupok()) // if the outer function is dupok, so is the closure
 
 	fn.Linksym().Set(obj.AttrContentAddressable, true)
@@ -622,7 +641,7 @@ func IsIfaceOfFunc(n Node) *Func {
 // TODO(prattmic): Since n is simply an interface{} there is no assertion that
 // it is actually a function at all. Perhaps we should emit a runtime type
 // assertion?
-func FuncPC(pos src.XPos, n Node, wantABI obj.ABI) Node {
+func FuncPC(target *Package, pos src.XPos, n Node, wantABI obj.ABI) Node {
 	if !n.Type().IsInterface() {
 		base.ErrorfAt(pos, 0, "internal/abi.FuncPC%s expects an interface value, got %v", wantABI, n.Type())
 	}
@@ -633,10 +652,10 @@ func FuncPC(pos src.XPos, n Node, wantABI obj.ABI) Node {
 		if abi != wantABI {
 			base.ErrorfAt(pos, 0, "internal/abi.FuncPC%s expects an %v function, %s is defined as %v", wantABI, wantABI, name.Sym().Name, abi)
 		}
-		var e Node = NewLinksymExpr(pos, name.LinksymABI(abi), types.Types[types.TUINTPTR])
+		var e Node = NewLinksymExpr(pos, name.LinksymABI(abi), target.Type(types.TUINTPTR))
 		e = NewAddrExpr(pos, e)
-		e.SetType(types.Types[types.TUINTPTR].PtrTo())
-		e = NewConvExpr(pos, OCONVNOP, types.Types[types.TUINTPTR], e)
+		e.SetType(target.Type(types.TUINTPTR).PtrTo())
+		e = NewConvExpr(pos, OCONVNOP, target.Type(types.TUINTPTR), e)
 		e.SetTypecheck(1)
 		return e
 	}
@@ -646,10 +665,10 @@ func FuncPC(pos src.XPos, n Node, wantABI obj.ABI) Node {
 		base.ErrorfAt(pos, 0, "internal/abi.FuncPC%s does not accept func expression, which is ABIInternal", wantABI)
 	}
 	var e Node = NewUnaryExpr(pos, OIDATA, n)
-	e.SetType(types.Types[types.TUINTPTR].PtrTo())
+	e.SetType(target.Type(types.TUINTPTR).PtrTo())
 	e.SetTypecheck(1)
 	e = NewStarExpr(pos, e)
-	e.SetType(types.Types[types.TUINTPTR])
+	e.SetType(target.Type(types.TUINTPTR))
 	e.SetTypecheck(1)
 	return e
 }

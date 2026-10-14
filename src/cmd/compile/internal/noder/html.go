@@ -5,7 +5,6 @@
 package noder
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
 	"cmd/compile/internal/types2"
@@ -56,11 +55,7 @@ func NewHTMLWriter(pkg *types2.Package, file *syntax.File, info *types2.Info, pa
 }
 
 func (w *HTMLWriter) pkgFuncName() string {
-	p := w.pkg.Path()
-	if p == "" {
-		p = base.Ctxt.Pkgpath
-	}
-	return p + "." + w.Decl.Name.Value
+	return w.pkg.Path() + "." + w.Decl.Name.Value
 }
 
 func (w *HTMLWriter) start() {

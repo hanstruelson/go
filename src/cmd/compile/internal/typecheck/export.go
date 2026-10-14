@@ -12,8 +12,8 @@ import (
 )
 
 // importfunc declares symbol s as an imported function with type t.
-func importfunc(s *types.Sym, t *types.Type) {
-	fn := ir.NewFunc(src.NoXPos, src.NoXPos, s, t)
+func importfunc(target *ir.Package, s *types.Sym, t *types.Type) {
+	fn := ir.NewFunc(target, src.NoXPos, src.NoXPos, s, t)
 	importsym(fn.Nname)
 }
 

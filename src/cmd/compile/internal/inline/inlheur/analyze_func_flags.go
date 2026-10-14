@@ -17,6 +17,7 @@ import (
 // which stores the disposition of a given ir Node with respect to the
 // flags/properties we're trying to compute.
 type funcFlagsAnalyzer struct {
+	ctx    *Context
 	fn     *ir.Func
 	nstate map[ir.Node]pstate
 	noInfo bool // set if we see something inscrutable/un-analyzable
@@ -33,8 +34,9 @@ const (
 	psTop                      // dataflow lattice "top" element
 )
 
-func makeFuncFlagsAnalyzer(fn *ir.Func) *funcFlagsAnalyzer {
+func makeFuncFlagsAnalyzer(ctx *Context, fn *ir.Func) *funcFlagsAnalyzer {
 	return &funcFlagsAnalyzer{
+		ctx:    ctx,
 		fn:     fn,
 		nstate: make(map[ir.Node]pstate),
 	}
@@ -179,7 +181,7 @@ func isWellKnownFunc(s *types.Sym, pkg, name string) bool {
 
 // isExitCall reports TRUE if the node itself is an unconditional
 // call to os.Exit(), a panic, or a function that does likewise.
-func isExitCall(n ir.Node) bool {
+func isExitCall(ctx *Context, n ir.Node) bool {
 	if n.Op() != ir.OCALLFUNC {
 		return false
 	}
@@ -193,7 +195,7 @@ func isExitCall(n ir.Node) bool {
 		isWellKnownFunc(s, "runtime", "throw") {
 		return true
 	}
-	if funcProps := propsForFunc(name.Func); funcProps != nil {
+	if funcProps := propsForFunc(ctx, name.Func); funcProps != nil {
 		if funcProps.Flags&FuncPropNeverReturns != 0 {
 			return true
 		}
@@ -232,7 +234,7 @@ func (ffa *funcFlagsAnalyzer) nodeVisitPost(n ir.Node) {
 	var st pstate
 	switch n.Op() {
 	case ir.OCALLFUNC:
-		if isExitCall(n) {
+		if isExitCall(ffa.ctx, n) {
 			st = psCallsPanic
 		}
 	case ir.OPANIC:

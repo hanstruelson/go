@@ -457,49 +457,49 @@
 // Canonicalize x+x to x << 1.
 // This is often slower since most CPUs have more adders than shifters, but it can enable other optimizations.
 // Arches who care about this like AMD64 convert x << 1 back to x+x in their arch-specific rules which is useful anyhow.
-(Add(64|32|16|8) x x) => (Lsh(64|32|16|8)x64 x (Const64 <types.Types[types.TUINT64]> [1]))
+(Add(64|32|16|8) x x) => (Lsh(64|32|16|8)x64 x (Const64 <v.Block.Func.Config.Types.UInt64> [1]))
 
 // rewrite shifts of 8/16/32 bit consts into 64 bit consts to reduce
 // the number of the other rewrite rules for const shifts
-(Lsh64x32  x (Const32 [c])) => (Lsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Lsh64x16  x (Const16 [c])) => (Lsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Lsh64x8   x (Const8  [c])) => (Lsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh64x32  x (Const32 [c])) => (Rsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh64x16  x (Const16 [c])) => (Rsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh64x8   x (Const8  [c])) => (Rsh64x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh64Ux32 x (Const32 [c])) => (Rsh64Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh64Ux16 x (Const16 [c])) => (Rsh64Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh64Ux8  x (Const8  [c])) => (Rsh64Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
+(Lsh64x32  x (Const32 [c])) => (Lsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Lsh64x16  x (Const16 [c])) => (Lsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Lsh64x8   x (Const8  [c])) => (Lsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh64x32  x (Const32 [c])) => (Rsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh64x16  x (Const16 [c])) => (Rsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh64x8   x (Const8  [c])) => (Rsh64x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh64Ux32 x (Const32 [c])) => (Rsh64Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh64Ux16 x (Const16 [c])) => (Rsh64Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh64Ux8  x (Const8  [c])) => (Rsh64Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
 
-(Lsh32x32  x (Const32 [c])) => (Lsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Lsh32x16  x (Const16 [c])) => (Lsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Lsh32x8   x (Const8  [c])) => (Lsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh32x32  x (Const32 [c])) => (Rsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh32x16  x (Const16 [c])) => (Rsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh32x8   x (Const8  [c])) => (Rsh32x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh32Ux32 x (Const32 [c])) => (Rsh32Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh32Ux16 x (Const16 [c])) => (Rsh32Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh32Ux8  x (Const8  [c])) => (Rsh32Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
+(Lsh32x32  x (Const32 [c])) => (Lsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Lsh32x16  x (Const16 [c])) => (Lsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Lsh32x8   x (Const8  [c])) => (Lsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh32x32  x (Const32 [c])) => (Rsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh32x16  x (Const16 [c])) => (Rsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh32x8   x (Const8  [c])) => (Rsh32x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh32Ux32 x (Const32 [c])) => (Rsh32Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh32Ux16 x (Const16 [c])) => (Rsh32Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh32Ux8  x (Const8  [c])) => (Rsh32Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
 
-(Lsh16x32  x (Const32 [c])) => (Lsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Lsh16x16  x (Const16 [c])) => (Lsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Lsh16x8   x (Const8  [c])) => (Lsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh16x32  x (Const32 [c])) => (Rsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh16x16  x (Const16 [c])) => (Rsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh16x8   x (Const8  [c])) => (Rsh16x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh16Ux32 x (Const32 [c])) => (Rsh16Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh16Ux16 x (Const16 [c])) => (Rsh16Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh16Ux8  x (Const8  [c])) => (Rsh16Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
+(Lsh16x32  x (Const32 [c])) => (Lsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Lsh16x16  x (Const16 [c])) => (Lsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Lsh16x8   x (Const8  [c])) => (Lsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh16x32  x (Const32 [c])) => (Rsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh16x16  x (Const16 [c])) => (Rsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh16x8   x (Const8  [c])) => (Rsh16x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh16Ux32 x (Const32 [c])) => (Rsh16Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh16Ux16 x (Const16 [c])) => (Rsh16Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh16Ux8  x (Const8  [c])) => (Rsh16Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
 
-(Lsh8x32  x (Const32 [c])) => (Lsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Lsh8x16  x (Const16 [c])) => (Lsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Lsh8x8   x (Const8  [c])) => (Lsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh8x32  x (Const32 [c])) => (Rsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh8x16  x (Const16 [c])) => (Rsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh8x8   x (Const8  [c])) => (Rsh8x64  x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
-(Rsh8Ux32 x (Const32 [c])) => (Rsh8Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))
-(Rsh8Ux16 x (Const16 [c])) => (Rsh8Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))
-(Rsh8Ux8  x (Const8  [c])) => (Rsh8Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))
+(Lsh8x32  x (Const32 [c])) => (Lsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Lsh8x16  x (Const16 [c])) => (Lsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Lsh8x8   x (Const8  [c])) => (Lsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh8x32  x (Const32 [c])) => (Rsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh8x16  x (Const16 [c])) => (Rsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh8x8   x (Const8  [c])) => (Rsh8x64  x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
+(Rsh8Ux32 x (Const32 [c])) => (Rsh8Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint32(c))]))
+(Rsh8Ux16 x (Const16 [c])) => (Rsh8Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint16(c))]))
+(Rsh8Ux8  x (Const8  [c])) => (Rsh8Ux64 x (Const64 <v.Block.Func.Config.Types.UInt64> [int64(uint8(c))]))
 
 // shifts by zero
 (Lsh(64|32|16|8)x64  x (Const64 [0])) => x
@@ -1683,18 +1683,18 @@
            (MemEq (OffPtr <p.Type> p [16]) (OffPtr <q.Type> q [16]) (Const64 <typ.Int64> [c-16]) mem))
 
 // Turn known-size calls to memclrNoHeapPointers into a Zero.
-// Note that we are using types.Types[types.TUINT8] instead of sptr.Type.Elem() - see issue 55122 and CL 431496 for more details.
+// Note that we are using v.Block.Func.Config.Types.UInt8 instead of sptr.Type.Elem() - see issue 55122 and CL 431496 for more details.
 (SelectN [0] call:(StaticCall {sym} sptr (Const(64|32) [c]) mem))
   && isInlinableMemclr(config, int64(c))
   && ssa.IsSameCall(sym, "runtime.memclrNoHeapPointers")
   && call.Uses == 1
   && ssa.Clobber(call)
-  => (Zero {types.Types[types.TUINT8]} [int64(c)] sptr mem)
+  => (Zero {v.Block.Func.Config.Types.UInt8} [int64(c)] sptr mem)
 
 // Recognise make([]T, 0) and replace it with a pointer to the zerobase
 (StaticLECall {callAux} _ (Const(64|32) [0]) (Const(64|32) [0]) mem)
 	&& ssa.IsSameCall(callAux, "runtime.makeslice")
-	=> (MakeResult (Addr <v.Type.FieldType(0)> {ir.Syms.Zerobase} (SB)) mem)
+	=> (MakeResult (Addr <v.Type.FieldType(0)> {b.Func.Config.Target.Symbols.Zerobase} (SB)) mem)
 
 // Evaluate constant address comparisons.
 (EqPtr  x x) => (ConstBool [true])
@@ -1763,7 +1763,7 @@
 	&& s1.Uses == 1 && s2.Uses == 1 && s3.Uses == 1
 	&& ssa.IsInlinableMemmove(dst, src, int64(sz), config)
 	&& ssa.Clobber(s1, s2, s3, call)
-	=> (Move {types.Types[types.TUINT8]} [int64(sz)] dst src mem)
+	=> (Move {v.Block.Func.Config.Types.UInt8} [int64(sz)] dst src mem)
 
 // Match post-expansion calls, register version.
 (SelectN [0] call:(StaticCall {sym} dst src (Const(64|32) [sz]) mem))
@@ -1772,7 +1772,7 @@
 	&& ssa.IsSameCall(sym, "runtime.memmove")
 	&& ssa.IsInlinableMemmove(dst, src, int64(sz), config)
 	&& ssa.Clobber(call)
-	=> (Move {types.Types[types.TUINT8]} [int64(sz)] dst src mem)
+	=> (Move {v.Block.Func.Config.Types.UInt8} [int64(sz)] dst src mem)
 
 // Match pre-expansion calls.
 (SelectN [0] call:(StaticLECall {sym} dst src (Const(64|32) [sz]) mem))
@@ -1781,7 +1781,7 @@
 	&& ssa.IsSameCall(sym, "runtime.memmove")
 	&& ssa.IsInlinableMemmove(dst, src, int64(sz), config)
 	&& ssa.Clobber(call)
-	=> (Move {types.Types[types.TUINT8]} [int64(sz)] dst src mem)
+	=> (Move {v.Block.Func.Config.Types.UInt8} [int64(sz)] dst src mem)
 
 // De-virtualize late-expanded interface calls into late-expanded static calls.
 (InterLECall [argsize] {auxCall} (Addr {fn} (SB)) ___) => devirtLECall(v, fn.(*obj.LSym))
@@ -2377,14 +2377,14 @@
 	(Add8 x (Mul8 <t> c (CvtBoolToUint8 <t> bool)))
 (CondSelect op1:(Add(64|32|16) <t> x c:(Const(64|32|16))) x bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Add(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))))
+	(Add(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))))
 // if !b { x += c } => x += !b * c
 (CondSelect x op1:(Add8 <t> x c:(Const8)) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
 	(Add8 x (Mul8 <t> c (CvtBoolToUint8 <t> (Not <bool.Type> bool))))
 (CondSelect x op1:(Add(64|32|16) <t> x c:(Const(64|32|16))) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Add(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))))
+	(Add(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))))
 
 // if b { x += c } => x -= b * -c // looks redundant but useful if the arch can inline materialize -c but not c
 (CondSelect op1:(Add8 <t> x c:(Const8 [consT])) x bool) &&
@@ -2394,7 +2394,7 @@
 (CondSelect op1:(Add(64|32|16) <t> x c:(Const(64|32|16) [consT])) x bool) &&
 	!rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) &&
 	rewriteCondSelectIntoMath(config, addToSub(op1.Op), -c.AuxInt) =>
-	(Sub(64|32|16) x (Mul(64|32|16) <t> (Const(64|32|16) <t> [-consT]) (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))))
+	(Sub(64|32|16) x (Mul(64|32|16) <t> (Const(64|32|16) <t> [-consT]) (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))))
 // if !b { x += c } => x -= !b * -c // looks redundant but useful if the arch can inline materialize -c but not c
 (CondSelect x op1:(Add8 <t> x c:(Const8 [consT])) bool) &&
 	!rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) &&
@@ -2403,19 +2403,19 @@
 (CondSelect x op1:(Add(64|32|16) <t> x c:(Const(64|32|16) [consT])) bool) &&
 	!rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) &&
 	rewriteCondSelectIntoMath(config, addToSub(op1.Op), -c.AuxInt) =>
-	(Sub(64|32|16) x (Mul(64|32|16) <t> (Const(64|32|16) <t> [-consT]) (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))))
+	(Sub(64|32|16) x (Mul(64|32|16) <t> (Const(64|32|16) <t> [-consT]) (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))))
 
 // if b { x <<= 1 } => x <<= b
-(CondSelect (Lsh(64|32|16|8)x64 x (Const64 [1])) x bool) => (Lsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))
+(CondSelect (Lsh(64|32|16|8)x64 x (Const64 [1])) x bool) => (Lsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))
 // if !b { x <<= 1 } => x <<= !b
-(CondSelect x (Lsh(64|32|16|8)x64 x (Const64 [1])) bool) => (Lsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))
+(CondSelect x (Lsh(64|32|16|8)x64 x (Const64 [1])) bool) => (Lsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))
 
 // if b { x >>= 1 } => x >>= b
-(CondSelect (Rsh(64|32|16|8)x64 x (Const64 [1])) x bool) => (Rsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))
-(CondSelect (Rsh(64|32|16|8)Ux64 x (Const64 [1])) x bool) => (Rsh(64|32|16|8)Ux8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))
+(CondSelect (Rsh(64|32|16|8)x64 x (Const64 [1])) x bool) => (Rsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))
+(CondSelect (Rsh(64|32|16|8)Ux64 x (Const64 [1])) x bool) => (Rsh(64|32|16|8)Ux8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))
 // if !b { x >>= 1 } => x >>= !b
-(CondSelect x (Rsh(64|32|16|8)x64 x (Const64 [1])) bool) => (Rsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))
-(CondSelect x (Rsh(64|32|16|8)Ux64 x (Const64 [1])) bool) => (Rsh(64|32|16|8)Ux8 [true] x (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))
+(CondSelect x (Rsh(64|32|16|8)x64 x (Const64 [1])) bool) => (Rsh(64|32|16|8)x8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))
+(CondSelect x (Rsh(64|32|16|8)Ux64 x (Const64 [1])) bool) => (Rsh(64|32|16|8)Ux8 [true] x (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))
 
 // if b { x |= c } => x |= b * c
 (CondSelect op1:(Or8 <t> x c:(Const8)) x bool) &&
@@ -2423,14 +2423,14 @@
 	(Or8 x (Mul8 <t> c (CvtBoolToUint8 <t> bool)))
 (CondSelect op1:(Or(64|32|16) <t> x c:(Const(64|32|16))) x bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Or(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))))
+	(Or(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))))
 // if !b { x |= c } => x |= !b * c
 (CondSelect x op1:(Or8 <t> x c:(Const8)) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
 	(Or8 x (Mul8 <t> c (CvtBoolToUint8 <t> (Not <bool.Type> bool))))
 (CondSelect x op1:(Or(64|32|16) <t> x c:(Const(64|32|16))) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Or(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))))
+	(Or(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))))
 
 // if b { x ^= c } => x ^= b * c
 (CondSelect op1:(Xor8 <t> x c:(Const8)) x bool) &&
@@ -2438,14 +2438,14 @@
 	(Xor8 x (Mul8 <t> c (CvtBoolToUint8 <t> bool)))
 (CondSelect op1:(Xor(64|32|16) <t> x c:(Const(64|32|16))) x bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Xor(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> bool))))
+	(Xor(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> bool))))
 // if !b { x ^= c } => x ^= !b * c
 (CondSelect x op1:(Xor8 <t> x c:(Const8)) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
 	(Xor8 x (Mul8 <t> c (CvtBoolToUint8 <t> (Not <bool.Type> bool))))
 (CondSelect x op1:(Xor(64|32|16) <t> x c:(Const(64|32|16))) bool) &&
 	rewriteCondSelectIntoMath(config, op1.Op, c.AuxInt) =>
-	(Xor(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <types.Types[types.TUINT8]> (Not <bool.Type> bool)))))
+	(Xor(64|32|16) x (Mul(64|32|16) <t> c (ZeroExt8to(64|32|16) <t> (CvtBoolToUint8 <v.Block.Func.Config.Types.UInt8> (Not <bool.Type> bool)))))
 
 // bool(int(x)) => x
 (Neq8                                (CvtBoolToUint8 x)  (Const8          [0])) => x

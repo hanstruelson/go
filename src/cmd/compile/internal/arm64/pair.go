@@ -5,7 +5,6 @@
 package arm64
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/objw"
 	"cmd/internal/obj"
 	"cmd/internal/obj/arm64"
@@ -57,7 +56,7 @@ func movdImmMem(p *obj.Prog) (info movdImmMemInfo, ok bool) {
 // resolved its branch and jump-table targets, and finalized the frame size
 // in defframe.
 func ssaGenFinish(pp *objw.Progs) {
-	if base.Flag.N != 0 {
+	if pp.CurFunc.Target.Flags.N != 0 {
 		// Keep unoptimized builds unoptimized.
 		return
 	}

@@ -12,6 +12,7 @@ import (
 	"cmd/compile/internal/logopt"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
+	"cmd/internal/obj"
 	"cmd/internal/src"
 	"fmt"
 )
@@ -50,8 +51,8 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 
 	describe := func(n *ir.Name) string {
 		pos := n.Pos()
-		inner := base.Ctxt.InnermostPos(pos)
-		outer := base.Ctxt.OutermostPos(pos)
+		inner := fn.Target.Ctxt.InnermostPos(pos)
+		outer := fn.Target.Ctxt.OutermostPos(pos)
 		if inner == outer {
 			return fmt.Sprintf("loop variable %v now per-iteration", n)
 		}
@@ -80,7 +81,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 					return
 				}
 				// default is false (leak candidate, not yet known to leak), but flag can make all variables "leak"
-				possiblyLeaked[n] = base.Debug.LoopVar >= 11
+				possiblyLeaked[n] = fn.Target.Debug.LoopVar >= 11
 			}
 		}
 
@@ -104,10 +105,10 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 				desc := func() string {
 					return describe(n)
 				}
-				if base.LoopVarHash.MatchPos(n.Pos(), desc) {
+				if fn.Target.LoopVarHash.MatchPosWithLink(fn.Target.Ctxt, n.Pos(), desc) {
 					// Rename the loop key, prefix body with assignment from loop key
 					transformed = append(transformed, VarAndLoop{n, x, lastPos})
-					tk := typecheck.TempAt(base.Pos, fn, n.Type())
+					tk := typecheck.TempAt(fn.Target.Pos, fn, n.Type())
 					tk.SetTypecheck(1)
 					as := ir.NewAssignStmt(x.Pos(), n, tk)
 					as.Def = true
@@ -215,7 +216,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 							return describe(n)
 						}
 						// Hash on n.Pos() for most precise failure location.
-						if base.LoopVarHash.MatchPos(n.Pos(), desc) {
+						if fn.Target.LoopVarHash.MatchPosWithLink(fn.Target.Ctxt, n.Pos(), desc) {
 							leaked = append(leaked, n)
 						}
 					}
@@ -298,7 +299,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 					for _, z := range leaked {
 						transformed = append(transformed, VarAndLoop{z, x, lastPos})
 
-						tz := typecheck.TempAt(base.Pos, fn, z.Type())
+						tz := typecheck.TempAt(fn.Target.Pos, fn, z.Type())
 						tz.SetTypecheck(1)
 						zPrimeForZ[z] = tz
 
@@ -316,7 +317,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 					}
 
 					// (3) rewrite continues in body -- rewrite is inplace, so works for top level visit, too.
-					label := typecheck.Lookup(fmt.Sprintf(".3clNext_%d", seq))
+					label := typecheck.Lookup(fn.Target, fmt.Sprintf(".3clNext_%d", seq))
 					seq++
 					labelStmt := ir.NewLabelStmt(x.Pos(), label)
 					labelStmt.SetTypecheck(1)
@@ -361,11 +362,11 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 						// body' = prebody +
 						// (6)     if tmp_first {tmp_first = false} else {Post} +
 						//         if !cond {break} + ...
-						tmpFirst := typecheck.TempAt(base.Pos, fn, types.Types[types.TBOOL])
-						tmpFirstDcl = typecheck.Stmt(fn, ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(base.Pos, true)))
-						tmpFirstSetFalse := typecheck.Stmt(fn, ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(base.Pos, false)))
+						tmpFirst := typecheck.TempAt(fn.Target.Pos, fn, fn.Target.Type(types.TBOOL))
+						tmpFirstDcl = typecheck.Stmt(fn, ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(fn.Target.Pos, true)))
+						tmpFirstSetFalse := typecheck.Stmt(fn, ir.NewAssignStmt(x.Pos(), tmpFirst, ir.NewBool(fn.Target.Pos, false)))
 						ifTmpFirst := ir.NewIfStmt(x.Pos(), tmpFirst, ir.Nodes{tmpFirstSetFalse}, ir.Nodes{x.Post})
-						ifTmpFirst.PtrInit().Append(typecheck.Stmt(fn, ir.NewDecl(base.Pos, ir.ODCL, tmpFirst))) // declares tmpFirst
+						ifTmpFirst.PtrInit().Append(typecheck.Stmt(fn, ir.NewDecl(fn.Target.Pos, ir.ODCL, tmpFirst))) // declares tmpFirst
 						preBody.Append(typecheck.Stmt(fn, ifTmpFirst))
 					}
 
@@ -523,13 +524,13 @@ func rewriteNodes(fn *ir.Func, editNodes func(c ir.Nodes) ir.Nodes) {
 }
 
 func LogTransformations(transformed []VarAndLoop) {
-	print := 2 <= base.Debug.LoopVar && base.Debug.LoopVar != 11
+	print := len(transformed) > 0 && 2 <= transformed[0].Name.Curfn.Target.Debug.LoopVar && transformed[0].Name.Curfn.Target.Debug.LoopVar != 11
 
 	if print || logopt.Enabled() { // 11 is do them all, quietly, 12 includes debugging.
 		fileToPosBase := make(map[string]*src.PosBase) // used to remove inline context for innermost reporting.
 
 		// trueInlinedPos rebases inner w/o inline context so that it prints correctly in WarnfAt; otherwise it prints as outer.
-		trueInlinedPos := func(inner src.Pos) src.XPos {
+		trueInlinedPos := func(ctxt *obj.Link, inner src.Pos) src.XPos {
 			afn := inner.AbsFilename()
 			pb, ok := fileToPosBase[afn]
 			if !ok {
@@ -537,7 +538,7 @@ func LogTransformations(transformed []VarAndLoop) {
 				fileToPosBase[afn] = pb
 			}
 			inner.SetBase(pb)
-			return base.Ctxt.PosTable.XPos(inner)
+			return ctxt.PosTable.XPos(inner)
 		}
 
 		type unit struct{}
@@ -557,8 +558,8 @@ func LogTransformations(transformed []VarAndLoop) {
 			}
 			pos := n.Pos()
 
-			inner := base.Ctxt.InnermostPos(pos)
-			outer := base.Ctxt.OutermostPos(pos)
+			inner := n.Curfn.Target.Ctxt.InnermostPos(pos)
+			outer := n.Curfn.Target.Ctxt.OutermostPos(pos)
 
 			if logopt.Enabled() {
 				// For automated checking of coverage of this transformation, include this in the JSON information.
@@ -580,7 +581,7 @@ func LogTransformations(transformed []VarAndLoop) {
 						base.WarnfAt(pos, "loop variable %v now per-iteration, stack-allocated", n)
 					}
 				} else {
-					innerXPos := trueInlinedPos(inner)
+					innerXPos := trueInlinedPos(n.Curfn.Target.Ctxt, inner)
 					if n.Esc() == ir.EscHeap {
 						base.WarnfAt(innerXPos, "loop variable %v now per-iteration, heap-allocated (loop inlined into %s:%d)", n, outer.Filename(), outer.Line())
 					} else {
@@ -600,16 +601,16 @@ func LogTransformations(transformed []VarAndLoop) {
 				// Intended to help with performance debugging, we record whole loop ranges
 				logopt.LogOptRange(pos, last, "loop-modified-"+loopKind, "loopvar", ir.FuncName(l.curfn))
 			}
-			if print && 4 <= base.Debug.LoopVar {
+			if print && 4 <= l.curfn.Target.Debug.LoopVar {
 				// TODO decide if we want to keep this, or not.  It was helpful for validating logopt, otherwise, eh.
-				inner := base.Ctxt.InnermostPos(pos)
-				outer := base.Ctxt.OutermostPos(pos)
+				inner := l.curfn.Target.Ctxt.InnermostPos(pos)
+				outer := l.curfn.Target.Ctxt.OutermostPos(pos)
 
 				if inner == outer {
 					base.WarnfAt(pos, "%s loop ending at %d:%d was modified", loopKind, last.Line(), last.Col())
 				} else {
-					pos = trueInlinedPos(inner)
-					last = trueInlinedPos(base.Ctxt.InnermostPos(last))
+					pos = trueInlinedPos(l.curfn.Target.Ctxt, inner)
+					last = trueInlinedPos(l.curfn.Target.Ctxt, l.curfn.Target.Ctxt.InnermostPos(last))
 					base.WarnfAt(pos, "%s loop ending at %d:%d was modified (loop inlined into %s:%d)", loopKind, last.Line(), last.Col(), outer.Filename(), outer.Line())
 				}
 			}

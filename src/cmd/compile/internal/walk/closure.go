@@ -47,7 +47,7 @@ func (w *walkState) directClosureCall(n *ir.CallExpr) {
 			// and v remains PAUTOHEAP with &v heapaddr
 			// (accesses will implicitly deref &v).
 
-			addr := ir.NewNameAt(clofn.Pos(), typecheck.Lookup("&"+v.Sym().Name), types.NewPtr(v.Type()))
+			addr := ir.NewNameAt(clofn.Pos(), typecheck.Lookup(clofn.Target, "&"+v.Sym().Name), types.NewPtr(v.Type()))
 			addr.Curfn = clofn
 			v.Heapaddr = addr
 			v = addr
@@ -96,7 +96,7 @@ func (w *walkState) walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 
 	// If not a closure, don't bother wrapping.
 	if !clofn.IsClosure() {
-		if base.Debug.Closure > 0 {
+		if w.curfunc.Target.Debug.Closure > 0 {
 			base.WarnfAt(clo.Pos(), "closure converted to global")
 		}
 		return clofn.Nname
@@ -118,11 +118,11 @@ func (w *walkState) walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 
 	typ := typecheck.ClosureType(clo)
 
-	clos := ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, typ, nil)
+	clos := ir.NewCompLitExpr(w.curfunc.Target.Pos, ir.OCOMPLIT, typ, nil)
 	clos.SetEsc(clo.Esc())
-	clos.List = append([]ir.Node{ir.NewUnaryExpr(base.Pos, ir.OCFUNC, clofn.Nname)}, closureArgs(w.curfunc, clo)...)
+	clos.List = append([]ir.Node{ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCFUNC, clofn.Nname)}, closureArgs(w.curfunc, clo)...)
 	for i, value := range clos.List {
-		clos.List[i] = ir.NewStructKeyExpr(base.Pos, typ.Field(i), value)
+		clos.List[i] = ir.NewStructKeyExpr(w.curfunc.Target.Pos, typ.Field(i), value)
 	}
 
 	addr := typecheck.NodAddr(w.curfunc, clos)
@@ -177,16 +177,16 @@ func (w *walkState) walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node 
 		n.X = w.cheapExpr(n.X, init)
 		n.X = w.walkExpr(n.X, nil)
 
-		tab := ir.NewUnaryExpr(base.Pos, ir.OITAB, n.X)
-		check := ir.NewUnaryExpr(base.Pos, ir.OCHECKNIL, tab)
+		tab := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OITAB, n.X)
+		check := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCHECKNIL, tab)
 		init.Append(typecheck.Stmt(w.curfunc, check))
 	}
 
-	typ := typecheck.MethodValueType(n)
+	typ := typecheck.MethodValueType(w.curfunc.Target, n)
 
-	clos := ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, typ, nil)
+	clos := ir.NewCompLitExpr(w.curfunc.Target.Pos, ir.OCOMPLIT, typ, nil)
 	clos.SetEsc(n.Esc())
-	clos.List = []ir.Node{ir.NewUnaryExpr(base.Pos, ir.OCFUNC, methodValueWrapper(n)), n.X}
+	clos.List = []ir.Node{ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCFUNC, methodValueWrapper(w.curfunc.Target, n)), n.X}
 
 	addr := typecheck.NodAddr(w.curfunc, clos)
 	addr.SetEsc(n.Esc())
@@ -209,15 +209,15 @@ func (w *walkState) walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node 
 // methodValueWrapper returns the ONAME node representing the
 // wrapper function (*-fm) needed for the given method value. If the
 // wrapper function hasn't already been created yet, it's created and
-// added to typecheck.Target.Decls.
-func methodValueWrapper(dot *ir.SelectorExpr) *ir.Name {
+// added to the owning package's declarations.
+func methodValueWrapper(target *ir.Package, dot *ir.SelectorExpr) *ir.Name {
 	if dot.Op() != ir.OMETHVALUE {
 		base.Fatalf("methodValueWrapper: unexpected %v (%v)", dot, dot.Op())
 	}
 
 	meth := dot.Sel
 	rcvrtype := dot.X.Type()
-	sym := ir.ReceiverMethodSymSuffix(rcvrtype, meth, "-fm")
+	sym := ir.ReceiverMethodSymSuffix(target, rcvrtype, meth, "-fm")
 
 	if sym.Uniq() {
 		return sym.Def.(*ir.Name)

@@ -67,7 +67,7 @@ type Value struct {
 }
 
 // CanSSA reports whether values of type t can be represented as a Value.
-func CanSSA(t *types.Type) bool {
+func CanSSA(ptrSize int64, t *types.Type) bool {
 	types.CalcSize(t)
 	if t.IsSIMD() {
 		return true
@@ -75,7 +75,7 @@ func CanSSA(t *types.Type) bool {
 	if t.Size() == 0 {
 		return true
 	}
-	sizeLimit := int64(MaxStruct * types.PtrSize)
+	sizeLimit := int64(MaxStruct) * ptrSize
 	if t.Size() > sizeLimit {
 		// 4*Widthptr is an arbitrary constant. We want it
 		// to be at least 3*Widthptr so slices can be registerized.
@@ -90,7 +90,7 @@ func CanSSA(t *types.Type) bool {
 		// not supported on SSA variables.
 		// TODO: allow if all indexes are constant.
 		if t.NumElem() <= 1 {
-			return CanSSA(t.Elem())
+			return CanSSA(ptrSize, t.Elem())
 		}
 		return false
 	case types.TSTRUCT:
@@ -102,7 +102,7 @@ func CanSSA(t *types.Type) bool {
 			return false
 		}
 		for _, t1 := range t.Fields() {
-			if !CanSSA(t1.Type) {
+			if !CanSSA(ptrSize, t1.Type) {
 				return false
 			}
 		}

@@ -5,15 +5,16 @@
 package noder
 
 import (
-	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
 	"cmd/internal/src"
 )
 
 // A posMap handles mapping from syntax.Pos to src.XPos.
 type posMap struct {
-	bases map[*syntax.PosBase]*src.PosBase
-	cache struct {
+	target *ir.Package
+	bases  map[*syntax.PosBase]*src.PosBase
+	cache  struct {
 		last *syntax.PosBase
 		base *src.PosBase
 	}
@@ -32,7 +33,7 @@ func (m *posMap) makeXPos(pos syntax.Pos) src.XPos {
 	}
 
 	posBase := m.makeSrcPosBase(pos.Base())
-	return base.Ctxt.PosTable.XPos(src.MakePos(posBase, pos.Line(), pos.Col()))
+	return m.target.Ctxt.PosTable.XPos(src.MakePos(posBase, pos.Line(), pos.Col()))
 }
 
 // makeSrcPosBase translates from a *syntax.PosBase to a *src.PosBase.
@@ -45,7 +46,7 @@ func (m *posMap) makeSrcPosBase(b0 *syntax.PosBase) *src.PosBase {
 	b1, ok := m.bases[b0]
 	if !ok {
 		fn := b0.Filename()
-		absfn := trimFilename(b0)
+		absfn := trimFilename(m.target, b0)
 
 		if b0.IsFileBase() {
 			b1 = src.NewFileBase(fn, absfn)

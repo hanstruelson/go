@@ -28,11 +28,6 @@ import (
 // Use V5 for generic method index ordering.
 const uirVersion = pkgbits.V5
 
-// localPkgReader holds the package reader used for reading the local
-// package. It exists so the unified IR linker can refer back to it
-// later.
-var localPkgReader *pkgReader
-
 // LookupFunc returns the ir.Func for an arbitrary full symbol name if
 // that function exists in the set of available export data.
 //
@@ -46,15 +41,20 @@ var localPkgReader *pkgReader
 // TODO(prattmic): Hit rate of this function is usually fairly low, and errors
 // are only used when debug logging is enabled. Consider constructing cheaper
 // errors by default.
-func LookupFunc(fullName string) (*ir.Func, error) {
+func (c *Context) LookupFunc(fullName string) (*ir.Func, error) {
 	pkgPath, symName, err := ir.ParseLinkFuncName(fullName)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing symbol name %q: %v", fullName, err)
 	}
 
-	pkg, ok := types.PkgMap()[pkgPath]
-	if !ok {
-		return nil, fmt.Errorf("pkg %s doesn't exist in %v", pkgPath, types.PkgMap())
+	var pkg *types.Pkg
+	if local := c.Target.LocalPkg; local != nil && local.Path == pkgPath {
+		pkg = local
+	} else {
+		pkg = c.Target.LookupPkg(pkgPath)
+	}
+	if pkg == nil {
+		return nil, fmt.Errorf("pkg %s doesn't exist in compilation context", pkgPath)
 	}
 
 	// Symbol naming is ambiguous. We can't necessarily distinguish between
@@ -62,12 +62,12 @@ func LookupFunc(fullName string) (*ir.Func, error) {
 	// function Bar, or a method on type Bar? Thus we must simply attempt
 	// to lookup both.
 
-	fn, err := lookupFunction(pkg, symName)
+	fn, err := c.lookupFunction(pkg, symName)
 	if err == nil {
 		return fn, nil
 	}
 
-	fn, mErr := lookupMethod(pkg, symName)
+	fn, mErr := c.lookupMethod(pkg, symName)
 	if mErr == nil {
 		return fn, nil
 	}
@@ -79,17 +79,22 @@ func LookupFunc(fullName string) (*ir.Func, error) {
 // after a series of calls to LookupFunc, specifically invoking
 // readBodies to post-process any funcs on the "todoBodies" list
 // that were added as a result of the lookup operations.
-func PostLookupCleanup() {
-	readBodies(typecheck.Target, false, nil)
+func (c *Context) PostLookupCleanup() {
+	c.readBodies(c.Target, false, nil)
 }
 
-func lookupFunction(pkg *types.Pkg, symName string) (*ir.Func, error) {
+// InlineCall expands a call using this frontend's package readers.
+func (c *Context) InlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int, profile *pgoir.Profile) *ir.InlinedCallExpr {
+	return c.unifiedInlineCall(callerfn, call, fn, inlIndex, profile)
+}
+
+func (c *Context) lookupFunction(pkg *types.Pkg, symName string) (*ir.Func, error) {
 	sym := pkg.Lookup(symName)
 
 	// TODO(prattmic): Enclosed functions (e.g., foo.Bar.func1) are not
 	// present in objReader, only as OCLOSURE nodes in the enclosing
 	// function.
-	pri, ok := objReader[sym]
+	pri, ok := c.objReader[sym]
 	if !ok {
 		return nil, fmt.Errorf("func sym %v missing objReader", sym)
 	}
@@ -105,7 +110,7 @@ func lookupFunction(pkg *types.Pkg, symName string) (*ir.Func, error) {
 	return name.Func, nil
 }
 
-func lookupMethod(pkg *types.Pkg, symName string) (*ir.Func, error) {
+func (c *Context) lookupMethod(pkg *types.Pkg, symName string) (*ir.Func, error) {
 	// N.B. readPackage creates a Sym for every object in the package to
 	// initialize objReader and importBodyReader, even if the object isn't
 	// read.
@@ -113,12 +118,12 @@ func lookupMethod(pkg *types.Pkg, symName string) (*ir.Func, error) {
 	// However, objReader is only initialized for top-level objects, so we
 	// must first lookup the type and use that to find the method rather
 	// than looking for the method directly.
-	typ, meth, err := ir.LookupMethodSelector(pkg, symName)
+	typ, meth, err := ir.LookupMethodSelector(pkg, c.Target.LocalPkg, symName)
 	if err != nil {
 		return nil, fmt.Errorf("error looking up method symbol %q: %v", symName, err)
 	}
 
-	pri, ok := objReader[typ]
+	pri, ok := c.objReader[typ]
 	if !ok {
 		return nil, fmt.Errorf("type sym %v missing objReader", typ)
 	}
@@ -189,23 +194,18 @@ func lookupMethod(pkg *types.Pkg, symName string) (*ir.Func, error) {
 // the unified IR has the full typed AST needed for introspection during step (1).
 // In other words, we have all the necessary information to build the generic IR form
 // (see writer.captureVars for an example).
-func unified(m posMap, noders []*noder) {
-	inline.InlineCall = unifiedInlineCall
-	typecheck.HaveInlineBody = unifiedHaveInlineBody
-	pgoir.LookupFunc = LookupFunc
-	pgoir.PostLookupCleanup = PostLookupCleanup
+func unified(ctx *Context, m posMap, noders []*noder) {
+	data := writePkgStub(ctx, m, noders)
 
-	data := writePkgStub(m, noders)
+	target := ctx.Target
 
-	target := typecheck.Target
+	ctx.localPkgReader = newPkgReader(ctx, pkgbits.NewPkgDecoder(ctx.Target.LocalPkg.Path, data))
+	readPackage(ctx.localPkgReader, ctx.Target.LocalPkg, true)
 
-	localPkgReader = newPkgReader(pkgbits.NewPkgDecoder(types.LocalPkg.Path, data))
-	readPackage(localPkgReader, types.LocalPkg, true)
+	r := ctx.localPkgReader.newReader(pkgbits.SectionMeta, pkgbits.PrivateRootIdx, pkgbits.SyncPrivate)
+	r.pkgInit(ctx.Target.LocalPkg, target)
 
-	r := localPkgReader.newReader(pkgbits.SectionMeta, pkgbits.PrivateRootIdx, pkgbits.SyncPrivate)
-	r.pkgInit(types.LocalPkg, target)
-
-	readBodies(target, false, nil)
+	ctx.readBodies(target, false, nil)
 
 	// Check that nothing snuck past typechecking.
 	for _, fn := range target.Funcs {
@@ -225,7 +225,7 @@ func unified(m posMap, noders []*noder) {
 	// For functions originally came from package runtime,
 	// mark as norace to prevent instrumenting, see issue #60439.
 	for _, fn := range target.Funcs {
-		if !base.Flag.CompilingRuntime && types.RuntimeSymName(fn.Sym()) != "" {
+		if !ctx.Target.Flags.CompilingRuntime && types.RuntimeSymName(fn.Sym()) != "" {
 			fn.Pragma |= ir.Norace
 		}
 	}
@@ -239,7 +239,7 @@ func unified(m posMap, noders []*noder) {
 // If duringInlining is true, then the inline.InlineDecls is called as
 // necessary on instantiations of imported generic functions, so their
 // inlining costs can be computed.
-func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile) {
+func (c *Context) readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile) {
 	var inlDecls []*ir.Func
 
 	// Don't use range--bodyIdx can add closures to todoBodies.
@@ -252,18 +252,18 @@ func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile)
 		// before reading bodies, because bodies might reference the
 		// dictionaries.
 
-		if len(todoDicts) > 0 {
-			fn := todoDicts[len(todoDicts)-1]
-			todoDicts = todoDicts[:len(todoDicts)-1]
+		if len(c.todoDicts) > 0 {
+			fn := c.todoDicts[len(c.todoDicts)-1]
+			c.todoDicts = c.todoDicts[:len(c.todoDicts)-1]
 			fn()
 			continue
 		}
 
-		if len(todoBodies) > 0 {
-			fn := todoBodies[len(todoBodies)-1]
-			todoBodies = todoBodies[:len(todoBodies)-1]
+		if len(c.todoBodies) > 0 {
+			fn := c.todoBodies[len(c.todoBodies)-1]
+			c.todoBodies = c.todoBodies[:len(c.todoBodies)-1]
 
-			pri, ok := bodyReader[fn]
+			pri, ok := c.bodyReader[fn]
 			assert(ok)
 			pri.funcBody(fn)
 
@@ -273,7 +273,7 @@ func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile)
 				// cmd/link does not support a type symbol referencing a method symbol
 				// across DSO boundary, so force re-compiling methods on a generic type
 				// even it was seen from imported package in linkshared mode, see #58966.
-				canSkipNonGenericMethod := !(base.Ctxt.Flag_linkshared && ir.IsMethod(fn))
+				canSkipNonGenericMethod := !(target.Ctxt.Flag_linkshared && ir.IsMethod(fn))
 				if duringInlining && canSkipNonGenericMethod {
 					inlDecls = append(inlDecls, fn)
 				} else {
@@ -287,8 +287,8 @@ func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile)
 		break
 	}
 
-	todoDicts = nil
-	todoBodies = nil
+	c.todoDicts = nil
+	c.todoBodies = nil
 
 	if len(inlDecls) != 0 {
 		// If we instantiated any generic functions during inlining, we need
@@ -304,10 +304,10 @@ func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile)
 		// we already reported those diagnostics in the original package, so
 		// it's pointless repeating them here.
 
-		oldLowerM := base.Flag.LowerM
-		base.Flag.LowerM = 0
-		inline.CanInlineFuncs(inlDecls, profile)
-		base.Flag.LowerM = oldLowerM
+		oldLowerM := c.Target.Flags.LowerM
+		c.Target.Flags.LowerM = 0
+		inline.CanInlineFuncs(c.Inliner, inlDecls, profile, c.Target)
+		c.Target.Flags.LowerM = oldLowerM
 
 		for _, fn := range inlDecls {
 			fn.Body = nil // free memory
@@ -318,10 +318,10 @@ func readBodies(target *ir.Package, duringInlining bool, profile *pgoir.Profile)
 // writePkgStub type checks the given parsed source files,
 // writes an export data package stub representing them,
 // and returns the result.
-func writePkgStub(m posMap, noders []*noder) string {
-	pkg, info, otherInfo := checkFiles(m, noders)
+func writePkgStub(ctx *Context, m posMap, noders []*noder) string {
+	pkg, info, otherInfo := checkFiles(ctx, m, noders)
 
-	pw := newPkgWriter(m, pkg, info, otherInfo)
+	pw := newPkgWriter(ctx.Target, m, pkg, info, otherInfo)
 
 	pw.collectDecls(noders)
 
@@ -361,20 +361,20 @@ func writePkgStub(m posMap, noders []*noder) string {
 
 	// At this point, we're done with types2. Make sure the package is
 	// garbage collected.
-	freePackage(pkg)
+	freePackage(ctx.Target, pkg)
 
 	return sb.String()
 }
 
 // freePackage ensures the given package is garbage collected.
-func freePackage(pkg *types2.Package) {
+func freePackage(target *ir.Package, pkg *types2.Package) {
 	// The GC test below relies on a precise GC that runs finalizers as
 	// soon as objects are unreachable. Our implementation provides
 	// this, but other/older implementations may not (e.g., Go 1.4 does
 	// not because of #22350). To avoid imposing unnecessary
 	// restrictions on the GOROOT_BOOTSTRAP toolchain, we skip the test
 	// during bootstrapping.
-	if base.CompilerBootstrap || base.Debug.GCCheck == 0 {
+	if base.CompilerBootstrap || target.Debug.GCCheck == 0 {
 		*pkg = types2.Package{}
 		return
 	}
@@ -414,7 +414,7 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 		pkg := r.pkg()
 		// This error can happen if "go tool compile" is called with wrong "-p" flag, see issue #54542.
 		if pkg != importpkg {
-			base.ErrorfAt(base.AutogeneratedPos, errors.BadImportPath, "mismatched import path, have %q (%p), want %q (%p)", pkg.Path, pkg, importpkg.Path, importpkg)
+			base.ErrorfAt(pr.ctx.Target.AutoPos, errors.BadImportPath, "mismatched import path, have %q (%p), want %q (%p)", pkg.Path, pkg, importpkg.Path, importpkg)
 			base.ErrorExit()
 		}
 
@@ -432,7 +432,7 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 
 			path, name, code := r.p.PeekObj(idx)
 			if code != pkgbits.ObjStub {
-				objReader[types.NewPkg(path, "").Lookup(name)] = pkgReaderIndex{pr, idx, nil, nil, nil}
+				pr.ctx.objReader[pr.ctx.Target.Pkg(path, "").Lookup(name)] = pkgReaderIndex{pr: pr, ctx: pr.ctx, idx: idx}
 			}
 		}
 
@@ -454,9 +454,9 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 			name := r.String()
 			idx := r.Reloc(pkgbits.SectionBody)
 
-			sym := types.NewPkg(path, "").Lookup(name)
-			if _, ok := importBodyReader[sym]; !ok {
-				importBodyReader[sym] = pkgReaderIndex{pr, idx, nil, nil, nil}
+			sym := pr.ctx.Target.Pkg(path, "").Lookup(name)
+			if _, ok := pr.ctx.importBody[sym]; !ok {
+				pr.ctx.importBody[sym] = pkgReaderIndex{pr: pr, ctx: pr.ctx, idx: idx}
 			}
 		}
 
@@ -466,9 +466,10 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 
 // writeUnifiedExport writes to `out` the finalized, self-contained
 // Unified IR export data file for the current compilation unit.
-func writeUnifiedExport(out io.Writer) {
+func writeUnifiedExport(ctx *Context, out io.Writer) {
 	l := linker{
-		pw: pkgbits.NewPkgEncoder(uirVersion, base.Debug.SyncFrames),
+		pw:  pkgbits.NewPkgEncoder(uirVersion, ctx.Target.Debug.SyncFrames),
+		ctx: ctx,
 
 		pkgs:   make(map[string]index),
 		decls:  make(map[*types.Sym]index),
@@ -483,7 +484,7 @@ func writeUnifiedExport(out io.Writer) {
 	var selfPkgIdx index
 
 	{
-		pr := localPkgReader
+		pr := ctx.localPkgReader
 		r := pr.NewDecoder(pkgbits.SectionMeta, pkgbits.PublicRootIdx, pkgbits.SyncPublic)
 
 		r.Sync(pkgbits.SyncPkg)
@@ -562,7 +563,7 @@ func writeUnifiedExport(out io.Writer) {
 
 		w := privateRootWriter
 
-		w.Bool(typecheck.Lookup(".inittask").Def != nil)
+		w.Bool(typecheck.Lookup(l.ctx.Target, ".inittask").Def != nil)
 
 		w.Len(len(bodies))
 		for _, body := range bodies {
@@ -575,5 +576,5 @@ func writeUnifiedExport(out io.Writer) {
 		w.Flush()
 	}
 
-	base.Ctxt.Fingerprint = l.pw.DumpTo(out)
+	l.ctx.Target.Ctxt.Fingerprint = l.pw.DumpTo(out)
 }

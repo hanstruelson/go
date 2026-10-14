@@ -560,6 +560,7 @@ package rangefunc
 
 import (
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
 	"cmd/compile/internal/types2"
 	"fmt"
@@ -573,11 +574,12 @@ var nopos syntax.Pos
 
 // A rewriter implements rewriting the range-over-funcs in a given function.
 type rewriter struct {
-	pkg   *types2.Package
-	info  *types2.Info
-	sig   *types2.Signature
-	outer *syntax.FuncType
-	body  *syntax.BlockStmt
+	target *ir.Package
+	pkg    *types2.Package
+	info   *types2.Info
+	sig    *types2.Signature
+	outer  *syntax.FuncType
+	body   *syntax.BlockStmt
 
 	// References to important types and values.
 	any   types2.Object
@@ -631,14 +633,14 @@ type State int
 // Rewrite rewrites all the range-over-funcs in the files.
 // It returns the set of function literals generated from rangefunc loop bodies.
 // This allows for rangefunc loop bodies to be distinguished by debuggers.
-func Rewrite(pkg *types2.Package, info *types2.Info, files []*syntax.File) map[*syntax.FuncLit]bool {
+func Rewrite(target *ir.Package, pkg *types2.Package, info *types2.Info, files []*syntax.File) map[*syntax.FuncLit]bool {
 	ri := make(map[*syntax.FuncLit]bool)
 	for _, file := range files {
 		syntax.Inspect(file, func(n syntax.Node) bool {
 			switch n := n.(type) {
 			case *syntax.FuncDecl:
 				sig, _ := info.Defs[n.Name].Type().(*types2.Signature)
-				rewriteFunc(pkg, info, n.Type, n.Body, sig, ri)
+				rewriteFunc(target, pkg, info, n.Type, n.Body, sig, ri)
 				return false
 			case *syntax.FuncLit:
 				sig, _ := info.Types[n].Type.(*types2.Signature)
@@ -646,7 +648,7 @@ func Rewrite(pkg *types2.Package, info *types2.Info, files []*syntax.File) map[*
 					tv := n.GetTypeInfo()
 					sig = tv.Type.(*types2.Signature)
 				}
-				rewriteFunc(pkg, info, n.Type, n.Body, sig, ri)
+				rewriteFunc(target, pkg, info, n.Type, n.Body, sig, ri)
 				return false
 			}
 			return true
@@ -657,11 +659,12 @@ func Rewrite(pkg *types2.Package, info *types2.Info, files []*syntax.File) map[*
 
 // rewriteFunc rewrites all the range-over-funcs in a single function (a top-level func or a func literal).
 // The typ and body are the function's type and body.
-func rewriteFunc(pkg *types2.Package, info *types2.Info, typ *syntax.FuncType, body *syntax.BlockStmt, sig *types2.Signature, ri map[*syntax.FuncLit]bool) {
+func rewriteFunc(target *ir.Package, pkg *types2.Package, info *types2.Info, typ *syntax.FuncType, body *syntax.BlockStmt, sig *types2.Signature, ri map[*syntax.FuncLit]bool) {
 	if body == nil {
 		return
 	}
 	r := &rewriter{
+		target:                target,
 		pkg:                   pkg,
 		info:                  info,
 		outer:                 typ,
@@ -670,14 +673,14 @@ func rewriteFunc(pkg *types2.Package, info *types2.Info, typ *syntax.FuncType, b
 		rangefuncBodyClosures: ri,
 	}
 	syntax.Inspect(body, r.inspect)
-	if (base.Flag.W != 0) && r.forStack != nil {
+	if (target.Flags.W != 0) && r.forStack != nil {
 		syntax.Fdump(os.Stderr, body)
 	}
 }
 
 // checkFuncMisuse reports whether to check for misuse of iterator callbacks functions.
 func (r *rewriter) checkFuncMisuse() bool {
-	return base.Debug.RangeFuncCheck != 0
+	return r.target.Debug.RangeFuncCheck != 0
 }
 
 // inspect is a callback for syntax.Inspect that drives the actual rewriting.
@@ -692,7 +695,7 @@ func (r *rewriter) inspect(n syntax.Node) bool {
 			tv := n.GetTypeInfo()
 			sig = tv.Type.(*types2.Signature)
 		}
-		rewriteFunc(r.pkg, r.info, n.Type, n.Body, sig, r.rangefuncBodyClosures)
+		rewriteFunc(r.target, r.pkg, r.info, n.Type, n.Body, sig, r.rangefuncBodyClosures)
 		return false
 
 	default:

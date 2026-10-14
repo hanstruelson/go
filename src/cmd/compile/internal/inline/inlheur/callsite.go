@@ -5,7 +5,6 @@
 package inlheur
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/internal/src"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 // the site, and "ID" is a numeric ID for the site within its
 // containing function.
 type CallSite struct {
+	Target *ir.Package
 	Callee *ir.Func
 	Call   *ir.CallExpr
 	parent *CallSite
@@ -89,17 +89,17 @@ func (pas propsAndScore) String() string {
 func (cst CallSiteTab) merge(other CallSiteTab) error {
 	for k, v := range other {
 		if prev, ok := cst[k]; ok {
-			return fmt.Errorf("internal error: collision during call site table merge, fn=%s callsite=%s", prev.Callee.Sym().Name, fmtFullPos(prev.Call.Pos()))
+			return fmt.Errorf("internal error: collision during call site table merge, fn=%s callsite=%s", prev.Callee.Sym().Name, fmtFullPos(prev.Target, prev.Call.Pos()))
 		}
 		cst[k] = v
 	}
 	return nil
 }
 
-func fmtFullPos(p src.XPos) string {
+func fmtFullPos(target *ir.Package, p src.XPos) string {
 	var sb strings.Builder
 	sep := ""
-	base.Ctxt.AllPos(p, func(pos src.Pos) {
+	target.Ctxt.AllPos(p, func(pos src.Pos) {
 		sb.WriteString(sep)
 		sep = "|"
 		file := filepath.Base(pos.Filename())
@@ -111,7 +111,7 @@ func fmtFullPos(p src.XPos) string {
 func EncodeCallSiteKey(cs *CallSite) string {
 	var sb strings.Builder
 	// FIXME: maybe rewrite line offsets relative to function start?
-	sb.WriteString(fmtFullPos(cs.Call.Pos()))
+	sb.WriteString(fmtFullPos(cs.Target, cs.Call.Pos()))
 	fmt.Fprintf(&sb, "|%d", cs.ID)
 	return sb.String()
 }

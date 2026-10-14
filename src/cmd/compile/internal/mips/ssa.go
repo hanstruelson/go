@@ -469,7 +469,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.OpMIPSLoweredPanicBoundsRR, ssaop.OpMIPSLoweredPanicBoundsRC, ssaop.OpMIPSLoweredPanicBoundsCR, ssaop.OpMIPSLoweredPanicBoundsCC,
 		ssaop.OpMIPSLoweredPanicExtendRR, ssaop.OpMIPSLoweredPanicExtendRC:
@@ -626,9 +626,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		if extend {
-			p.To.Sym = ir.Syms.PanicExtend
+			p.To.Sym = s.Target().Symbols.PanicExtend
 		} else {
-			p.To.Sym = ir.Syms.PanicBounds
+			p.To.Sym = s.Target().Symbols.PanicBounds
 		}
 
 	case ssaop.OpMIPSLoweredAtomicLoad8,
@@ -899,7 +899,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpMIPSFPFlagTrue,
@@ -929,7 +929,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(mips.AMOVW)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()

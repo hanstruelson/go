@@ -23,7 +23,7 @@ func RangeExprType(t *types.Type) *types.Type {
 // if this assignment is the definition of a var on the left side,
 // fill in the var's type.
 func tcAssign(curfunc *ir.Func, n *ir.AssignStmt) {
-	if base.EnableTrace && base.Flag.LowerT {
+	if base.EnableTrace {
 		defer tracePrint("tcAssign", n)(nil)
 	}
 
@@ -43,7 +43,7 @@ func tcAssign(curfunc *ir.Func, n *ir.AssignStmt) {
 }
 
 func tcAssignList(curfunc *ir.Func, n *ir.AssignListStmt) {
-	if base.EnableTrace && base.Flag.LowerT {
+	if base.EnableTrace {
 		defer tracePrint("tcAssignList", n)(nil)
 	}
 
@@ -62,7 +62,7 @@ func assign(curfunc *ir.Func, stmt ir.Node, lhs, rhs []ir.Node) {
 	checkLHS := func(i int, typ *types.Type) {
 		if n := lhs[i]; typ != nil && ir.DeclaredBy(n, stmt) && n.Type() == nil {
 			base.Assertf(typ.Kind() == types.TNIL, "unexpected untyped nil")
-			n.SetType(defaultType(typ))
+			n.SetType(defaultType(targetForFunc(curfunc), typ))
 		}
 		if lhs[i].Typecheck() == 0 {
 			lhs[i] = AssignExpr(curfunc, lhs[i])
@@ -145,7 +145,7 @@ assignOK:
 
 			if lhs[i].Type() == nil || result == nil {
 				failed = true
-			} else if lhs[i] != ir.BlankNode && !types.Identical(lhs[i].Type(), result) {
+			} else if lhs[i] != curfunc.Target.BlankNode && !types.Identical(lhs[i].Type(), result) {
 				mismatched = true
 			}
 		}
@@ -183,7 +183,7 @@ func tcCheckNil(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 func tcFor(curfunc *ir.Func, n *ir.ForStmt) ir.Node {
 	Stmts(curfunc, n.Init())
 	n.Cond = Expr(curfunc, n.Cond)
-	n.Cond = DefaultLit(n.Cond, nil)
+	n.Cond = DefaultLitFor(targetForFunc(curfunc), n.Cond, nil)
 	if n.Cond != nil {
 		t := n.Cond.Type()
 		if t != nil && !t.IsBoolean() {
@@ -224,7 +224,7 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 	}
 
 	// Create a new wrapper function without parameters or results.
-	wrapperFn := ir.NewClosureFunc(pos, pos, op, types.NewSignature(nil, nil, nil), curfunc, Target, 0)
+	wrapperFn := ir.NewClosureFunc(pos, pos, op, types.NewSignature(nil, nil, nil), curfunc, curfunc.Target, 0)
 	wrapperFn.DeclareParams(true)
 	wrapperFn.SetWrapper(true)
 
@@ -337,8 +337,8 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 		// and spilled to temporary variables, which can be captured by
 		// the wrapper function.
 
-		stmtPos := base.Pos
-		callPos := base.Pos
+		stmtPos := ir.CurrentPos(curfunc)
+		callPos := ir.CurrentPos(curfunc)
 
 		as := ir.NewAssignListStmt(callPos, ir.OAS2, make([]ir.Node, len(argps)), make([]ir.Node, len(argps)))
 		for i, argp := range argps {
@@ -381,7 +381,7 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 func tcIf(curfunc *ir.Func, n *ir.IfStmt) ir.Node {
 	Stmts(curfunc, n.Init())
 	n.Cond = Expr(curfunc, n.Cond)
-	n.Cond = DefaultLit(n.Cond, nil)
+	n.Cond = DefaultLitFor(targetForFunc(curfunc), n.Cond, nil)
 	if n.Cond != nil {
 		t := n.Cond.Type()
 		if t != nil && !t.IsBoolean() {
@@ -431,7 +431,7 @@ func tcReturn(curfunc *ir.Func, n *ir.ReturnStmt) ir.Node {
 
 	typecheckargs(curfunc, n)
 	if len(n.Results) != 0 {
-		typecheckaste(ir.ORETURN, nil, false, curfunc.Type().Results(), n.Results, func() string { return "return argument" })
+		typecheckaste(curfunc, ir.ORETURN, nil, false, curfunc.Type().Results(), n.Results, func() string { return "return argument" })
 	}
 	return n
 }
@@ -439,7 +439,7 @@ func tcReturn(curfunc *ir.Func, n *ir.ReturnStmt) ir.Node {
 // select
 func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 	var def *ir.CommClause
-	lno := ir.SetPos(sel)
+	lno := ir.SetPosIn(curfunc, sel)
 	Stmts(curfunc, sel.Init())
 	for _, ncase := range sel.Cases {
 		if ncase.Comm == nil {
@@ -453,7 +453,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 			n := Stmt(curfunc, ncase.Comm)
 			ncase.Comm = n
 			oselrecv2 := func(dst, recv ir.Node, def bool) {
-				selrecv := ir.NewAssignListStmt(n.Pos(), ir.OSELRECV2, []ir.Node{dst, ir.BlankNode}, []ir.Node{recv})
+				selrecv := ir.NewAssignListStmt(n.Pos(), ir.OSELRECV2, []ir.Node{dst, curfunc.Target.BlankNode}, []ir.Node{recv})
 				selrecv.Def = def
 				selrecv.SetTypecheck(1)
 				selrecv.SetInit(n.Init())
@@ -499,7 +499,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 			case ir.ORECV:
 				// convert <-c into _, _ = <-c
 				n := n.(*ir.UnaryExpr)
-				oselrecv2(ir.BlankNode, n, false)
+				oselrecv2(curfunc.Target.BlankNode, n, false)
 
 			case ir.OSEND:
 				break
@@ -509,14 +509,14 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 		Stmts(curfunc, ncase.Body)
 	}
 
-	base.Pos = lno
+	ir.SetPosValueIn(curfunc, lno)
 }
 
 // tcSend typechecks an OSEND node.
 func tcSend(curfunc *ir.Func, n *ir.SendStmt) ir.Node {
 	n.Chan = Expr(curfunc, n.Chan)
 	n.Value = Expr(curfunc, n.Value)
-	n.Chan = DefaultLit(n.Chan, nil)
+	n.Chan = DefaultLitFor(targetForFunc(curfunc), n.Chan, nil)
 	t := n.Chan.Type()
 	if t == nil {
 		return n
@@ -549,10 +549,10 @@ func tcSwitch(curfunc *ir.Func, n *ir.SwitchStmt) {
 }
 
 func tcSwitchExpr(curfunc *ir.Func, n *ir.SwitchStmt) {
-	t := types.Types[types.TBOOL]
+	t := curfunc.Target.Type(types.TBOOL)
 	if n.Tag != nil {
 		n.Tag = Expr(curfunc, n.Tag)
-		n.Tag = DefaultLit(n.Tag, nil)
+		n.Tag = DefaultLitFor(targetForFunc(curfunc), n.Tag, nil)
 		t = n.Tag.Type()
 	}
 
@@ -588,9 +588,9 @@ func tcSwitchExpr(curfunc *ir.Func, n *ir.SwitchStmt) {
 		}
 
 		for i := range ls {
-			ir.SetPos(ncase)
+			ir.SetPosIn(curfunc, ncase)
 			ls[i] = Expr(curfunc, ls[i])
-			ls[i] = DefaultLit(ls[i], t)
+			ls[i] = DefaultLitFor(targetForFunc(curfunc), ls[i], t)
 			n1 := ls[i]
 			if t == nil || n1.Type() == nil {
 				continue

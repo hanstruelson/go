@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"cmd/compile/internal/abi"
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/block"
@@ -81,7 +80,7 @@ func expandCalls(f *ssa.Func) {
 				args = append(args, v)
 
 			case ssaop.OpStore:
-				if a := v.Args[1]; a.Op == ssaop.OpSelectN && !ssa.CanSSA(a.Type) {
+				if a := v.Args[1]; a.Op == ssaop.OpSelectN && !ssa.CanSSA(f.Config.PtrSize, a.Type) {
 					if a.Uses > 1 {
 						panic(fmt.Errorf("Saw double use of wide SelectN %s operand of Store %s",
 							a.LongString(), v.LongString()))
@@ -376,7 +375,7 @@ func (x *expandState) decomposeAsNecessary(pos src.XPos, b *ssa.Block, a, m0 *ss
 		a.Op = ssaop.OpLoad // For purposes of parameter passing expansion, a Dereference is a Load.
 	}
 
-	if !rc.hasRegs() && !ssa.CanSSA(at) {
+	if !rc.hasRegs() && !ssa.CanSSA(b.Func.Config.PtrSize, at) {
 		dst := x.offsetFrom(b, rc.storeDest, rc.storeOffset, types.NewPtr(at))
 		if x.debug > 1 {
 			x.Printf("...recur store %s at %s\n", a.LongString(), dst.LongString())
@@ -966,6 +965,6 @@ func (x *expandState) invalidateRecursively(a *ssa.Value) {
 	}
 	lost := a.InvalidateRecursively()
 	if x.debug&1 != 0 && lost { // For odd values of x.debug, do this.
-		x.Printf("Lost statement marker in %s on former %s\n", base.Ctxt.Pkgpath+"."+x.f.Name, s)
+		x.Printf("Lost statement marker in %s on former %s\n", x.f.Fe.Func().Target.Ctxt.Pkgpath+"."+x.f.Name, s)
 	}
 }

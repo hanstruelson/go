@@ -15,12 +15,12 @@ import (
 	"cmd/internal/src"
 )
 
-func tcShift(n, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
+func tcShift(curfunc *ir.Func, n, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
 	if l.Type() == nil || r.Type() == nil {
 		return l, r, nil
 	}
 
-	r = DefaultLit(r, types.Types[types.TUINT])
+	r = DefaultLitFor(targetForFunc(curfunc), r, targetType(curfunc, types.TUINT))
 	t := r.Type()
 	if !t.IsInteger() {
 		base.Errorf("invalid operation: %v (shift count type %v, must be integer)", n, r.Type())
@@ -47,8 +47,8 @@ func tcShift(n, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
 //
 //	n.X, n.Y, t = tcArith(n, op, n.X, n.Y)
 //	n.SetType(t)
-func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
-	l, r = defaultlit2(l, r, false)
+func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
+	l, r = defaultlit2(target, l, r, false)
 	if l.Type() == nil || r.Type() == nil {
 		return l, r, nil
 	}
@@ -76,7 +76,7 @@ func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 
 				types.CalcSize(l.Type())
 				if r.Type().IsInterface() == l.Type().IsInterface() || l.Type().Size() >= 1<<16 {
-					l = ir.NewConvExpr(base.Pos, aop, r.Type(), l)
+					l = ir.NewConvExpr(n.Pos(), aop, r.Type(), l)
 					l.SetTypecheck(1)
 				}
 
@@ -95,7 +95,7 @@ func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 
 				types.CalcSize(r.Type())
 				if r.Type().IsInterface() == l.Type().IsInterface() || r.Type().Size() >= 1<<16 {
-					r = ir.NewConvExpr(base.Pos, aop, l.Type(), r)
+					r = ir.NewConvExpr(n.Pos(), aop, l.Type(), r)
 					r.SetTypecheck(1)
 				}
 
@@ -105,7 +105,7 @@ func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 	}
 
 	if t.Kind() != types.TIDEAL && !types.Identical(l.Type(), r.Type()) {
-		l, r = defaultlit2(l, r, true)
+		l, r = defaultlit2(target, l, r, true)
 		if l.Type() == nil || r.Type() == nil {
 			return l, r, nil
 		}
@@ -118,7 +118,7 @@ func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 	if t.Kind() == types.TIDEAL {
 		t = mixUntyped(l.Type(), r.Type())
 	}
-	if dt := defaultType(t); !okfor[op][dt.Kind()] {
+	if dt := defaultType(target, t); !okfor[op][dt.Kind()] {
 		base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, op, typekind(t))
 		return l, r, nil
 	}
@@ -159,16 +159,14 @@ func tcArith(n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 //
 //	n.Left = tcCompLit(n.Left)
 func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
-	if base.EnableTrace && base.Flag.LowerT {
+	if base.EnableTrace {
 		defer tracePrint("tcCompLit", n)(&res)
 	}
 
-	lno := base.Pos
-	defer func() {
-		base.Pos = lno
-	}()
+	lno := ir.SetPosIn(curfunc, n)
+	defer ir.SetPosValueIn(curfunc, lno)
 
-	ir.SetPos(n)
+	ir.SetPosIn(curfunc, n)
 
 	t := n.Type()
 	base.AssertfAt(t != nil, n.Pos(), "missing type in composite literal")
@@ -189,7 +187,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 
 	case types.TMAP:
 		for i3, l := range n.List {
-			ir.SetPos(l)
+			ir.SetPosIn(curfunc, l)
 			if l.Op() != ir.OKEY {
 				n.List[i3] = Expr(curfunc, l)
 				base.Errorf("missing key in map literal")
@@ -217,7 +215,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 			// simple list of variables
 			ls := n.List
 			for i, n1 := range ls {
-				ir.SetPos(n1)
+				ir.SetPosIn(curfunc, n1)
 				n1 = Expr(curfunc, n1)
 				ls[i] = n1
 				if i >= t.NumFields() {
@@ -240,13 +238,13 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 				// function is compiled as if in the source
 				// package of the generic function.
 				if !(curfunc != nil && strings.Contains(curfunc.Nname.Sym().Name, "[")) {
-					if s != nil && !types.IsExported(s.Name) && s.Pkg != types.LocalPkg {
+					if s != nil && !types.IsExported(s.Name) && s.Pkg != curfunc.Target.LocalPkg {
 						base.Errorf("implicit assignment of unexported field '%s' in %v literal", s.Name, t)
 					}
 				}
 				// No pushtype allowed here. Must name fields for that.
 				n1 = AssignConv(n1, f.Type, "field value")
-				ls[i] = ir.NewStructKeyExpr(base.Pos, f, n1)
+				ls[i] = ir.NewStructKeyExpr(ir.CurrentPos(curfunc), f, n1)
 			}
 			if len(ls) < t.NumFields() {
 				base.Errorf("too few values in %v", n)
@@ -257,7 +255,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 			// keyed list
 			ls := n.List
 			for i, n := range ls {
-				ir.SetPos(n)
+				ir.SetPosIn(curfunc, n)
 
 				sk, ok := n.(*ir.StructKeyExpr)
 				if !ok {
@@ -271,7 +269,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 						continue
 					}
 
-					sk = tcStructLitKey(t, kv)
+					sk = tcStructLitKey(curfunc, t, kv)
 					if sk == nil {
 						continue
 					}
@@ -294,7 +292,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 
 // tcStructLitKey typechecks an OKEY node that appeared within a
 // struct literal.
-func tcStructLitKey(typ *types.Type, kv *ir.KeyExpr) *ir.StructKeyExpr {
+func tcStructLitKey(curfunc *ir.Func, typ *types.Type, kv *ir.KeyExpr) *ir.StructKeyExpr {
 	key := kv.Key
 
 	sym := key.Sym()
@@ -303,7 +301,7 @@ func tcStructLitKey(typ *types.Type, kv *ir.KeyExpr) *ir.StructKeyExpr {
 	// the field to the right of the dot,
 	// so s will be non-nil, but an OXDOT
 	// is never a valid struct literal key.
-	if sym == nil || sym.Pkg != types.LocalPkg || key.Op() == ir.OXDOT || sym.IsBlank() {
+	if sym == nil || sym.Pkg != curfunc.Target.LocalPkg || key.Op() == ir.OXDOT || sym.IsBlank() {
 		base.Errorf("invalid field name %v in struct initializer", key)
 		return nil
 	}
@@ -326,7 +324,7 @@ func tcStructLitKey(typ *types.Type, kv *ir.KeyExpr) *ir.StructKeyExpr {
 	}
 
 	if ci := Lookdot1(nil, sym, typ, typ.Fields(), 2); ci != nil { // Case-insensitive lookup.
-		if visible(ci.Sym) {
+		if visible(curfunc, ci.Sym) {
 			base.Errorf("unknown field '%v' in struct literal of type %v (but does have %v)", sym, typ, ci.Sym)
 		} else if nonexported(sym) && sym.Name == ci.Sym.Name { // Ensure exactness before the suggestion.
 			base.Errorf("cannot refer to unexported field '%v' in struct literal of type %v", sym, typ)
@@ -356,7 +354,7 @@ func tcStructLitKey(typ *types.Type, kv *ir.KeyExpr) *ir.StructKeyExpr {
 func tcConv(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 	types.CheckSize(n.Type()) // ensure width is calculated for backend
 	n.X = Expr(curfunc, n.X)
-	n.X = convlit1(n.X, n.Type(), true, nil)
+	n.X = convlit1(targetForFunc(curfunc), n.X, n.Type(), true, nil)
 	t := n.X.Type()
 	if t == nil || n.Type() == nil {
 		n.SetType(nil)
@@ -393,22 +391,22 @@ func tcConv(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 		}
 
 	case ir.OBYTES2STR:
-		if t.Elem() != types.ByteType && t.Elem() != types.Types[types.TUINT8] {
+		if t.Elem() != curfunc.Target.ByteType && t.Elem() != curfunc.Target.Type(types.TUINT8) {
 			// If t is a slice of a user-defined byte type B (not uint8
 			// or byte), then add an extra CONVNOP from []B to []byte, so
 			// that the call to slicebytetostring() added in walk will
 			// typecheck correctly.
-			n.X = ir.NewConvExpr(n.X.Pos(), ir.OCONVNOP, types.NewSlice(types.ByteType), n.X)
+			n.X = ir.NewConvExpr(n.X.Pos(), ir.OCONVNOP, types.NewSlice(curfunc.Target.ByteType), n.X)
 			n.X.SetTypecheck(1)
 		}
 
 	case ir.ORUNES2STR:
-		if t.Elem() != types.RuneType && t.Elem() != types.Types[types.TINT32] {
+		if t.Elem() != curfunc.Target.RuneType && t.Elem() != curfunc.Target.Type(types.TINT32) {
 			// If t is a slice of a user-defined rune type B (not uint32
 			// or rune), then add an extra CONVNOP from []B to []rune, so
 			// that the call to slicerunetostring() added in walk will
 			// typecheck correctly.
-			n.X = ir.NewConvExpr(n.X.Pos(), ir.OCONVNOP, types.NewSlice(types.RuneType), n.X)
+			n.X = ir.NewConvExpr(n.X.Pos(), ir.OCONVNOP, types.NewSlice(curfunc.Target.RuneType), n.X)
 			n.X.SetTypecheck(1)
 		}
 
@@ -488,7 +486,7 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 	}
 
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 
 	t := n.X.Type()
 	if t == nil {
@@ -532,7 +530,7 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 			base.Errorf("%v undefined (cannot refer to unexported field or method %v)", n, n.Sel)
 
 		default:
-			if mt := Lookdot(curfunc, n, t, 2); mt != nil && visible(mt.Sym) { // Case-insensitive lookup.
+			if mt := Lookdot(curfunc, n, t, 2); mt != nil && visible(curfunc, mt.Sym) { // Case-insensitive lookup.
 				base.Errorf("%v undefined (type %v has no field or method %v, but does have %v)", n, n.X.Type(), n.Sel, mt.Sym)
 			} else {
 				base.Errorf("%v undefined (type %v has no field or method %v)", n, n.X.Type(), n.Sel)
@@ -544,7 +542,7 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 
 	if (n.Op() == ir.ODOTINTER || n.Op() == ir.ODOTMETH) && top&ctxCallee == 0 {
 		n.SetOp(ir.OMETHVALUE)
-		n.SetType(NewMethodType(n.Type(), nil))
+		n.SetType(NewMethodType(n.Pos(), n.Type(), nil))
 	}
 	return n
 }
@@ -552,7 +550,7 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 // tcDotType typechecks an ODOTTYPE node.
 func tcDotType(curfunc *ir.Func, n *ir.TypeAssertExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 	l := n.X
 	t := l.Type()
 	if t == nil {
@@ -589,14 +587,14 @@ func tcITab(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	if !t.IsInterface() {
 		base.Fatalf("OITAB of %v", t)
 	}
-	n.SetType(types.NewPtr(types.Types[types.TUINTPTR]))
+	n.SetType(types.NewPtr(curfunc.Target.Type(types.TUINTPTR)))
 	return n
 }
 
 // tcIndex typechecks an OINDEX node.
 func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 	n.X = implicitstar(curfunc, n.X)
 	l := n.X
 	n.Index = Expr(curfunc, n.Index)
@@ -613,9 +611,9 @@ func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 		return n
 
 	case types.TSTRING, types.TARRAY, types.TSLICE:
-		n.Index = indexlit(n.Index)
+		n.Index = indexlit(curfunc, n.Index)
 		if t.IsString() {
-			n.SetType(types.ByteType)
+			n.SetType(curfunc.Target.ByteType)
 		} else {
 			n.SetType(t.Elem())
 		}
@@ -643,7 +641,7 @@ func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 // tcLenCap typechecks an OLEN or OCAP node.
 func tcLenCap(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 	l := n.X
 	t := l.Type()
 	if t == nil {
@@ -664,14 +662,14 @@ func tcLenCap(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 
-	n.SetType(types.Types[types.TINT])
+	n.SetType(curfunc.Target.Type(types.TINT))
 	return n
 }
 
 // tcUnsafeData typechecks an OUNSAFESLICEDATA or OUNSAFESTRINGDATA node.
 func tcUnsafeData(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 	l := n.X
 	t := l.Type()
 	if t == nil {
@@ -694,7 +692,7 @@ func tcUnsafeData(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	}
 
 	if kind == types.TSTRING {
-		t = types.ByteType
+		t = curfunc.Target.ByteType
 	} else {
 		t = t.Elem()
 	}
@@ -705,7 +703,7 @@ func tcUnsafeData(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 // tcRecv typechecks an ORECV node.
 func tcRecv(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = DefaultLit(n.X, nil)
+	n.X = DefaultLitFor(targetForFunc(curfunc), n.X, nil)
 	l := n.X
 	t := l.Type()
 	if t == nil {
@@ -740,7 +738,7 @@ func tcSPtr(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		base.Fatalf("OSPTR of %v", t)
 	}
 	if t.IsString() {
-		n.SetType(types.NewPtr(types.Types[types.TUINT8]))
+		n.SetType(types.NewPtr(curfunc.Target.Type(types.TUINT8)))
 	} else {
 		n.SetType(types.NewPtr(t.Elem()))
 	}
@@ -749,10 +747,10 @@ func tcSPtr(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 
 // tcSlice typechecks an OSLICE or OSLICE3 node.
 func tcSlice(curfunc *ir.Func, n *ir.SliceExpr) ir.Node {
-	n.X = DefaultLit(Expr(curfunc, n.X), nil)
-	n.Low = indexlit(Expr(curfunc, n.Low))
-	n.High = indexlit(Expr(curfunc, n.High))
-	n.Max = indexlit(Expr(curfunc, n.Max))
+	n.X = DefaultLitFor(targetForFunc(curfunc), Expr(curfunc, n.X), nil)
+	n.Low = indexlit(curfunc, Expr(curfunc, n.Low))
+	n.High = indexlit(curfunc, Expr(curfunc, n.High))
+	n.Max = indexlit(curfunc, Expr(curfunc, n.Max))
 	hasmax := n.Op().IsSlice3()
 	l := n.X
 	if l.Type() == nil {
@@ -833,8 +831,8 @@ func tcSliceHeader(curfunc *ir.Func, n *ir.SliceHeaderExpr) ir.Node {
 	}
 
 	n.Ptr = Expr(curfunc, n.Ptr)
-	n.Len = DefaultLit(Expr(curfunc, n.Len), types.Types[types.TINT])
-	n.Cap = DefaultLit(Expr(curfunc, n.Cap), types.Types[types.TINT])
+	n.Len = DefaultLitFor(targetForFunc(curfunc), Expr(curfunc, n.Len), curfunc.Target.Type(types.TINT))
+	n.Cap = DefaultLitFor(targetForFunc(curfunc), Expr(curfunc, n.Cap), curfunc.Target.Type(types.TINT))
 
 	return n
 }
@@ -855,7 +853,7 @@ func tcStringHeader(curfunc *ir.Func, n *ir.StringHeaderExpr) ir.Node {
 	}
 
 	n.Ptr = Expr(curfunc, n.Ptr)
-	n.Len = DefaultLit(Expr(curfunc, n.Len), types.Types[types.TINT])
+	n.Len = DefaultLitFor(targetForFunc(curfunc), Expr(curfunc, n.Len), curfunc.Target.Type(types.TINT))
 
 	return n
 }
@@ -899,7 +897,7 @@ func tcUnaryArith(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		n.SetType(nil)
 		return n
 	}
-	if !okfor[n.Op()][defaultType(t).Kind()] {
+	if !okfor[n.Op()][defaultType(targetForFunc(curfunc), t).Kind()] {
 		base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(t))
 		n.SetType(nil)
 		return n

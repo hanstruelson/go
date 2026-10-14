@@ -12,21 +12,88 @@ import (
 	"math/rand"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssaconfig"
 )
 
 // Compiler satisfies the ssacore.Compiler interface.
-type Compiler struct{}
+type Compiler struct {
+	passes []ssa.Pass
+}
 
-func (_ Compiler) Passes() []ssa.Pass {
+func (c Compiler) Passes() []ssa.Pass {
+	if c.passes != nil {
+		return c.passes
+	}
 	return passes[:]
+}
+
+// ConfigureTarget copies command-line SSA consistency-check options into the
+// target context. Reusable compiler callers can set these target fields
+// directly without using the command-line option globals.
+func ConfigureTarget(target *ir.Package) Compiler {
+	target.SSACheck = checkEnabled
+	target.SSACheckSeed = checkRandSeed
+	target.SSAIntrinsicsDebug = ssaconfig.IntrinsicsDebug
+	target.SSAIntrinsicsDisable = ssaconfig.IntrinsicsDisable
+	target.SSABuildDump = copySet(ssaconfig.BuildDump)
+	target.SSAGenssaDump = copySet(ssaconfig.GenssaDump)
+	return Compiler{passes: copyPasses(passes[:])}
+}
+
+func copySet(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func copyIntMap(src map[string]int64) map[string]int64 {
+	dst := make(map[string]int64, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func copyPasses(src []ssa.Pass) []ssa.Pass {
+	dst := slices.Clone(src)
+	for i := range dst {
+		dst[i].Dump = copySet(src[i].Dump)
+		dst[i].Keywords = copyIntMap(src[i].Keywords)
+		dst[i].UsedKW = copySet(src[i].UsedKW)
+	}
+	return dst
+}
+
+func buildDumpForFunc(f *ssa.Func) bool {
+	if f != nil && f.Config != nil && f.Config.Target != nil {
+		return f.Config.Target.SSABuildDump[f.Name]
+	}
+	return ssaconfig.BuildDump[f.Name]
+}
+
+func checkEnabledForFunc(f *ssa.Func) bool {
+	if f != nil && f.Config != nil && f.Config.Target != nil {
+		return f.Config.Target.SSACheck
+	}
+	return checkEnabled
+}
+
+func checkSeedForFunc(f *ssa.Func) int {
+	if f != nil && f.Config != nil && f.Config.Target != nil {
+		return f.Config.Target.SSACheckSeed
+	}
+	return checkRandSeed
 }
 
 // Compile is the main entry point for this package.
@@ -35,7 +102,9 @@ func (_ Compiler) Passes() []ssa.Pass {
 //   - the order of f.Blocks is the order to emit the Blocks
 //   - the order of b.Values is the order to emit the Values in each Block
 //   - f has a non-nil regAlloc field
-func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
+func (c Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
+	check := checkEnabledForFunc(f)
+	seed := checkSeedForFunc(f)
 	// TODO: debugging - set flags to control verbosity of compiler,
 	// which phases to dump IR before/after, etc.
 	if f.Log() {
@@ -43,9 +112,9 @@ func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 	}
 
 	var rnd *rand.Rand
-	if checkEnabled {
-		seed := int64(crc32.ChecksumIEEE(([]byte)(f.Name))) ^ int64(checkRandSeed)
-		rnd = rand.New(rand.NewSource(seed))
+	if check {
+		randSeed := int64(crc32.ChecksumIEEE(([]byte)(f.Name))) ^ int64(seed)
+		rnd = rand.New(rand.NewSource(randSeed))
 	}
 
 	// hook to print function & phase if panic happens
@@ -68,10 +137,10 @@ func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 		ssa.PrintFunc(f)
 	}
 	htmlWriter.WritePhase("start", "start")
-	if ssaconfig.BuildDump[f.Name] {
+	if buildDumpForFunc(f) {
 		f.DumpFile("build")
 	}
-	if checkEnabled {
+	if check {
 		checkFunc(f)
 	}
 	const logMemStats = false
@@ -80,7 +149,7 @@ func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 	// some other value inside a pass function, without interfering with other
 	// functions
 	var p ssa.Pass
-	for _, p = range passes {
+	for _, p = range c.Passes() {
 		if !f.Config.Optimize && !p.Required || p.Disabled {
 			continue
 		}
@@ -97,7 +166,7 @@ func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 			runtime.ReadMemStats(mStart)
 		}
 
-		if checkEnabled && !f.Scheduled {
+		if check && !f.Scheduled {
 			// Test that we don't depend on the value order, by randomizing
 			// the order of values in each block. See issue 18169.
 			for _, b := range f.Blocks {
@@ -151,7 +220,7 @@ func (_ Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 			// Dump function to appropriately named file
 			f.DumpFile(phaseName)
 		}
-		if checkEnabled {
+		if check {
 			checkFunc(f)
 		}
 	}
@@ -273,16 +342,13 @@ commas. For example:
 		switch flag {
 		case "on":
 			checkEnabled = val != 0
-			ssa.DebugPoset = checkEnabled // also turn on advanced self-checking in prove's data structure
 			return ""
 		case "off":
 			checkEnabled = val == 0
-			ssa.DebugPoset = checkEnabled
 			return ""
 		case "seed":
 			checkEnabled = true
 			checkRandSeed = val
-			ssa.DebugPoset = checkEnabled
 			return ""
 		}
 	}
@@ -572,14 +638,14 @@ var passOrder = [...]constraint{
 	{"prove", "known bits"},
 }
 
-func PostCompile() {
-	for _, c := range passes {
-		if c.Keywords != nil {
-			for k := range c.Keywords {
-				if !c.UsedKW[k] {
+func (c Compiler) PostCompile() {
+	for _, pass := range c.Passes() {
+		if pass.Keywords != nil {
+			for k := range pass.Keywords {
+				if !pass.UsedKW[k] {
 					// If someone specified a debugging keyword that was not
 					// consumed, they might want to know about this.
-					base.Warn("Keyword %s for pass %s was not used", k, c.Name)
+					base.Warn("Keyword %s for pass %s was not used", k, pass.Name)
 				}
 			}
 		}

@@ -364,7 +364,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ADUFFZERO)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Duffzero
+		p.To.Sym = s.Target().Symbols.Duffzero
 		p.To.Offset = v.AuxInt
 	case ssaop.OpMIPS64LoweredZero:
 		// SUBV	$8, R1
@@ -414,7 +414,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p := s.Prog(obj.ADUFFCOPY)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Duffcopy
+		p.To.Sym = s.Target().Symbols.Duffcopy
 		p.To.Offset = v.AuxInt
 	case ssaop.OpMIPS64LoweredMove:
 		// SUBV	$8, R1
@@ -481,7 +481,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.OpMIPS64LoweredPanicBoundsRR, ssaop.OpMIPS64LoweredPanicBoundsRC, ssaop.OpMIPS64LoweredPanicBoundsCR, ssaop.OpMIPS64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
@@ -567,7 +567,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.PanicBounds
+		p.To.Sym = s.Target().Symbols.PanicBounds
 
 	case ssaop.OpMIPS64LoweredAtomicLoad8, ssaop.OpMIPS64LoweredAtomicLoad32, ssaop.OpMIPS64LoweredAtomicLoad64:
 		as := mips.AMOVV
@@ -828,7 +828,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpMIPS64FPFlagTrue,
@@ -861,7 +861,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(mips.AMOVV)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()

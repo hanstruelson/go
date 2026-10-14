@@ -11,6 +11,7 @@ import (
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/types"
 	"cmd/internal/goobj"
 	"cmd/internal/obj"
@@ -36,7 +37,8 @@ import (
 // elements from imported packages into a single, self-contained
 // export data file.
 type linker struct {
-	pw pkgbits.PkgEncoder
+	pw  pkgbits.PkgEncoder
+	ctx *Context
 
 	pkgs   map[string]index
 	decls  map[*types.Sym]index
@@ -135,14 +137,14 @@ func (l *linker) relocPkg(pr *pkgReader, idx index) index {
 // adding inlining cost and escape analysis results for functions).
 func (l *linker) relocObj(pr *pkgReader, idx index) index {
 	path, name, tag := pr.PeekObj(idx)
-	sym := types.NewPkg(path, "").Lookup(name)
+	sym := l.ctx.Target.Pkg(path, "").Lookup(name)
 
 	if newidx, ok := l.decls[sym]; ok {
 		return newidx
 	}
 
 	if tag == pkgbits.ObjStub && path != "builtin" && path != "unsafe" {
-		pri, ok := objReader[sym]
+		pri, ok := pr.ctx.objReader[sym]
 		if !ok {
 			base.Fatalf("missing reader for %q.%v", path, name)
 		}
@@ -152,7 +154,7 @@ func (l *linker) relocObj(pr *pkgReader, idx index) index {
 		idx = pri.idx
 
 		path2, name2, tag2 := pr.PeekObj(idx)
-		sym2 := types.NewPkg(path2, "").Lookup(name2)
+		sym2 := l.ctx.Target.Pkg(path2, "").Lookup(name2)
 		assert(sym == sym2)
 		assert(tag2 != pkgbits.ObjStub)
 	}
@@ -174,7 +176,7 @@ func (l *linker) relocObj(pr *pkgReader, idx index) index {
 	// Generic types and functions won't have definitions, and imported
 	// objects may not either.
 	obj, _ := sym.Def.(*ir.Name)
-	local := sym.Pkg == types.LocalPkg
+	local := sym.Pkg == l.ctx.Target.LocalPkg
 
 	if local && obj != nil {
 		wext.Sync(pkgbits.SyncObject1)
@@ -244,7 +246,7 @@ func (l *linker) exportBody(obj *ir.Name, local bool) {
 		return
 	}
 
-	pri, ok := bodyReaderFor(fn)
+	pri, ok := l.ctx.bodyReaderFor(fn)
 	assert(ok)
 	l.bodies[sym] = l.relocIdx(pri.pr, pkgbits.SectionBody, pri.idx)
 }
@@ -316,8 +318,8 @@ func (l *linker) relocTypeExt(w *pkgbits.Encoder, name *ir.Name) {
 	l.pragmaFlag(w, name.Pragma())
 
 	// For type T, export the index of type descriptor symbols of T and *T.
-	l.lsymIdx(w, "", types.TypeSym(typ).Linksym())
-	l.lsymIdx(w, "", types.TypeSym(typ.PtrTo()).Linksym())
+	l.lsymIdx(w, "", reflectdata.TypeSym(l.ctx.Target, typ).Linksym())
+	l.lsymIdx(w, "", reflectdata.TypeSym(l.ctx.Target, typ.PtrTo()).Linksym())
 
 	if typ.Kind() != types.TINTER {
 		for _, method := range typ.Methods() {
@@ -343,7 +345,7 @@ func (l *linker) linkname(w *pkgbits.Encoder, name *ir.Name) {
 
 func (l *linker) lsymIdx(w *pkgbits.Encoder, linkname string, lsym *obj.LSym) bool {
 	if lsym.PkgIdx > goobj.PkgIdxSelf || (lsym.PkgIdx == goobj.PkgIdxInvalid && !lsym.Indexed()) || linkname != "" {
-		base.Ctxt.NoteUnnumberedExport(lsym)
+		l.ctx.Target.Ctxt.NoteUnnumberedExport(lsym)
 		w.Int64(-1)
 		return false
 	}

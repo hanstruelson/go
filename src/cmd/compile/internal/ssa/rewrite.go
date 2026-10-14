@@ -267,7 +267,7 @@ func Disjoint1(p1 *Value, n1 int64, p2 *Value, n2 int64) bool {
 	}
 
 	// Run types-based analysis
-	if DisjointTypes(p1.Type, p2.Type) {
+	if DisjointTypes(int(p1.Block.Func.Config.PtrSize), p1.Type, p2.Type) {
 		return true
 	}
 
@@ -299,7 +299,7 @@ func Disjoint1(p1 *Value, n1 int64, p2 *Value, n2 int64) bool {
 // DisjointTypes reports whether a memory region pointed to by a pointer of type
 // t1 does not overlap with a memory region pointed to by a pointer of type t2 --
 // based on type aliasing rules.
-func DisjointTypes(t1 *types.Type, t2 *types.Type) bool {
+func DisjointTypes(ptrSize int, t1 *types.Type, t2 *types.Type) bool {
 	// Unsafe pointer can alias with anything.
 	if t1.IsUnsafePtr() || t2.IsUnsafePtr() {
 		return false
@@ -319,7 +319,7 @@ func DisjointTypes(t1 *types.Type, t2 *types.Type) bool {
 		return false
 	}
 
-	isPtrShaped := func(t *types.Type) bool { return int(t.Size()) == types.PtrSize && t.HasPointers() }
+	isPtrShaped := func(t *types.Type) bool { return int(t.Size()) == ptrSize && t.HasPointers() }
 
 	// Pointers and non-pointers are disjoint (https://pkg.go.dev/unsafe#Pointer).
 	if (isPtrShaped(t1) && !t2.HasPointers()) ||
@@ -1163,7 +1163,7 @@ func LogRule(s string) {
 }
 
 func MakeJumpTableSym(b *Block) *obj.LSym {
-	s := base.Ctxt.Lookup(fmt.Sprintf("%s.jump%d", b.Func.Fe.Func().LSym.Name, b.ID))
+	s := b.Func.Fe.Func().Target.Ctxt.Lookup(fmt.Sprintf("%s.jump%d", b.Func.Fe.Func().LSym.Name, b.ID))
 	// The jump table symbol is accessed only from the function symbol.
 	s.Set(obj.AttrStatic, true)
 	return s

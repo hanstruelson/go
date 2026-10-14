@@ -8,7 +8,6 @@ import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/pgoir"
-	"cmd/compile/internal/types"
 	"cmp"
 	"fmt"
 	"os"
@@ -74,35 +73,38 @@ const (
 // we will go through some sort of turning process to decide
 // what value for each one produces the best performance.
 
-var adjValues = map[scoreAdjustTyp]int{
-	panicPathAdj:                          40,
-	initFuncAdj:                           20,
-	inLoopAdj:                             -5,
-	passConstToIfAdj:                      -20,
-	passConstToNestedIfAdj:                -15,
-	passConcreteToItfCallAdj:              -30,
-	passConcreteToNestedItfCallAdj:        -25,
-	passFuncToIndCallAdj:                  -25,
-	passFuncToNestedIndCallAdj:            -20,
-	passInlinableFuncToIndCallAdj:         -45,
-	passInlinableFuncToNestedIndCallAdj:   -40,
-	returnFeedsConstToIfAdj:               -15,
-	returnFeedsFuncToIndCallAdj:           -25,
-	returnFeedsInlinableFuncToIndCallAdj:  -40,
-	returnFeedsConcreteToInterfaceCallAdj: -25,
+func defaultAdjValues() map[scoreAdjustTyp]int {
+	return map[scoreAdjustTyp]int{
+		panicPathAdj:                          40,
+		initFuncAdj:                           20,
+		inLoopAdj:                             -5,
+		passConstToIfAdj:                      -20,
+		passConstToNestedIfAdj:                -15,
+		passConcreteToItfCallAdj:              -30,
+		passConcreteToNestedItfCallAdj:        -25,
+		passFuncToIndCallAdj:                  -25,
+		passFuncToNestedIndCallAdj:            -20,
+		passInlinableFuncToIndCallAdj:         -45,
+		passInlinableFuncToNestedIndCallAdj:   -40,
+		returnFeedsConstToIfAdj:               -15,
+		returnFeedsFuncToIndCallAdj:           -25,
+		returnFeedsInlinableFuncToIndCallAdj:  -40,
+		returnFeedsConcreteToInterfaceCallAdj: -25,
+	}
 }
 
 // SetupScoreAdjustments interprets the value of the -d=inlscoreadj
 // debugging option, if set. The value of this flag is expected to be
 // a series of "/"-separated clauses of the form adj1:value1. Example:
 // -d=inlscoreadj=inLoopAdj=0/passConstToIfAdj=-99
-func SetupScoreAdjustments() {
-	if base.Debug.InlScoreAdj == "" {
+func SetupScoreAdjustments(ctx *Context) {
+	ctx.adjValues = defaultAdjValues()
+	if ctx.Target.Debug.InlScoreAdj == "" {
 		return
 	}
-	if err := parseScoreAdj(base.Debug.InlScoreAdj); err != nil {
+	if err := parseScoreAdj(ctx, ctx.Target.Debug.InlScoreAdj); err != nil {
 		base.Fatalf("malformed -d=inlscoreadj argument %q: %v",
-			base.Debug.InlScoreAdj, err)
+			ctx.Target.Debug.InlScoreAdj, err)
 	}
 }
 
@@ -115,7 +117,7 @@ func adjStringToVal(s string) (scoreAdjustTyp, bool) {
 	return 0, false
 }
 
-func parseScoreAdj(val string) error {
+func parseScoreAdj(ctx *Context, val string) error {
 	clauses := strings.Split(val, "/")
 	if len(clauses) == 0 {
 		return fmt.Errorf("no clauses")
@@ -137,13 +139,13 @@ func parseScoreAdj(val string) error {
 		if err != nil {
 			return fmt.Errorf("clause %q: malformed value: %v", clause, err)
 		}
-		adjValues[adj] = val
+		ctx.adjValues[adj] = val
 	}
 	return nil
 }
 
-func adjValue(x scoreAdjustTyp) int {
-	if val, ok := adjValues[x]; ok {
+func adjValue(ctx *Context, x scoreAdjustTyp) int {
+	if val, ok := ctx.adjValues[x]; ok {
 		return val
 	} else {
 		panic("internal error unregistered adjustment type")
@@ -201,20 +203,20 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 
 	if debugTrace&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= scoring call to %s at %s , initial=%d\n",
-			callee.Sym().Name, fmtFullPos(call.Pos()), score)
+			callee.Sym().Name, fmtFullPos(cs.Target, call.Pos()), score)
 	}
 
 	// First some score adjustments to discourage inlining in selected cases.
 	if csflags&CallSiteOnPanicPath != 0 {
-		score, tmask = adjustScore(panicPathAdj, score, tmask)
+		score, tmask = adjustScore(csa.ctx, panicPathAdj, score, tmask)
 	}
 	if csflags&CallSiteInInitFunc != 0 {
-		score, tmask = adjustScore(initFuncAdj, score, tmask)
+		score, tmask = adjustScore(csa.ctx, initFuncAdj, score, tmask)
 	}
 
 	// Then adjustments to encourage inlining in selected cases.
 	if csflags&CallSiteInLoop != 0 {
-		score, tmask = adjustScore(inLoopAdj, score, tmask)
+		score, tmask = adjustScore(csa.ctx, inLoopAdj, score, tmask)
 	}
 
 	// Stop here if no callee props.
@@ -250,10 +252,10 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 
 		if argProps&ActualExprConstant != 0 {
 			if pflag&ParamMayFeedIfOrSwitch != 0 {
-				score, tmask = adjustScore(passConstToNestedIfAdj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, passConstToNestedIfAdj, score, tmask)
 			}
 			if pflag&ParamFeedsIfOrSwitch != 0 {
-				score, tmask = adjustScore(passConstToIfAdj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, passConstToIfAdj, score, tmask)
 			}
 		}
 
@@ -283,10 +285,10 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 			// through all of the methods of "*Conc" that allow it to
 			// satisfy I, and if all are inlinable, then exploit that.
 			if pflag&ParamMayFeedInterfaceMethodCall != 0 {
-				score, tmask = adjustScore(passConcreteToNestedItfCallAdj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, passConcreteToNestedItfCallAdj, score, tmask)
 			}
 			if pflag&ParamFeedsInterfaceMethodCall != 0 {
-				score, tmask = adjustScore(passConcreteToItfCallAdj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, passConcreteToItfCallAdj, score, tmask)
 			}
 		}
 
@@ -298,10 +300,10 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 				mustadj = passInlinableFuncToIndCallAdj
 			}
 			if pflag&ParamMayFeedIndirectCall != 0 {
-				score, tmask = adjustScore(mayadj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, mayadj, score, tmask)
 			}
 			if pflag&ParamFeedsIndirectCall != 0 {
-				score, tmask = adjustScore(mustadj, score, tmask)
+				score, tmask = adjustScore(csa.ctx, mustadj, score, tmask)
 			}
 		}
 	}
@@ -309,7 +311,7 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 	cs.Score, cs.ScoreMask = score, tmask
 }
 
-func adjustScore(typ scoreAdjustTyp, score int, mask scoreAdjustTyp) (int, scoreAdjustTyp) {
+func adjustScore(ctx *Context, typ scoreAdjustTyp, score int, mask scoreAdjustTyp) (int, scoreAdjustTyp) {
 
 	if isMust(typ) {
 		if mask&typ != 0 {
@@ -318,7 +320,7 @@ func adjustScore(typ scoreAdjustTyp, score int, mask scoreAdjustTyp) (int, score
 		may := mustToMay(typ)
 		if mask&may != 0 {
 			// promote may to must, so undo may
-			score -= adjValue(may)
+			score -= adjValue(ctx, may)
 			mask &^= may
 		}
 	} else if isMay(typ) {
@@ -330,29 +332,25 @@ func adjustScore(typ scoreAdjustTyp, score int, mask scoreAdjustTyp) (int, score
 	if mask&typ == 0 {
 		if debugTrace&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= applying adj %d for %s\n",
-				adjValue(typ), typ.String())
+				adjValue(ctx, typ), typ.String())
 		}
-		score += adjValue(typ)
+		score += adjValue(ctx, typ)
 		mask |= typ
 	}
 	return score, mask
 }
 
-var resultFlagToPositiveAdj map[ResultPropBits]scoreAdjustTyp
-var paramFlagToPositiveAdj map[ParamPropBits]scoreAdjustTyp
+var resultFlagToPositiveAdj = map[ResultPropBits]scoreAdjustTyp{
+	ResultIsAllocatedMem:     returnFeedsConcreteToInterfaceCallAdj,
+	ResultAlwaysSameFunc:     returnFeedsFuncToIndCallAdj,
+	ResultAlwaysSameConstant: returnFeedsConstToIfAdj,
+}
 
-func setupFlagToAdjMaps() {
-	resultFlagToPositiveAdj = map[ResultPropBits]scoreAdjustTyp{
-		ResultIsAllocatedMem:     returnFeedsConcreteToInterfaceCallAdj,
-		ResultAlwaysSameFunc:     returnFeedsFuncToIndCallAdj,
-		ResultAlwaysSameConstant: returnFeedsConstToIfAdj,
-	}
-	paramFlagToPositiveAdj = map[ParamPropBits]scoreAdjustTyp{
-		ParamMayFeedInterfaceMethodCall: passConcreteToNestedItfCallAdj,
-		ParamFeedsInterfaceMethodCall:   passConcreteToItfCallAdj,
-		ParamMayFeedIndirectCall:        passInlinableFuncToNestedIndCallAdj,
-		ParamFeedsIndirectCall:          passInlinableFuncToIndCallAdj,
-	}
+var paramFlagToPositiveAdj = map[ParamPropBits]scoreAdjustTyp{
+	ParamMayFeedInterfaceMethodCall: passConcreteToNestedItfCallAdj,
+	ParamFeedsInterfaceMethodCall:   passConcreteToItfCallAdj,
+	ParamMayFeedIndirectCall:        passInlinableFuncToNestedIndCallAdj,
+	ParamFeedsIndirectCall:          passInlinableFuncToIndCallAdj,
 }
 
 // LargestNegativeScoreAdjustment tries to estimate the largest possible
@@ -374,20 +372,17 @@ func setupFlagToAdjMaps() {
 // given call _could_ be rescored down as much as -35 points-- thus if
 // the size of "bar" is 100 (for example) then there is at least a
 // chance that scoring will enable inlining.
-func LargestNegativeScoreAdjustment(fn *ir.Func, props *FuncProps) int {
-	if resultFlagToPositiveAdj == nil {
-		setupFlagToAdjMaps()
-	}
+func LargestNegativeScoreAdjustment(ctx *Context, fn *ir.Func, props *FuncProps) int {
 	var tmask scoreAdjustTyp
-	score := adjValues[inLoopAdj] // any call can be in a loop
+	score := ctx.adjValues[inLoopAdj] // any call can be in a loop
 	for _, pf := range props.ParamFlags {
 		if adj, ok := paramFlagToPositiveAdj[pf]; ok {
-			score, tmask = adjustScore(adj, score, tmask)
+			score, tmask = adjustScore(ctx, adj, score, tmask)
 		}
 	}
 	for _, rf := range props.ResultFlags {
 		if adj, ok := resultFlagToPositiveAdj[rf]; ok {
-			score, tmask = adjustScore(adj, score, tmask)
+			score, tmask = adjustScore(ctx, adj, score, tmask)
 		}
 	}
 
@@ -409,13 +404,9 @@ func LargestNegativeScoreAdjustment(fn *ir.Func, props *FuncProps) int {
 // in the future (for example, we might want to score the callsites
 // in multiple functions in parallel); if the inliner evolves in this
 // direction we'll need to come up with a different approach here.
-var callSiteTab CallSiteTab
-
 // scoreCallsCache caches a call site table and call site list between
 // invocations of ScoreCalls so that we can reuse previously allocated
 // storage.
-var scoreCallsCache scoreCallsCacheType
-
 type scoreCallsCacheType struct {
 	tab CallSiteTab
 	csl []*CallSite
@@ -439,11 +430,11 @@ type scoreCallsCacheType struct {
 // We don't want to perform scoring for the 'foo' call in "bar" until
 // after foo has been analyzed, but it's conceivable that CanInline
 // might visit bar before foo for this SCC.
-func ScoreCalls(fn *ir.Func) {
+func ScoreCalls(ctx *Context, fn *ir.Func) {
 	if len(fn.Body) == 0 {
 		return
 	}
-	enableDebugTraceIfEnv()
+	enableDebugTraceIfEnv(ctx.Target)
 
 	nameFinder := newNameFinder(fn)
 
@@ -455,24 +446,24 @@ func ScoreCalls(fn *ir.Func) {
 	// call site table for it. If the function wasn't an inline
 	// candidate, collect a callsite table for it now.
 	var cstab CallSiteTab
-	if funcInlHeur, ok := fpmap[fn]; ok {
+	if funcInlHeur, ok := ctx.fpmap[fn]; ok {
 		cstab = funcInlHeur.cstab
 	} else {
-		if len(scoreCallsCache.tab) != 0 {
+		if len(ctx.scoreCallsCache.tab) != 0 {
 			panic("missing call to ScoreCallsCleanup")
 		}
-		if scoreCallsCache.tab == nil {
-			scoreCallsCache.tab = make(CallSiteTab)
+		if ctx.scoreCallsCache.tab == nil {
+			ctx.scoreCallsCache.tab = make(CallSiteTab)
 		}
 		if debugTrace&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= building cstab for non-inl func %s\n",
 				ir.FuncName(fn))
 		}
-		cstab = computeCallSiteTable(fn, fn.Body, scoreCallsCache.tab, nil, 0,
+		cstab = computeCallSiteTable(fn, fn.Body, ctx.scoreCallsCache.tab, nil, 0,
 			nameFinder)
 	}
 
-	csa := makeCallSiteAnalyzer(fn)
+	csa := makeCallSiteAnalyzer(ctx, fn)
 	const doCallResults = true
 	csa.scoreCallsRegion(fn, fn.Body, cstab, doCallResults, nil)
 
@@ -492,11 +483,11 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 	// Sort callsites to avoid any surprises with non deterministic
 	// map iteration order (this is probably not needed, but here just
 	// in case).
-	csl := scoreCallsCache.csl[:0]
+	csl := csa.ctx.scoreCallsCache.csl[:0]
 	for _, cs := range cstab {
 		csl = append(csl, cs)
 	}
-	scoreCallsCache.csl = csl[:0]
+	csa.ctx.scoreCallsCache.csl = csl[:0]
 	slices.SortFunc(csl, func(a, b *CallSite) int {
 		return cmp.Compare(a.ID, b.ID)
 	})
@@ -507,15 +498,15 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 		var cprops *FuncProps
 		fihcprops := false
 		desercprops := false
-		if funcInlHeur, ok := fpmap[cs.Callee]; ok {
+		if funcInlHeur, ok := csa.ctx.fpmap[cs.Callee]; ok {
 			cprops = funcInlHeur.props
 			fihcprops = true
 		} else if cs.Callee.Inl != nil {
 			cprops = DeserializeFromString(cs.Callee.Inl.Properties)
 			desercprops = true
 		} else {
-			if base.Debug.DumpInlFuncProps != "" {
-				fmt.Fprintf(os.Stderr, "=-= *** unable to score call to %s from %s\n", cs.Callee.Sym().Name, fmtFullPos(cs.Call.Pos()))
+			if csa.ctx.Target.Debug.DumpInlFuncProps != "" {
+				fmt.Fprintf(os.Stderr, "=-= *** unable to score call to %s from %s\n", cs.Callee.Sym().Name, fmtFullPos(cs.Target, cs.Call.Pos()))
 				panic("should never happen")
 			} else {
 				continue
@@ -525,13 +516,13 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 
 		if doCallResults {
 			if debugTrace&debugTraceScoring != 0 {
-				fmt.Fprintf(os.Stderr, "=-= examineCallResults at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
+				fmt.Fprintf(os.Stderr, "=-= examineCallResults at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Target, cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
 			}
 			resultNameTab = csa.examineCallResults(cs, resultNameTab)
 		}
 
 		if debugTrace&debugTraceScoring != 0 {
-			fmt.Fprintf(os.Stderr, "=-= scoring call at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
+			fmt.Fprintf(os.Stderr, "=-= scoring call at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Target, cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
 		}
 	}
 
@@ -541,39 +532,39 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 
 	disableDebugTrace()
 
-	if ic != nil && callSiteTab != nil {
+	if ic != nil && csa.ctx.callSiteTab != nil {
 		// Integrate the calls from this cstab into the table for the caller.
-		if err := callSiteTab.merge(cstab); err != nil {
+		if err := csa.ctx.callSiteTab.merge(cstab); err != nil {
 			base.FatalfAt(ic.Pos(), "%v", err)
 		}
 	} else {
-		callSiteTab = cstab
+		csa.ctx.callSiteTab = cstab
 	}
 }
 
 // ScoreCallsCleanup resets the state of the callsite cache
 // once ScoreCalls is done with a function.
-func ScoreCallsCleanup() {
-	if base.Debug.DumpInlCallSiteScores != 0 {
-		if allCallSites == nil {
-			allCallSites = make(CallSiteTab)
+func ScoreCallsCleanup(ctx *Context) {
+	if ctx.Target.Debug.DumpInlCallSiteScores != 0 {
+		if ctx.allCallSites == nil {
+			ctx.allCallSites = make(CallSiteTab)
 		}
-		for call, cs := range callSiteTab {
-			allCallSites[call] = cs
+		for call, cs := range ctx.callSiteTab {
+			ctx.allCallSites[call] = cs
 		}
 	}
-	clear(scoreCallsCache.tab)
+	clear(ctx.scoreCallsCache.tab)
 }
 
 // GetCallSiteScore returns the previously calculated score for call
 // within fn.
-func GetCallSiteScore(fn *ir.Func, call *ir.CallExpr) (int, bool) {
-	if funcInlHeur, ok := fpmap[fn]; ok {
+func GetCallSiteScore(ctx *Context, fn *ir.Func, call *ir.CallExpr) (int, bool) {
+	if funcInlHeur, ok := ctx.fpmap[fn]; ok {
 		if cs, ok := funcInlHeur.cstab[call]; ok {
 			return cs.Score, true
 		}
 	}
-	if cs, ok := callSiteTab[call]; ok {
+	if cs, ok := ctx.callSiteTab[call]; ok {
 		return cs.Score, true
 	}
 	return 0, false
@@ -590,17 +581,15 @@ func GetCallSiteScore(fn *ir.Func, call *ir.CallExpr) (int, bool) {
 // budget initially (to allow for a large score adjustment); later on
 // in RevisitInlinability we'll look at each individual function to
 // demote it if needed.
-func BudgetExpansion(maxBudget int32) int32 {
-	if base.Debug.InlBudgetSlack != 0 {
-		return int32(base.Debug.InlBudgetSlack)
+func BudgetExpansion(target *ir.Package, maxBudget int32) int32 {
+	if target.Debug.InlBudgetSlack != 0 {
+		return int32(target.Debug.InlBudgetSlack)
 	}
 	// In the default case, return maxBudget, which will effectively
 	// double the budget from 80 to 160; this should be good enough
 	// for most cases.
 	return maxBudget
 }
-
-var allCallSites CallSiteTab
 
 // DumpInlCallSiteScores is invoked by the inliner if the debug flag
 // "-d=dumpinlcallsitescores" is set; it dumps out a human-readable
@@ -629,7 +618,7 @@ var allCallSites CallSiteTab
 // of the function called, "CallerPos" is the position of the
 // callsite, and "ScoreFlags" is a digest of the specific properties
 // we used to make adjustments to callsite score via heuristics.
-func DumpInlCallSiteScores(profile *pgoir.Profile, budgetCallback func(fn *ir.Func, profile *pgoir.Profile) (int32, bool)) {
+func DumpInlCallSiteScores(ctx *Context, profile *pgoir.Profile, budgetCallback func(fn *ir.Func, profile *pgoir.Profile) (int32, bool)) {
 
 	var indirectlyDueToPromotion func(cs *CallSite) bool
 	indirectlyDueToPromotion = func(cs *CallSite) bool {
@@ -688,9 +677,9 @@ func DumpInlCallSiteScores(profile *pgoir.Profile, budgetCallback func(fn *ir.Fu
 		return st
 	}
 
-	if base.Debug.DumpInlCallSiteScores != 0 {
+	if ctx.Target.Debug.DumpInlCallSiteScores != 0 {
 		var sl []*CallSite
-		for _, cs := range allCallSites {
+		for _, cs := range ctx.allCallSites {
 			sl = append(sl, cs)
 		}
 		slices.SortFunc(sl, func(a, b *CallSite) int {
@@ -712,7 +701,7 @@ func DumpInlCallSiteScores(profile *pgoir.Profile, budgetCallback func(fn *ir.Fu
 			if fn == nil || fn.Nname == nil {
 				return "<nil>"
 			}
-			if fn.Sym().Pkg == types.LocalPkg {
+			if fn.Sym().Pkg == fn.Target.LocalPkg {
 				n = "·" + fn.Sym().Name
 			} else {
 				n = ir.PkgFuncName(fn)
@@ -725,7 +714,7 @@ func DumpInlCallSiteScores(profile *pgoir.Profile, budgetCallback func(fn *ir.Fu
 		}
 
 		if len(sl) != 0 {
-			fmt.Fprintf(os.Stdout, "# scores for package %s\n", types.LocalPkg.Path)
+			fmt.Fprintf(os.Stdout, "# scores for package %s\n", sl[0].Callee.Target.LocalPkg.Path)
 			fmt.Fprintf(os.Stdout, "# Score  Adjustment  Status  Callee  CallerPos Flags ScoreFlags\n")
 		}
 		for _, cs := range sl {

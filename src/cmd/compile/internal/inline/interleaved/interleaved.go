@@ -7,46 +7,44 @@
 package interleaved
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/devirtualize"
 	"cmd/compile/internal/inline"
 	"cmd/compile/internal/inline/inlheur"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/pgoir"
-	"cmd/compile/internal/typecheck"
 	"fmt"
 )
 
 // DevirtualizeAndInlinePackage interleaves devirtualization and inlining on
 // all functions within pkg.
-func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile) {
-	if base.Flag.W > 1 {
-		for _, fn := range typecheck.Target.Funcs {
+func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile, inliner *inline.Context, inlineCall inline.InlineCallFunc) {
+	if pkg.Flags.W > 1 {
+		for _, fn := range pkg.Funcs {
 			s := fmt.Sprintf("\nbefore devirtualize-and-inline %v", fn.Sym())
 			ir.DumpList(s, fn.Body)
 		}
 	}
 
-	if profile != nil && base.Debug.PGODevirtualize > 0 {
+	if profile != nil && pkg.Debug.PGODevirtualize > 0 {
 		// TODO(mdempsky): Integrate into DevirtualizeAndInlineFunc below.
-		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+		ir.VisitFuncsBottomUp(pkg.Funcs, func(list []*ir.Func, recursive bool) {
 			for _, fn := range list {
 				devirtualize.ProfileGuided(fn, profile)
 			}
 		})
 	}
 
-	if base.Flag.LowerL != 0 {
-		inlheur.SetupScoreAdjustments()
+	if pkg.Flags.LowerL != 0 {
+		inlheur.SetupScoreAdjustments(inliner.Heuristics())
 	}
 
 	var inlProfile *pgoir.Profile // copy of profile for inlining
-	if base.Debug.PGOInline != 0 {
+	if pkg.Debug.PGOInline != 0 {
 		inlProfile = profile
 	}
 
 	// First compute inlinability of all functions in the package.
-	inline.CanInlineFuncs(pkg.Funcs, inlProfile)
+	inline.CanInlineFuncs(inliner, pkg.Funcs, inlProfile, pkg)
 
 	inlState := make(map[*ir.Func]*inlClosureState)
 	calleeUseCounts := make(map[*ir.Func]int)
@@ -54,13 +52,13 @@ func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile) {
 	var state devirtualize.State
 
 	// Pre-process all the functions, adding parentheses around call sites and starting their "inl state".
-	for _, fn := range typecheck.Target.Funcs {
-		bigCaller := base.Flag.LowerL != 0 && inline.IsBigFunc(fn)
-		if bigCaller && base.Flag.LowerM > 1 {
+	for _, fn := range pkg.Funcs {
+		bigCaller := pkg.Flags.LowerL != 0 && inline.IsBigFunc(fn)
+		if bigCaller && pkg.Flags.LowerM > 1 {
 			fmt.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.Line(fn), fn)
 		}
 
-		s := &inlClosureState{bigCaller: bigCaller, profile: profile, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: calleeUseCounts}
+		s := &inlClosureState{bigCaller: bigCaller, profile: profile, inliner: inliner, inlineCall: inlineCall, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: calleeUseCounts}
 		s.parenthesize()
 		inlState[fn] = s
 
@@ -70,25 +68,25 @@ func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile) {
 		}
 	}
 
-	ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
+	ir.VisitFuncsBottomUp(pkg.Funcs, func(list []*ir.Func, recursive bool) {
 
 		anyInlineHeuristics := false
 
 		// inline heuristics, placed here because they have static state and that's what seems to work.
 		for _, fn := range list {
-			if base.Flag.LowerL != 0 {
-				if inlheur.Enabled() && !fn.Wrapper() {
-					inlheur.ScoreCalls(fn)
+			if pkg.Flags.LowerL != 0 {
+				if inlheur.Enabled(pkg) && !fn.Wrapper() {
+					inlheur.ScoreCalls(inliner.Heuristics(), fn)
 					anyInlineHeuristics = true
 				}
-				if base.Debug.DumpInlFuncProps != "" && !fn.Wrapper() {
-					inlheur.DumpFuncProps(fn, base.Debug.DumpInlFuncProps)
+				if pkg.Debug.DumpInlFuncProps != "" && !fn.Wrapper() {
+					inlheur.DumpFuncProps(inliner.Heuristics(), fn, pkg.Debug.DumpInlFuncProps)
 				}
 			}
 		}
 
 		if anyInlineHeuristics {
-			defer inlheur.ScoreCallsCleanup()
+			defer inlheur.ScoreCallsCleanup(inliner.Heuristics())
 		}
 
 		// Iterate to a fixed point over all the functions.
@@ -134,18 +132,18 @@ func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile) {
 		}
 	})
 
-	if base.Flag.LowerL != 0 {
-		if base.Debug.DumpInlFuncProps != "" {
-			inlheur.DumpFuncProps(nil, base.Debug.DumpInlFuncProps)
+	if pkg.Flags.LowerL != 0 {
+		if pkg.Debug.DumpInlFuncProps != "" {
+			inlheur.DumpFuncProps(inliner.Heuristics(), nil, pkg.Debug.DumpInlFuncProps)
 		}
-		if inlheur.Enabled() {
-			inline.PostProcessCallSites(inlProfile)
-			inlheur.TearDown()
+		if inlheur.Enabled(pkg) {
+			inline.PostProcessCallSites(inliner, inlProfile)
+			inlheur.TearDown(inliner.Heuristics())
 		}
 	}
 
 	// remove parentheses
-	for _, fn := range typecheck.Target.Funcs {
+	for _, fn := range pkg.Funcs {
 		inlState[fn].unparenthesize()
 	}
 
@@ -153,24 +151,24 @@ func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile) {
 
 // DevirtualizeAndInlineFunc interleaves devirtualization and inlining
 // on a single function.
-func DevirtualizeAndInlineFunc(fn *ir.Func, profile *pgoir.Profile) {
+func DevirtualizeAndInlineFunc(fn *ir.Func, profile *pgoir.Profile, inliner *inline.Context) {
 	ir.WithPos(fn, func() {
-		if base.Flag.LowerL != 0 {
-			if inlheur.Enabled() && !fn.Wrapper() {
-				inlheur.ScoreCalls(fn)
-				defer inlheur.ScoreCallsCleanup()
+		if fn.Target.Flags.LowerL != 0 {
+			if inlheur.Enabled(fn.Target) && !fn.Wrapper() {
+				inlheur.ScoreCalls(inliner.Heuristics(), fn)
+				defer inlheur.ScoreCallsCleanup(inliner.Heuristics())
 			}
-			if base.Debug.DumpInlFuncProps != "" && !fn.Wrapper() {
-				inlheur.DumpFuncProps(fn, base.Debug.DumpInlFuncProps)
+			if fn.Target.Debug.DumpInlFuncProps != "" && !fn.Wrapper() {
+				inlheur.DumpFuncProps(inliner.Heuristics(), fn, fn.Target.Debug.DumpInlFuncProps)
 			}
 		}
 
-		bigCaller := base.Flag.LowerL != 0 && inline.IsBigFunc(fn)
-		if bigCaller && base.Flag.LowerM > 1 {
+		bigCaller := fn.Target.Flags.LowerL != 0 && inline.IsBigFunc(fn)
+		if bigCaller && fn.Target.Flags.LowerM > 1 {
 			fmt.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.Line(fn), fn)
 		}
 
-		s := &inlClosureState{bigCaller: bigCaller, profile: profile, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: make(map[*ir.Func]int)}
+		s := &inlClosureState{bigCaller: bigCaller, profile: profile, inliner: inliner, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: make(map[*ir.Func]int)}
 		s.parenthesize()
 		s.fixpoint()
 		s.unparenthesize()
@@ -183,13 +181,15 @@ type callSite struct {
 }
 
 type inlClosureState struct {
-	fn        *ir.Func
-	profile   *pgoir.Profile
-	callSites map[*ir.ParenExpr]bool // callSites[p] == "p appears in parens" (do not append again)
-	resolved  []*ir.Func             // for each call in parens, the resolved target of the call
-	useCounts map[*ir.Func]int       // shared among all InlClosureStates
-	parens    []*ir.ParenExpr
-	bigCaller bool
+	fn         *ir.Func
+	profile    *pgoir.Profile
+	inliner    *inline.Context
+	inlineCall inline.InlineCallFunc
+	callSites  map[*ir.ParenExpr]bool // callSites[p] == "p appears in parens" (do not append again)
+	resolved   []*ir.Func             // for each call in parens, the resolved target of the call
+	useCounts  map[*ir.Func]int       // shared among all InlClosureStates
+	parens     []*ir.ParenExpr
+	bigCaller  bool
 }
 
 // resolve attempts to resolve a call to a potentially inlineable callee
@@ -208,7 +208,7 @@ func (s *inlClosureState) resolve(state *devirtualize.State, i int) (*ir.Func, i
 		return nil, -1
 	}
 	devirtualize.StaticCall(s.fn, state, call)
-	if callee := inline.InlineCallTarget(s.fn, call, s.profile); callee != nil {
+	if callee := inline.InlineCallTarget(s.inliner, s.fn, call, s.profile); callee != nil {
 		for len(s.resolved) <= i {
 			s.resolved = append(s.resolved, nil)
 		}
@@ -233,7 +233,7 @@ func (s *inlClosureState) edit(state *devirtualize.State, i int) (*ir.CallExpr, 
 	if count <= 0 {
 		return nil, nil
 	}
-	if inlCall := inline.TryInlineCall(s.fn, call, s.bigCaller, s.profile, count == 1 && callee.ClosureParent != nil); inlCall != nil {
+	if inlCall := inline.TryInlineCall(s.inliner, s.fn, call, s.bigCaller, s.profile, count == 1 && callee.ClosureParent != nil, s.inlineCall); inlCall != nil {
 		return call, inlCall
 	}
 	return nil, nil

@@ -82,10 +82,10 @@ func FDumpAny(w io.Writer, root any, filter string, depth int) {
 //
 //	\nir.Match(<fn>, <astdump>) for <where>\n
 func MatchAstDump(fn *Func, where string) bool {
-	if len(base.Debug.AstDump) == 0 {
+	if len(fn.Target.Debug.AstDump) == 0 {
 		return false
 	}
-	return matchForDump(fn, base.Ctxt.Pkgpath, where)
+	return matchForDump(fn, fn.Target.Ctxt.Pkgpath, where, fn.Target.Debug.AstDump)
 }
 
 // matchForDump is marked noinline to ensure that the exported
@@ -93,8 +93,8 @@ func MatchAstDump(fn *Func, where string) bool {
 // common case is AstDump is not set.
 //
 //go:noinline
-func matchForDump(fn *Func, pkgPath, where string) bool {
-	return MatchPkgFn(pkgPath, FuncName(fn), base.Debug.AstDump)
+func matchForDump(fn *Func, pkgPath, where, dump string) bool {
+	return MatchPkgFn(pkgPath, FuncName(fn), dump)
 }
 
 // MatchPkgFn returns true if pkg and fnName "match" toMatch.
@@ -111,7 +111,7 @@ func MatchPkgFn(pkgName, fnName, toMatch string) bool {
 		return true
 	}
 	matchPkgDotName := func(pkg string) bool {
-		// Allocation-free equality check for toMatch == base.Ctxt.Pkgpath + "." + fnName
+		// Allocation-free equality check for toMatch == package path + "." + fnName
 		return len(toMatch) == len(pkg)+1+len(fnName) &&
 			strings.HasPrefix(toMatch, pkg) && toMatch[len(pkg)] == '.' && strings.HasSuffix(toMatch, fnName)
 	}
@@ -153,8 +153,7 @@ func AstDump(fn *Func, why string) {
 	}
 }
 
-var mu sync.Mutex
-var astDumpFiles = make(map[string]bool)
+var dumpFileMu sync.Mutex
 
 func escapedFileName(fn *Func, suffix string) string {
 	return EscapedFileName(PkgFuncName(fn), suffix)
@@ -177,14 +176,23 @@ func EscapedFileName(fn, suffix string) string {
 // withLockAndFile manages ast dump files for various function names
 // and invokes a dumping function to write output, under a lock.
 func withLockAndFile(fn *Func, dump func(io.Writer)) (err error) {
+	target := fn.Target
+	if target == nil {
+		base.Fatalf("AST dump for function without compilation target: %v", fn)
+	}
 	name := escapedFileName(fn, ".ast")
 
 	// Ensure that debugging output is not scrambled and is written promptly
-	mu.Lock()
-	defer mu.Unlock()
+	target.dumpMu.Lock()
+	defer target.dumpMu.Unlock()
+	dumpFileMu.Lock()
+	defer dumpFileMu.Unlock()
+	if target.astDumpFiles == nil {
+		target.astDumpFiles = make(map[string]bool)
+	}
 	mode := os.O_APPEND | os.O_RDWR
-	if !astDumpFiles[name] {
-		astDumpFiles[name] = true
+	if !target.astDumpFiles[name] {
+		target.astDumpFiles[name] = true
 		mode = os.O_CREATE | os.O_TRUNC | os.O_RDWR
 		fmt.Fprintf(os.Stderr, "Writing text ast output for %s to %s\n", PkgFuncName(fn), name)
 	}
@@ -198,35 +206,46 @@ func withLockAndFile(fn *Func, dump func(io.Writer)) (err error) {
 	return
 }
 
-var htmlWriters = make(map[*Func]*HTMLWriter)
-var orderedFuncs = []*Func{}
-
 // DumpNodeHTML dumps the node n to the HTML writer for fn.
 // It uses the same phase name as the text dump.
 func DumpNodeHTML(fn *Func, why string, n Node) {
-	mu.Lock()
-	defer mu.Unlock()
-	w, ok := htmlWriters[fn]
+	target := fn.Target
+	if target == nil {
+		base.Fatalf("HTML dump for function without compilation target: %v", fn)
+	}
+	target.dumpMu.Lock()
+	defer target.dumpMu.Unlock()
+	dumpFileMu.Lock()
+	defer dumpFileMu.Unlock()
+	if target.htmlDumpWriters == nil {
+		target.htmlDumpWriters = make(map[*Func]*HTMLWriter)
+	}
+	w, ok := target.htmlDumpWriters[fn]
 	if !ok {
 		name := escapedFileName(fn, ".html")
 		w = NewHTMLWriter(name, fn, "")
-		htmlWriters[fn] = w
-		orderedFuncs = append(orderedFuncs, fn)
+		target.htmlDumpWriters[fn] = w
+		target.htmlDumpFuncs = append(target.htmlDumpFuncs, fn)
 	}
 	w.WritePhase(why, why)
 }
 
-// CloseHTMLWriters closes the HTML writer for fn, if one exists.
-func CloseHTMLWriters() {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, fn := range orderedFuncs {
-		if w, ok := htmlWriters[fn]; ok {
+// CloseHTMLWriters closes this target's HTML dump writers.
+func CloseHTMLWriters(target *Package) {
+	if target == nil {
+		return
+	}
+	target.dumpMu.Lock()
+	defer target.dumpMu.Unlock()
+	dumpFileMu.Lock()
+	defer dumpFileMu.Unlock()
+	for _, fn := range target.htmlDumpFuncs {
+		if w, ok := target.htmlDumpWriters[fn]; ok {
 			w.Close("Writing html ast output for %s to %s\n", PkgFuncName(w.Func), w.path)
-			delete(htmlWriters, fn)
+			delete(target.htmlDumpWriters, fn)
 		}
 	}
-	orderedFuncs = nil
+	target.htmlDumpFuncs = nil
 }
 
 type dumper struct {

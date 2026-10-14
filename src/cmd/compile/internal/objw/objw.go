@@ -14,89 +14,89 @@ import (
 
 // Uint8 writes an unsigned byte v into s at offset off,
 // and returns the next unused offset (i.e., off+1).
-func Uint8(s *obj.LSym, off int, v uint8) int {
-	return UintN(s, off, uint64(v), 1)
+func Uint8(ctxt *obj.Link, s *obj.LSym, off int, v uint8) int {
+	return UintN(ctxt, s, off, uint64(v), 1)
 }
 
-func Uint16(s *obj.LSym, off int, v uint16) int {
-	return UintN(s, off, uint64(v), 2)
+func Uint16(ctxt *obj.Link, s *obj.LSym, off int, v uint16) int {
+	return UintN(ctxt, s, off, uint64(v), 2)
 }
 
-func Uint32(s *obj.LSym, off int, v uint32) int {
-	return UintN(s, off, uint64(v), 4)
+func Uint32(ctxt *obj.Link, s *obj.LSym, off int, v uint32) int {
+	return UintN(ctxt, s, off, uint64(v), 4)
 }
 
-func Uintptr(s *obj.LSym, off int, v uint64) int {
-	return UintN(s, off, v, types.PtrSize)
+func Uintptr(ctxt *obj.Link, s *obj.LSym, off int, v uint64) int {
+	return UintN(ctxt, s, off, v, ctxt.Arch.PtrSize)
 }
 
 // Uvarint writes a varint v into s at offset off,
 // and returns the next unused offset.
-func Uvarint(s *obj.LSym, off int, v uint64) int {
+func Uvarint(ctxt *obj.Link, s *obj.LSym, off int, v uint64) int {
 	var buf [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(buf[:], v)
-	return int(s.WriteBytes(base.Ctxt, int64(off), buf[:n]))
+	return int(s.WriteBytes(ctxt, int64(off), buf[:n]))
 }
 
-func Bool(s *obj.LSym, off int, v bool) int {
+func Bool(ctxt *obj.Link, s *obj.LSym, off int, v bool) int {
 	w := 0
 	if v {
 		w = 1
 	}
-	return UintN(s, off, uint64(w), 1)
+	return UintN(ctxt, s, off, uint64(w), 1)
 }
 
 // UintN writes an unsigned integer v of size wid bytes into s at offset off,
 // and returns the next unused offset.
-func UintN(s *obj.LSym, off int, v uint64, wid int) int {
+func UintN(ctxt *obj.Link, s *obj.LSym, off int, v uint64, wid int) int {
 	if off&(wid-1) != 0 {
 		base.Fatalf("duintxxLSym: misaligned: v=%d wid=%d off=%d", v, wid, off)
 	}
-	s.WriteInt(base.Ctxt, int64(off), wid, int64(v))
+	s.WriteInt(ctxt, int64(off), wid, int64(v))
 	return off + wid
 }
 
-func SymPtr(s *obj.LSym, off int, x *obj.LSym, xoff int) int {
-	off = int(types.RoundUp(int64(off), int64(types.PtrSize)))
-	s.WriteAddr(base.Ctxt, int64(off), types.PtrSize, x, int64(xoff))
-	off += types.PtrSize
+func SymPtr(ctxt *obj.Link, s *obj.LSym, off int, x *obj.LSym, xoff int) int {
+	off = int(types.RoundUp(int64(off), int64(ctxt.Arch.PtrSize)))
+	s.WriteAddr(ctxt, int64(off), ctxt.Arch.PtrSize, x, int64(xoff))
+	off += ctxt.Arch.PtrSize
 	return off
 }
 
-func SymPtrWeak(s *obj.LSym, off int, x *obj.LSym, xoff int) int {
-	off = int(types.RoundUp(int64(off), int64(types.PtrSize)))
-	s.WriteWeakAddr(base.Ctxt, int64(off), types.PtrSize, x, int64(xoff))
-	off += types.PtrSize
+func SymPtrWeak(ctxt *obj.Link, s *obj.LSym, off int, x *obj.LSym, xoff int) int {
+	off = int(types.RoundUp(int64(off), int64(ctxt.Arch.PtrSize)))
+	s.WriteWeakAddr(ctxt, int64(off), ctxt.Arch.PtrSize, x, int64(xoff))
+	off += ctxt.Arch.PtrSize
 	return off
 }
 
-func SymPtrOff(s *obj.LSym, off int, x *obj.LSym) int {
-	s.WriteOff(base.Ctxt, int64(off), x, 0)
+func SymPtrOff(ctxt *obj.Link, s *obj.LSym, off int, x *obj.LSym) int {
+	s.WriteOff(ctxt, int64(off), x, 0)
 	off += 4
 	return off
 }
 
-func SymPtrWeakOff(s *obj.LSym, off int, x *obj.LSym) int {
-	s.WriteWeakOff(base.Ctxt, int64(off), x, 0)
+func SymPtrWeakOff(ctxt *obj.Link, s *obj.LSym, off int, x *obj.LSym) int {
+	s.WriteWeakOff(ctxt, int64(off), x, 0)
 	off += 4
 	return off
 }
 
-func Global(s *obj.LSym, width int32, flags int16) {
+func Global(ctxt *obj.Link, s *obj.LSym, width int32, flags int16) {
 	if flags&obj.LOCAL != 0 {
 		s.Set(obj.AttrLocal, true)
 		flags &^= obj.LOCAL
 	}
-	base.Ctxt.Globl(s, int64(width), int(flags))
+	ctxt.Globl(s, int64(width), int(flags))
 }
 
 // BitVec writes the contents of bv into s as sequence of bytes
 // in little-endian order, and returns the next unused offset.
-func BitVec(s *obj.LSym, off int, bv bitvec.BitVec) int {
+func BitVec(ctxt *obj.Link, s *obj.LSym, off int, bv bitvec.BitVec) int {
 	// Runtime reads the bitmaps as byte arrays. Oblige.
 	for j := 0; int32(j) < bv.N; j += 8 {
 		word := bv.B[j/32]
-		off = Uint8(s, off, uint8(word>>(uint(j)%32)))
+		off = Uint8(ctxt, s, off, uint8(word>>(uint(j)%32)))
 	}
 	return off
 }

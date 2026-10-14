@@ -20,7 +20,6 @@ import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/testimporter"
-	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/compile/internal/types2"
 	"cmd/internal/bio"
@@ -29,8 +28,9 @@ import (
 )
 
 type gcimports struct {
-	ctxt     *types2.Context
-	packages map[string]*types2.Package
+	compileCtx *Context
+	ctxt       *types2.Context
+	packages   map[string]*types2.Package
 }
 
 func (m *gcimports) Import(path string) (*types2.Package, error) {
@@ -42,7 +42,7 @@ func (m *gcimports) ImportFrom(path, srcDir string, mode types2.ImportMode) (*ty
 		panic("mode must be 0")
 	}
 
-	_, pkg, err := readImportFile(path, typecheck.Target, m.ctxt, m.packages)
+	_, pkg, err := readImportFile(m.compileCtx, path, m.compileCtx.Target, m.ctxt, m.packages)
 	return pkg, err
 }
 
@@ -58,14 +58,14 @@ func islocalname(name string) bool {
 		strings.HasPrefix(name, "../") || name == ".."
 }
 
-func openPackage(path string) (*os.File, error) {
+func openPackage(target *ir.Package, path string) (*os.File, error) {
 	if islocalname(path) {
-		if base.Flag.NoLocalImports {
+		if target.Flags.NoLocalImports {
 			return nil, errors.New("local imports disallowed")
 		}
 
-		if base.Flag.Cfg.PackageFile != nil {
-			return os.Open(base.Flag.Cfg.PackageFile[path])
+		if target.Flags.Cfg.PackageFile != nil {
+			return os.Open(target.Flags.Cfg.PackageFile[path])
 		}
 
 		// try .a before .o.  important for building libraries:
@@ -87,11 +87,11 @@ func openPackage(path string) (*os.File, error) {
 		return nil, fmt.Errorf("non-canonical import path %q (should be %q)", path, q)
 	}
 
-	if base.Flag.Cfg.PackageFile != nil {
-		return os.Open(base.Flag.Cfg.PackageFile[path])
+	if target.Flags.Cfg.PackageFile != nil {
+		return os.Open(target.Flags.Cfg.PackageFile[path])
 	}
 
-	for _, dir := range base.Flag.Cfg.ImportDirs {
+	for _, dir := range target.Flags.Cfg.ImportDirs {
 		if file, err := os.Open(fmt.Sprintf("%s/%s.a", dir, path)); err == nil {
 			return file, nil
 		}
@@ -102,13 +102,13 @@ func openPackage(path string) (*os.File, error) {
 
 	if buildcfg.GOROOT != "" {
 		suffix := ""
-		if base.Flag.InstallSuffix != "" {
-			suffix = "_" + base.Flag.InstallSuffix
-		} else if base.Flag.Race {
+		if target.Flags.InstallSuffix != "" {
+			suffix = "_" + target.Flags.InstallSuffix
+		} else if target.Flags.Race {
 			suffix = "_race"
-		} else if base.Flag.MSan {
+		} else if target.Flags.MSan {
 			suffix = "_msan"
-		} else if base.Flag.ASan {
+		} else if target.Flags.ASan {
 			suffix = "_asan"
 		}
 
@@ -124,7 +124,7 @@ func openPackage(path string) (*os.File, error) {
 
 // resolveImportPath resolves an import path as it appears in a Go
 // source file to the package's full path.
-func resolveImportPath(path string) (string, error) {
+func resolveImportPath(target *ir.Package, path string) (string, error) {
 	// The package name main is no longer reserved,
 	// but we reserve the import path "main" to identify
 	// the main package, just as we reserve the import
@@ -133,14 +133,14 @@ func resolveImportPath(path string) (string, error) {
 		return "", errors.New("cannot import \"main\"")
 	}
 
-	if base.Ctxt.Pkgpath == "" {
+	if target.Ctxt.Pkgpath == "" {
 		panic("missing pkgpath")
 	}
-	if path == base.Ctxt.Pkgpath {
+	if path == target.Ctxt.Pkgpath {
 		return "", fmt.Errorf("import %q while compiling that package (import cycle)", path)
 	}
 
-	if mapped, ok := base.Flag.Cfg.ImportMap[path]; ok {
+	if mapped, ok := target.Flags.Cfg.ImportMap[path]; ok {
 		path = mapped
 	}
 
@@ -149,13 +149,13 @@ func resolveImportPath(path string) (string, error) {
 			return "", errors.New("import path cannot be absolute path")
 		}
 
-		prefix := base.Flag.D
+		prefix := target.Flags.D
 		if prefix == "" {
 			// Questionable, but when -D isn't specified, historically we
 			// resolve local import paths relative to the directory the
 			// compiler's current directory, not the respective source
 			// file's directory.
-			prefix = base.Ctxt.Pathname
+			prefix = target.Ctxt.Pathname
 		}
 		path = pathpkg.Join(prefix, path)
 
@@ -170,26 +170,33 @@ func resolveImportPath(path string) (string, error) {
 // readImportFile reads the import file for the given package path and
 // returns its types.Pkg representation. If packages is non-nil, the
 // types2.Package representation is also returned.
-func readImportFile(path string, target *ir.Package, env *types2.Context, packages map[string]*types2.Package) (pkg1 *types.Pkg, pkg2 *types2.Package, err error) {
-	path, err = resolveImportPath(path)
+func readImportFile(compileCtx *Context, path string, target *ir.Package, env *types2.Context, packages map[string]*types2.Package) (pkg1 *types.Pkg, pkg2 *types2.Package, err error) {
+	path, err = resolveImportPath(target, path)
 	if err != nil {
 		return
 	}
 
 	if path == "unsafe" {
-		pkg1, pkg2 = types.UnsafePkg, types2.Unsafe
+		pkg1, pkg2 = target.UnsafePkg, types2.Unsafe
 
 		// TODO(mdempsky): Investigate if this actually matters. Why would
 		// the linker or runtime care whether a package imported unsafe?
-		if !pkg1.Direct {
-			pkg1.Direct = true
+		imported := false
+		for _, pkg := range target.Imports {
+			if pkg == pkg1 {
+				imported = true
+				break
+			}
+		}
+		if !imported {
 			target.Imports = append(target.Imports, pkg1)
 		}
+		pkg1.Direct = true
 
 		return
 	}
 
-	pkg1 = types.NewPkg(path, "")
+	pkg1 = target.Pkg(path, "")
 	if packages != nil {
 		pkg2 = packages[path]
 		if !(pkg1.Direct == (pkg2 != nil && pkg2.Complete())) {
@@ -204,7 +211,7 @@ func readImportFile(path string, target *ir.Package, env *types2.Context, packag
 	pkg1.Direct = true
 	target.Imports = append(target.Imports, pkg1)
 
-	f, err := openPackage(path)
+	f, err := openPackage(target, path)
 	if err != nil {
 		return
 	}
@@ -215,17 +222,17 @@ func readImportFile(path string, target *ir.Package, env *types2.Context, packag
 		return
 	}
 
-	if base.Debug.Export != 0 {
+	if compileCtx.Target.Debug.Export != 0 {
 		fmt.Printf("importing %s (%s)\n", path, f.Name())
 	}
 
 	pr := pkgbits.NewPkgDecoder(pkg1.Path, data)
 
 	// Read package descriptors for both types2 and compiler backend.
-	readPackage(newPkgReader(pr), pkg1, false)
+	readPackage(newPkgReader(compileCtx, pr), pkg1, false)
 	pkg2 = testimporter.ReadPackage(env, packages, pr)
 
-	err = addFingerprint(path, data)
+	err = addFingerprint(target, path, data)
 	return
 }
 
@@ -284,7 +291,7 @@ func readExportData(f *os.File) (data string, err error) {
 
 // addFingerprint reads the linker fingerprint included at the end of
 // the exportdata.
-func addFingerprint(path string, data string) error {
+func addFingerprint(target *ir.Package, path string, data string) error {
 	var fingerprint goobj.FingerprintType
 
 	pos := len(data) - len(fingerprint)
@@ -294,7 +301,7 @@ func addFingerprint(path string, data string) error {
 	buf := []byte(data[pos:])
 
 	copy(fingerprint[:], buf)
-	base.Ctxt.AddImport(path, fingerprint)
+	target.Ctxt.AddImport(path, fingerprint)
 
 	return nil
 }

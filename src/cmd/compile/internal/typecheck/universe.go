@@ -63,135 +63,44 @@ var unsafeFuncs = [...]struct {
 }
 
 // InitUniverse initializes the universe block.
-func InitUniverse() {
-	types.InitTypes(func(sym *types.Sym, typ *types.Type) types.Object {
+func InitUniverse(target *ir.Package) {
+	types.InitTypes(target.BuiltinPkg, target.UnsafePkg, func(sym *types.Sym, typ *types.Type) types.Object {
 		n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, sym)
 		n.SetType(typ)
 		n.SetTypecheck(1)
 		sym.Def = n
 		return n
 	})
+	target.BasicTypes = types.Types
+	target.AnyType = types.AnyType
+	target.ByteType = types.ByteType
+	target.RuneType = types.RuneType
+	target.ErrorType = types.ErrorType
+	target.ComparableType = types.ComparableType
 
 	for _, s := range &builtinFuncs {
-		ir.NewBuiltin(types.BuiltinPkg.Lookup(s.name), s.op)
+		ir.NewBuiltin(target.BuiltinPkg.Lookup(s.name), s.op)
 	}
 
 	for _, s := range &unsafeFuncs {
-		ir.NewBuiltin(types.UnsafePkg.Lookup(s.name), s.op)
+		ir.NewBuiltin(target.UnsafePkg.Lookup(s.name), s.op)
 	}
 
-	s := types.BuiltinPkg.Lookup("true")
+	s := target.BuiltinPkg.Lookup("true")
 	s.Def = ir.NewConstAt(src.NoXPos, s, types.UntypedBool, constant.MakeBool(true))
 
-	s = types.BuiltinPkg.Lookup("false")
+	s = target.BuiltinPkg.Lookup("false")
 	s.Def = ir.NewConstAt(src.NoXPos, s, types.UntypedBool, constant.MakeBool(false))
 
-	s = Lookup("_")
-	types.BlankSym = s
-	ir.BlankNode = ir.NewNameAt(src.NoXPos, s, types.Types[types.TBLANK])
-	s.Def = ir.BlankNode
+	s = Lookup(target, "_")
+	target.BlankSym = s
+	target.BlankNode = ir.NewNameAt(src.NoXPos, s, target.Type(types.TBLANK))
+	s.Def = target.BlankNode
 
-	s = types.BuiltinPkg.Lookup("_")
-	s.Def = ir.NewNameAt(src.NoXPos, s, types.Types[types.TBLANK])
+	s = target.BuiltinPkg.Lookup("_")
+	s.Def = ir.NewNameAt(src.NoXPos, s, target.Type(types.TBLANK))
 
-	s = types.BuiltinPkg.Lookup("nil")
-	s.Def = NodNil()
+	s = target.BuiltinPkg.Lookup("nil")
+	s.Def = NodNilAt(target, src.NoXPos)
 
-	// initialize okfor
-	for et := types.Kind(0); et < types.NTYPE; et++ {
-		if types.IsInt[et] || et == types.TIDEAL {
-			okforeq[et] = true
-			types.IsOrdered[et] = true
-			okforarith[et] = true
-			okforadd[et] = true
-			okforand[et] = true
-			ir.OKForConst[et] = true
-			types.IsSimple[et] = true
-		}
-
-		if types.IsFloat[et] {
-			okforeq[et] = true
-			types.IsOrdered[et] = true
-			okforadd[et] = true
-			okforarith[et] = true
-			ir.OKForConst[et] = true
-			types.IsSimple[et] = true
-		}
-
-		if types.IsComplex[et] {
-			okforeq[et] = true
-			okforadd[et] = true
-			okforarith[et] = true
-			ir.OKForConst[et] = true
-			types.IsSimple[et] = true
-		}
-	}
-
-	types.IsSimple[types.TBOOL] = true
-
-	okforadd[types.TSTRING] = true
-
-	okforbool[types.TBOOL] = true
-
-	okforcap[types.TARRAY] = true
-	okforcap[types.TCHAN] = true
-	okforcap[types.TSLICE] = true
-
-	ir.OKForConst[types.TBOOL] = true
-	ir.OKForConst[types.TSTRING] = true
-
-	okforlen[types.TARRAY] = true
-	okforlen[types.TCHAN] = true
-	okforlen[types.TMAP] = true
-	okforlen[types.TSLICE] = true
-	okforlen[types.TSTRING] = true
-
-	okforeq[types.TPTR] = true
-	okforeq[types.TUNSAFEPTR] = true
-	okforeq[types.TINTER] = true
-	okforeq[types.TCHAN] = true
-	okforeq[types.TSTRING] = true
-	okforeq[types.TBOOL] = true
-	okforeq[types.TMAP] = true    // nil only; refined in typecheck
-	okforeq[types.TFUNC] = true   // nil only; refined in typecheck
-	okforeq[types.TSLICE] = true  // nil only; refined in typecheck
-	okforeq[types.TARRAY] = true  // only if element type is comparable; refined in typecheck
-	okforeq[types.TSTRUCT] = true // only if all struct fields are comparable; refined in typecheck
-
-	types.IsOrdered[types.TSTRING] = true
-
-	for i := range okfor {
-		okfor[i] = okfornone[:]
-	}
-
-	// binary
-	okfor[ir.OADD] = okforadd[:]
-	okfor[ir.OAND] = okforand[:]
-	okfor[ir.OANDAND] = okforbool[:]
-	okfor[ir.OANDNOT] = okforand[:]
-	okfor[ir.ODIV] = okforarith[:]
-	okfor[ir.OEQ] = okforeq[:]
-	okfor[ir.OGE] = types.IsOrdered[:]
-	okfor[ir.OGT] = types.IsOrdered[:]
-	okfor[ir.OLE] = types.IsOrdered[:]
-	okfor[ir.OLT] = types.IsOrdered[:]
-	okfor[ir.OMOD] = okforand[:]
-	okfor[ir.OMUL] = okforarith[:]
-	okfor[ir.ONE] = okforeq[:]
-	okfor[ir.OOR] = okforand[:]
-	okfor[ir.OOROR] = okforbool[:]
-	okfor[ir.OSUB] = okforarith[:]
-	okfor[ir.OXOR] = okforand[:]
-	okfor[ir.OLSH] = okforand[:]
-	okfor[ir.ORSH] = okforand[:]
-
-	// unary
-	okfor[ir.OBITNOT] = okforand[:]
-	okfor[ir.ONEG] = okforarith[:]
-	okfor[ir.ONOT] = okforbool[:]
-	okfor[ir.OPLUS] = okforarith[:]
-
-	// special
-	okfor[ir.OCAP] = okforcap[:]
-	okfor[ir.OLEN] = okforlen[:]
 }

@@ -9,7 +9,7 @@ import (
 	"cmd/internal/sys"
 )
 
-func simdARM64Intrinsics(addF func(pkg, fn string, b intrinsicBuilder, archFamilies ...sys.ArchFamily)) {
+func simdARM64Intrinsics(target *ir.Package, addF func(pkg, fn string, b intrinsicBuilder, archFamilies ...sys.ArchFamily)) {
 
 	addF(simdPackage, "Float32x4.Abs", opLen1(ssaop.OpAbsFloat32x4, types.TypeVec128), sys.ARM64)
 	addF(simdPackage, "Float64x2.Abs", opLen1(ssaop.OpAbsFloat64x2, types.TypeVec128), sys.ARM64)
@@ -132,16 +132,16 @@ func simdARM64Intrinsics(addF func(pkg, fn string, b intrinsicBuilder, archFamil
 	addF(simdPackage, "Uint8x16.ExtendLo8ToUint16", opLen1(ssaop.OpExtendLo8ToUint16Uint8x16, types.TypeVec128), sys.ARM64)
 	addF(simdPackage, "Float32x4.Floor", opLen1(ssaop.OpFloorFloat32x4, types.TypeVec128), sys.ARM64)
 	addF(simdPackage, "Float64x2.Floor", opLen1(ssaop.OpFloorFloat64x2, types.TypeVec128), sys.ARM64)
-	addF(simdPackage, "Float32x4.GetElem", opLen1Imm(ssaop.OpGetElemFloat32x4, types.Types[types.TFLOAT32], 0, 3), sys.ARM64)
-	addF(simdPackage, "Float64x2.GetElem", opLen1Imm(ssaop.OpGetElemFloat64x2, types.Types[types.TFLOAT64], 0, 1), sys.ARM64)
-	addF(simdPackage, "Int8x16.GetElem", opLen1Imm(ssaop.OpGetElemInt8x16, types.Types[types.TINT8], 0, 15), sys.ARM64)
-	addF(simdPackage, "Int16x8.GetElem", opLen1Imm(ssaop.OpGetElemInt16x8, types.Types[types.TINT16], 0, 7), sys.ARM64)
-	addF(simdPackage, "Int32x4.GetElem", opLen1Imm(ssaop.OpGetElemInt32x4, types.Types[types.TINT32], 0, 3), sys.ARM64)
-	addF(simdPackage, "Int64x2.GetElem", opLen1Imm(ssaop.OpGetElemInt64x2, types.Types[types.TINT64], 0, 1), sys.ARM64)
-	addF(simdPackage, "Uint8x16.GetElem", opLen1Imm(ssaop.OpGetElemUint8x16, types.Types[types.TUINT8], 0, 15), sys.ARM64)
-	addF(simdPackage, "Uint16x8.GetElem", opLen1Imm(ssaop.OpGetElemUint16x8, types.Types[types.TUINT16], 0, 7), sys.ARM64)
-	addF(simdPackage, "Uint32x4.GetElem", opLen1Imm(ssaop.OpGetElemUint32x4, types.Types[types.TUINT32], 0, 3), sys.ARM64)
-	addF(simdPackage, "Uint64x2.GetElem", opLen1Imm(ssaop.OpGetElemUint64x2, types.Types[types.TUINT64], 0, 1), sys.ARM64)
+	addF(simdPackage, "Float32x4.GetElem", opLen1Imm(ssaop.OpGetElemFloat32x4, target.Type(types.TFLOAT32), 0, 3), sys.ARM64)
+	addF(simdPackage, "Float64x2.GetElem", opLen1Imm(ssaop.OpGetElemFloat64x2, target.Type(types.TFLOAT64), 0, 1), sys.ARM64)
+	addF(simdPackage, "Int8x16.GetElem", opLen1Imm(ssaop.OpGetElemInt8x16, target.Type(types.TINT8), 0, 15), sys.ARM64)
+	addF(simdPackage, "Int16x8.GetElem", opLen1Imm(ssaop.OpGetElemInt16x8, target.Type(types.TINT16), 0, 7), sys.ARM64)
+	addF(simdPackage, "Int32x4.GetElem", opLen1Imm(ssaop.OpGetElemInt32x4, target.Type(types.TINT32), 0, 3), sys.ARM64)
+	addF(simdPackage, "Int64x2.GetElem", opLen1Imm(ssaop.OpGetElemInt64x2, target.Type(types.TINT64), 0, 1), sys.ARM64)
+	addF(simdPackage, "Uint8x16.GetElem", opLen1Imm(ssaop.OpGetElemUint8x16, target.Type(types.TUINT8), 0, 15), sys.ARM64)
+	addF(simdPackage, "Uint16x8.GetElem", opLen1Imm(ssaop.OpGetElemUint16x8, target.Type(types.TUINT16), 0, 7), sys.ARM64)
+	addF(simdPackage, "Uint32x4.GetElem", opLen1Imm(ssaop.OpGetElemUint32x4, target.Type(types.TUINT32), 0, 3), sys.ARM64)
+	addF(simdPackage, "Uint64x2.GetElem", opLen1Imm(ssaop.OpGetElemUint64x2, target.Type(types.TUINT64), 0, 1), sys.ARM64)
 	addF(simdPackage, "Float32x4.Greater", opLen2(ssaop.OpGreaterFloat32x4, types.TypeVec128), sys.ARM64)
 	addF(simdPackage, "Float64x2.Greater", opLen2(ssaop.OpGreaterFloat64x2, types.TypeVec128), sys.ARM64)
 	addF(simdPackage, "Int8x16.Greater", opLen2(ssaop.OpGreaterInt8x16, types.TypeVec128), sys.ARM64)

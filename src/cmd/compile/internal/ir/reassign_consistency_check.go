@@ -7,9 +7,6 @@ package ir
 import (
 	"cmd/compile/internal/base"
 	"cmd/internal/src"
-	"fmt"
-	"path/filepath"
-	"strings"
 )
 
 // checkStaticValueResult compares the result from ReassignOracle.StaticValue
@@ -34,13 +31,5 @@ func checkReassignedResult(n *Name, newres bool) {
 
 // fmtFullPos returns a verbose dump for pos p, including inlines.
 func fmtFullPos(p src.XPos) string {
-	var sb strings.Builder
-	sep := ""
-	base.Ctxt.AllPos(p, func(pos src.Pos) {
-		sb.WriteString(sep)
-		sep = "|"
-		file := filepath.Base(pos.Filename())
-		fmt.Fprintf(&sb, "%s:%d:%d", file, pos.Line(), pos.Col())
-	})
-	return sb.String()
+	return p.LineNumber() + ":" + p.ColumnNumber()
 }

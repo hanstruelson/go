@@ -50,11 +50,11 @@ type orderState struct {
 // order rewrites fn.Nbody to apply the ordering constraints
 // described in the comment at the top of the file.
 func (w *walkState) order(fn *ir.Func) {
-	if base.Flag.W > 1 {
+	if fn.Target.Flags.W > 1 {
 		s := fmt.Sprintf("\nbefore order %v", fn.Sym())
 		ir.DumpList(s, fn.Body)
 	}
-	ir.SetPos(fn) // Set reasonable position for instrumenting code. See issue 53688.
+	ir.SetPosFor(fn.Target, fn) // Set reasonable position for instrumenting code. See issue 53688.
 	w.orderBlock(&fn.Body, map[string][]*ir.Name{})
 }
 
@@ -76,10 +76,10 @@ func (o *orderState) newTemp(walkstate *walkState, t *types.Type, clear bool) *i
 		}
 		o.free[key] = a[:len(a)-1]
 	} else {
-		v = typecheck.TempAt(base.Pos, walkstate.curfunc, t)
+		v = typecheck.TempAt(o.walkstate.curfunc.Target.Pos, walkstate.curfunc, t)
 	}
 	if clear {
-		o.append(ir.NewAssignStmt(base.Pos, v, nil))
+		o.append(ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, v, nil))
 	}
 
 	o.temp = append(o.temp, v)
@@ -109,7 +109,7 @@ func (o *orderState) copyExprClear(walkstate *walkState, n ir.Node) *ir.Name {
 func (o *orderState) copyExpr1(walkstate *walkState, n ir.Node, clear bool) *ir.Name {
 	t := n.Type()
 	v := o.newTemp(walkstate, t, clear)
-	o.append(ir.NewAssignStmt(base.Pos, v, n))
+	o.append(ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, v, n))
 	return v
 }
 
@@ -226,12 +226,12 @@ func (o *orderState) addrTemp(walkstate *walkState, n ir.Node) ir.Node {
 	// The problem is that panic("foo") ends up creating a static RODATA temp
 	// for the implicit conversion of "foo" to any, and we can't handle
 	// the relocations in that temp.
-	if n.Op() == ir.ONIL || (n.Op() == ir.OLITERAL && !base.Ctxt.IsFIPS()) {
+	if n.Op() == ir.ONIL || (n.Op() == ir.OLITERAL && !o.walkstate.curfunc.Target.Ctxt.IsFIPS()) {
 		// This is a basic literal or nil that we can store
 		// directly in the read-only data section.
-		n = typecheck.DefaultLit(n, nil)
+		n = typecheck.DefaultLitFor(walkstate.curfunc.Target, n, nil)
 		types.CalcSize(n.Type())
-		vstat := readonlystaticname(n.Type())
+		vstat := readonlystaticname(walkstate.curfunc.Target, n.Type())
 		var s staticinit.Schedule
 		s.StaticAssign(o.walkstate.curfunc, vstat, 0, n, n.Type())
 		if s.Out != nil {
@@ -248,19 +248,19 @@ func (o *orderState) addrTemp(walkstate *walkState, n ir.Node) ir.Node {
 	}
 	optEnabled := func(n ir.Node) bool {
 		// Do this optimization only when enabled for this node.
-		return base.LiteralAllocHash.MatchPos(n.Pos(), nil)
+		return walkstate.curfunc.Target.LiteralAllocHash.MatchPosWithLink(walkstate.curfunc.Target.Ctxt, n.Pos(), nil)
 	}
-	if (v.Op() == ir.OSTRUCTLIT || v.Op() == ir.OARRAYLIT) && !base.Ctxt.IsFIPS() {
+	if (v.Op() == ir.OSTRUCTLIT || v.Op() == ir.OARRAYLIT) && !o.walkstate.curfunc.Target.Ctxt.IsFIPS() {
 		if ir.IsZero(v) && 0 < v.Type().Size() && v.Type().Size() <= abi.ZeroValSize && optEnabled(n) {
 			// This zero value can be represented by the read-only zeroVal.
-			zeroVal := ir.NewLinksymExpr(v.Pos(), ir.Syms.ZeroVal, n.Type())
+			zeroVal := ir.NewLinksymExpr(v.Pos(), walkstate.curfunc.Target.Symbols.ZeroVal, n.Type())
 			vstat := typecheck.Expr(o.walkstate.curfunc, zeroVal).(*ir.LinksymOffsetExpr)
 			return vstat
 		}
-		if isStaticCompositeLiteral(v) && optEnabled(n) {
+		if isStaticCompositeLiteral(o.walkstate.curfunc.Target, v) && optEnabled(n) {
 			// v can be directly represented in the read-only data section.
 			lit := v.(*ir.CompLitExpr)
-			vstat := readonlystaticname(n.Type())
+			vstat := readonlystaticname(walkstate.curfunc.Target, n.Type())
 			walkstate.fixedlit(initKindStatic, lit, vstat, nil) // nil init
 			vstat = typecheck.Expr(o.walkstate.curfunc, vstat).(*ir.Name)
 			return vstat
@@ -276,7 +276,7 @@ func (o *orderState) addrTemp(walkstate *walkState, n ir.Node) ir.Node {
 	// support that (see trybot failures on go.dev/cl/541715, PS1).
 	if ir.IsAddressable(n) {
 		if name, ok := ir.OuterValue(n).(*ir.Name); ok && name.Op() == ir.ONAME {
-			if name.Class == ir.PAUTO && !name.Addrtaken() && ssa.CanSSA(name.Type()) {
+			if name.Class == ir.PAUTO && !name.Addrtaken() && ssa.CanSSA(int64(walkstate.curfunc.Target.PtrSize), name.Type()) {
 				goto Copy
 			}
 		}
@@ -298,20 +298,20 @@ func (o *orderState) mapKeyTemp(walkstate *walkState, outerPos src.XPos, t *type
 	}
 	// Most map calls need to take the address of the key.
 	// Exception: map*_fast* calls. See golang.org/issue/19015.
-	alg := mapfast(t)
+	alg := mapfast(walkstate.curfunc.Target, t)
 	if alg == mapslow {
 		return o.addrTemp(walkstate, n)
 	}
 	var kt *types.Type
 	switch alg {
 	case mapfast32:
-		kt = types.Types[types.TUINT32]
+		kt = walkstate.curfunc.Target.Type(types.TUINT32)
 	case mapfast64:
-		kt = types.Types[types.TUINT64]
+		kt = walkstate.curfunc.Target.Type(types.TUINT64)
 	case mapfast32ptr, mapfast64ptr:
-		kt = types.Types[types.TUNSAFEPTR]
+		kt = walkstate.curfunc.Target.Type(types.TUNSAFEPTR)
 	case mapfaststr:
-		kt = types.Types[types.TSTRING]
+		kt = walkstate.curfunc.Target.Type(types.TSTRING)
 	}
 	nt := n.Type()
 	switch {
@@ -452,7 +452,7 @@ func containsName(root ir.Node, target *ir.Name) bool {
 //
 //	m = OMAKESLICECOPY([]T, x, s); nil
 func orderMakeSliceCopy(curfunc *ir.Func, s []ir.Node) {
-	if base.Flag.N != 0 || base.Flag.Cfg.Instrumenting {
+	if curfunc.Target.Flags.N != 0 || curfunc.Target.Flags.Cfg.Instrumenting {
 		return
 	}
 	if len(s) < 2 || s[0] == nil || s[0].Op() != ir.OAS || s[1] == nil || s[1].Op() != ir.OCOPY {
@@ -500,12 +500,12 @@ func orderMakeSliceCopy(curfunc *ir.Func, s []ir.Node) {
 
 // edge inserts coverage instrumentation for libfuzzer.
 func (o *orderState) edge() {
-	if base.Debug.Libfuzzer == 0 {
+	if o.walkstate.curfunc.Target.Debug.Libfuzzer == 0 {
 		return
 	}
 
 	// Create a new uint8 counter to be allocated in section __sancov_cntrs
-	counter := staticinit.StaticName(types.Types[types.TUINT8])
+	counter := staticinit.StaticName(o.walkstate.curfunc.Target, o.walkstate.curfunc.Target.Type(types.TUINT8))
 	counter.SetLibfuzzer8BitCounter(true)
 	// As well as setting SetLibfuzzer8BitCounter, we preemptively set the
 	// symbol type to SLIBFUZZER_8BIT_COUNTER so that the race detector
@@ -525,10 +525,10 @@ func (o *orderState) edge() {
 	// Another policy presented in the paper is the Saturated Counters policy which
 	// freezes the counter when it reaches the value of 255. However, a range
 	// of experiments showed that doing so decreases overall performance.
-	o.append(ir.NewIfStmt(base.Pos,
-		ir.NewBinaryExpr(base.Pos, ir.OEQ, counter, ir.NewInt(base.Pos, 0xff)),
-		[]ir.Node{ir.NewAssignStmt(base.Pos, counter, ir.NewInt(base.Pos, 1))},
-		[]ir.Node{ir.NewAssignOpStmt(base.Pos, ir.OADD, counter, ir.NewInt(base.Pos, 1))}))
+	o.append(ir.NewIfStmt(o.walkstate.curfunc.Target.Pos,
+		ir.NewBinaryExpr(o.walkstate.curfunc.Target.Pos, ir.OEQ, counter, ir.NewInt(o.walkstate.curfunc.Target.Pos, 0xff)),
+		[]ir.Node{ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, counter, ir.NewInt(o.walkstate.curfunc.Target.Pos, 1))},
+		[]ir.Node{ir.NewAssignOpStmt(o.walkstate.curfunc.Target.Pos, ir.OADD, counter, ir.NewInt(o.walkstate.curfunc.Target.Pos, 1))}))
 }
 
 // orderBlock orders the block of statements in n into a new slice,
@@ -539,7 +539,7 @@ func (w *walkState) orderBlock(n *ir.Nodes, free map[string][]*ir.Name) {
 		// Set reasonable position for instrumenting code. See issue 53688.
 		// It would be nice if ir.Nodes had a position (the opening {, probably),
 		// but it doesn't. So we use the first statement's position instead.
-		ir.SetPos((*n)[0])
+		ir.SetPosFor(w.curfunc.Target, (*n)[0])
 	}
 	var order orderState
 	order.walkstate = w
@@ -686,7 +686,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		return
 	}
 
-	lno := ir.SetPos(n)
+	lno := ir.SetPosFor(o.walkstate.curfunc.Target, n)
 	o.init(walkstate, n)
 
 	switch n.Op() {
@@ -745,7 +745,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		n.X = o.expr(walkstate, n.X, nil)
 		n.Y = o.expr(walkstate, n.Y, nil)
 
-		if base.Flag.Cfg.Instrumenting || n.X.Op() == ir.OINDEXMAP && (n.AsOp == ir.ODIV || n.AsOp == ir.OMOD) {
+		if o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting || n.X.Op() == ir.OINDEXMAP && (n.AsOp == ir.ODIV || n.AsOp == ir.OMOD) {
 			// Rewrite m[k] op= r into m[k] = m[k] op r so
 			// that we can ensure that if op panics
 			// because r is zero, the panic happens before
@@ -981,16 +981,16 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 			// make copy.
 			r := n.X
 
-			if r.Type().IsString() && r.Type() != types.Types[types.TSTRING] {
-				r = ir.NewConvExpr(base.Pos, ir.OCONV, nil, r)
-				r.SetType(types.Types[types.TSTRING])
+			if r.Type().IsString() && r.Type() != o.walkstate.curfunc.Target.Type(types.TSTRING) {
+				r = ir.NewConvExpr(o.walkstate.curfunc.Target.Pos, ir.OCONV, nil, r)
+				r.SetType(o.walkstate.curfunc.Target.Type(types.TSTRING))
 				r = typecheck.Expr(o.walkstate.curfunc, r)
 			}
 
 			n.X = o.copyExpr(walkstate, r)
 
 		case k == types.TMAP:
-			if isMapClear(n) {
+			if isMapClear(o.walkstate.curfunc.Target, n) {
 				// Preserve the body of the map clear pattern so it can
 				// be detected during walk. The loop body will not be used
 				// when optimizing away the range loop to a runtime call.
@@ -1006,7 +1006,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 
 			// n.Prealloc is the temp for the iterator.
 			// MapIterType contains pointers and needs to be zeroed.
-			n.Prealloc = o.newTemp(walkstate, reflectdata.MapIterType(), true)
+			n.Prealloc = o.newTemp(walkstate, reflectdata.MapIterType(walkstate.curfunc.Target), true)
 		}
 		n.Key = o.exprInPlace(walkstate, n.Key)
 		n.Value = o.exprInPlace(walkstate, n.Value)
@@ -1035,7 +1035,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		t := o.markTemp()
 		for _, ncas := range n.Cases {
 			r := ncas.Comm
-			ir.SetPos(ncas)
+			ir.SetPosFor(o.walkstate.curfunc.Target, ncas)
 
 			// Append any new body prologue to ninit.
 			// The next loop will insert ninit into nbody.
@@ -1080,16 +1080,16 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 								init = init[1:]
 							}
 						}
-						dcl := typecheck.Stmt(o.walkstate.curfunc, ir.NewDecl(base.Pos, ir.ODCL, n.(*ir.Name)))
+						dcl := typecheck.Stmt(o.walkstate.curfunc, ir.NewDecl(o.walkstate.curfunc.Target.Pos, ir.ODCL, n.(*ir.Name)))
 						ncas.PtrInit().Append(dcl)
 					}
 					tmp := o.newTemp(walkstate, t, t.HasPointers())
-					as := typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(base.Pos, n, typecheck.Conv(o.walkstate.curfunc, tmp, n.Type())))
+					as := typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, n, typecheck.Conv(o.walkstate.curfunc, tmp, n.Type())))
 					ncas.PtrInit().Append(as)
 					r.Lhs[i] = tmp
 				}
 				do(0, recv.X.Type().Elem())
-				do(1, types.Types[types.TBOOL])
+				do(1, walkstate.curfunc.Target.Type(types.TBOOL))
 				if len(init) != 0 {
 					ir.DumpList("ninit", init)
 					base.Fatalf("ninit on select recv")
@@ -1136,7 +1136,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		t := o.markTemp()
 		n.Chan = o.expr(walkstate, n.Chan, nil)
 		n.Value = o.expr(walkstate, n.Value, nil)
-		if base.Flag.Cfg.Instrumenting {
+		if o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting {
 			// Force copying to the stack so that (chan T)(nil) <- x
 			// is still instrumented as a read of x.
 			n.Value = o.copyExpr(walkstate, n.Value)
@@ -1155,9 +1155,9 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 	// In practice that's fine.
 	case ir.OSWITCH:
 		n := n.(*ir.SwitchStmt)
-		if base.Debug.Libfuzzer != 0 && !hasDefaultCase(n) {
+		if o.walkstate.curfunc.Target.Debug.Libfuzzer != 0 && !hasDefaultCase(n) {
 			// Add empty "default:" case for instrumentation.
-			n.Cases = append(n.Cases, ir.NewCaseStmt(base.Pos, nil, nil))
+			n.Cases = append(n.Cases, ir.NewCaseStmt(o.walkstate.curfunc.Target.Pos, nil, nil))
 		}
 
 		t := o.markTemp()
@@ -1171,7 +1171,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		o.popTemp(t)
 	}
 
-	base.Pos = lno
+	ir.SetPosValue(o.walkstate.curfunc.Target, lno)
 }
 
 func hasDefaultCase(n *ir.SwitchStmt) bool {
@@ -1216,9 +1216,9 @@ func (o *orderState) expr(walkstate *walkState, n, lhs ir.Node) ir.Node {
 	if n == nil {
 		return n
 	}
-	lno := ir.SetPos(n)
+	lno := ir.SetPosFor(o.walkstate.curfunc.Target, n)
 	n = o.expr1(walkstate, n, lhs)
-	base.Pos = lno
+	ir.SetPosValue(o.walkstate.curfunc.Target, lno)
 	return n
 }
 
@@ -1241,7 +1241,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		o.exprList(walkstate, n.List)
 
 		if len(n.List) > 5 {
-			t := types.NewArray(types.Types[types.TSTRING], int64(len(n.List)))
+			t := types.NewArray(walkstate.curfunc.Target.Type(types.TSTRING), int64(len(n.List)))
 			n.Prealloc = o.newTemp(walkstate, t, false)
 		}
 
@@ -1283,7 +1283,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 			// conversions. See copyExpr a few lines below.
 			needCopy = mapKeyReplaceStrConv(n.Index)
 
-			if base.Flag.Cfg.Instrumenting {
+			if o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting {
 				// Race detector needs the copy.
 				needCopy = true
 			}
@@ -1304,7 +1304,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		if n.X.Type().IsInterface() {
 			return n
 		}
-		if _, _, needsaddr := dataWordFuncName(n.X.Type()); needsaddr || isStaticCompositeLiteral(n.X) {
+		if _, _, needsaddr := dataWordFuncName(o.walkstate.curfunc.Target, n.X.Type()); needsaddr || isStaticCompositeLiteral(o.walkstate.curfunc.Target, n.X) {
 			// Need a temp if we need to pass the address to the conversion function.
 			// We also process static composite literal node here, making a named static global
 			// whose address we can put directly in an interface (see OCONVIFACE case in walk).
@@ -1324,7 +1324,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 			// together. See golang.org/issue/15329.
 			o.init(walkstate, call)
 			o.call(walkstate, call)
-			if lhs == nil || lhs.Op() != ir.ONAME || base.Flag.Cfg.Instrumenting {
+			if lhs == nil || lhs.Op() != ir.ONAME || o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting {
 				return o.copyExpr(walkstate, n)
 			}
 		} else {
@@ -1347,7 +1347,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 
 		// Evaluate left-hand side.
 		lhs := o.expr(walkstate, n.X, nil)
-		o.out = append(o.out, typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(base.Pos, r, lhs)))
+		o.out = append(o.out, typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, r, lhs)))
 
 		// Evaluate right-hand side, save generated code.
 		saveout := o.out
@@ -1355,13 +1355,13 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		t := o.markTemp()
 		o.edge()
 		rhs := o.expr(walkstate, n.Y, nil)
-		o.out = append(o.out, typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(base.Pos, r, rhs)))
+		o.out = append(o.out, typecheck.Stmt(o.walkstate.curfunc, ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, r, rhs)))
 		o.popTemp(t)
 		gen := o.out
 		o.out = saveout
 
 		// If left-hand side doesn't cause a short-circuit, issue right-hand side.
-		nif := ir.NewIfStmt(base.Pos, r, nil, nil)
+		nif := ir.NewIfStmt(o.walkstate.curfunc.Target.Pos, r, nil, nil)
 		if n.Op() == ir.OANDAND {
 			nif.Body = gen
 		} else {
@@ -1394,7 +1394,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		ir.OSTR2BYTESTMP,
 		ir.OSTR2RUNES:
 
-		if isRuneCount(n) {
+		if isRuneCount(o.walkstate.curfunc.Target, n) {
 			// len([]rune(s)) is rewritten to runtime.countrunes(s) later.
 			conv := n.(*ir.UnaryExpr).X.(*ir.ConvExpr)
 			conv.X = o.expr(walkstate, conv.X, nil)
@@ -1402,7 +1402,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 			o.call(walkstate, n)
 		}
 
-		if lhs == nil || lhs.Op() != ir.ONAME || base.Flag.Cfg.Instrumenting {
+		if lhs == nil || lhs.Op() != ir.ONAME || o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting {
 			return o.copyExpr(walkstate, n)
 		}
 		return n
@@ -1415,7 +1415,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 	case ir.OAPPEND:
 		// Check for append(x, make([]T, y)...) .
 		n := n.(*ir.CallExpr)
-		if isAppendOfMake(n) {
+		if isAppendOfMake(walkstate.curfunc.Target, n) {
 			n.Args[0] = o.expr(walkstate, n.Args[0], nil) // order x
 			mk := n.Args[1].(*ir.MakeExpr)
 			mk.Len = o.expr(walkstate, mk.Len, nil) // order y
@@ -1450,7 +1450,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		n := n.(*ir.SelectorExpr)
 		n.X = o.expr(walkstate, n.X, nil)
 		if n.Transient() {
-			t := typecheck.MethodValueType(n)
+			t := typecheck.MethodValueType(walkstate.curfunc.Target, n)
 			n.Prealloc = o.newTemp(walkstate, t, false)
 		}
 		return n
@@ -1467,7 +1467,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 	case ir.ODOTTYPE, ir.ODOTTYPE2:
 		n := n.(*ir.TypeAssertExpr)
 		n.X = o.expr(walkstate, n.X, nil)
-		if !types.IsDirectIface(n.Type()) || base.Flag.Cfg.Instrumenting {
+		if !types.IsDirectIface(n.Type()) || o.walkstate.curfunc.Target.Flags.Cfg.Instrumenting {
 			return o.copyExprClear(walkstate, n)
 		}
 		return n
@@ -1526,7 +1526,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		for _, r := range entries {
 			r := r.(*ir.KeyExpr)
 
-			if !isStaticCompositeLiteral(r.Key) || !isStaticCompositeLiteral(r.Value) {
+			if !isStaticCompositeLiteral(o.walkstate.curfunc.Target, r.Key) || !isStaticCompositeLiteral(o.walkstate.curfunc.Target, r.Value) {
 				dynamics = append(dynamics, r)
 				continue
 			}
@@ -1534,7 +1534,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 			// Recursively ordering some static entries can change them to dynamic;
 			// e.g., OCONVIFACE nodes. See #31777.
 			r = o.expr(walkstate, r, nil).(*ir.KeyExpr)
-			if !isStaticCompositeLiteral(r.Key) || !isStaticCompositeLiteral(r.Value) {
+			if !isStaticCompositeLiteral(o.walkstate.curfunc.Target, r.Key) || !isStaticCompositeLiteral(o.walkstate.curfunc.Target, r.Value) {
 				dynamics = append(dynamics, r)
 				continue
 			}
@@ -1549,17 +1549,17 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 
 		// Emit the creation of the map (with all its static entries).
 		m := o.newTemp(walkstate, n.Type(), false)
-		as := ir.NewAssignStmt(base.Pos, m, n)
+		as := ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, m, n)
 		typecheck.Stmt(o.walkstate.curfunc, as)
 		o.stmt(walkstate, as)
 
 		// Emit eval+insert of dynamic entries, one at a time.
 		for _, r := range dynamics {
-			lhs := typecheck.AssignExpr(o.walkstate.curfunc, ir.NewIndexExpr(base.Pos, m, r.Key)).(*ir.IndexExpr)
+			lhs := typecheck.AssignExpr(o.walkstate.curfunc, ir.NewIndexExpr(o.walkstate.curfunc.Target.Pos, m, r.Key)).(*ir.IndexExpr)
 			base.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
 			lhs.RType = n.RType
 
-			as := ir.NewAssignStmt(base.Pos, lhs, r.Value)
+			as := ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, lhs, r.Value)
 			typecheck.Stmt(o.walkstate.curfunc, as)
 			o.stmt(walkstate, as)
 		}
@@ -1628,7 +1628,7 @@ func (o *orderState) as2ok(walkstate *walkState, n *ir.AssignListStmt) {
 	}
 
 	do(0, n.Rhs[0].Type())
-	do(1, types.Types[types.TBOOL])
+	do(1, walkstate.curfunc.Target.Type(types.TBOOL))
 
 	o.out = append(o.out, n)
 	o.stmt(walkstate, typecheck.Stmt(o.walkstate.curfunc, as))

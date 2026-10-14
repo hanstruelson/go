@@ -19,7 +19,7 @@ import (
 
 func mkiv(name string) *ir.Name {
 	i32 := types.Types[types.TINT32]
-	s := typecheck.Lookup(name)
+	s := typecheck.Lookup(testTarget, name)
 	v := ir.NewNameAt(src.NoXPos, s, i32)
 	return v
 }

@@ -1022,7 +1022,7 @@ func (ft *factsTable) cleanup(f *ssa.Func) {
 	for _, po := range []*ssa.Poset{ft.orderS, ft.orderU} {
 		// Make sure it's empty as it should be. A non-empty poset
 		// might cause errors and miscompilations if reused.
-		if checkEnabled {
+		if checkEnabledForFunc(f) {
 			if err := po.CheckEmpty(); err != nil {
 				f.Fatalf("poset not empty after function %s: %v", f.Name, err)
 			}
@@ -2524,7 +2524,7 @@ func (ft *factsTable) simplifyValue(b *ssa.Block, v *ssa.Value) {
 			}
 			zero := b.Func.ConstVal(bytesizeToConst[v.Type.Size()], v.Type, 0, true)
 			ft.initLimitForNewValue(zero)
-			check := b.NewValue2(v.Pos, bytesizeToNeq[v.Type.Size()], types.Types[types.TBOOL], zero, x)
+			check := b.NewValue2(v.Pos, bytesizeToNeq[v.Type.Size()], b.Func.Config.Target.Type(types.TBOOL), zero, x)
 			ft.initLimitForNewValue(check)
 			v.Reset(ssaop.OpCondSelect)
 			v.AddArg3(y, zero, check)

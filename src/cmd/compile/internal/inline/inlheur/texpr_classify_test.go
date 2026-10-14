@@ -19,6 +19,7 @@ import (
 var pos src.XPos
 var local *types.Pkg
 var f *ir.Func
+var target *ir.Package
 
 func init() {
 	types.PtrSize = 8
@@ -26,13 +27,16 @@ func init() {
 	types.MaxWidth = 1 << 50
 	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
 
-	typecheck.InitUniverse()
-	local = types.NewPkg("", "")
+	local = types.NewPkgInstance("", "")
+	local.Local = true
+	target = &ir.Package{LocalPkg: local}
+	typecheck.InitUniverse(target)
 	fsym := &types.Sym{
-		Pkg:  types.NewPkg("my/import/path", "path"),
+		Pkg:  types.NewPkgInstance("my/import/path", "path"),
 		Name: "function",
 	}
-	f = ir.NewFunc(src.NoXPos, src.NoXPos, fsym, nil)
+	f = ir.NewFunc(nil, src.NoXPos, src.NoXPos, fsym, nil)
+	f.Target = target
 }
 
 type state struct {

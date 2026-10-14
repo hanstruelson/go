@@ -92,7 +92,7 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	// references to go:itab.T[int],iface and constructing a direct
 	// reference to .dict.T[int]).
 	if typ.HasShape() {
-		if base.Flag.LowerM != 0 {
+		if curfunc.Target.Flags.LowerM != 0 {
 			base.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped receiver %v", call, typ)
 		}
 		return
@@ -111,7 +111,7 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	// could instead set a flag so that walk skips the itab check. For
 	// now, punting is easy and safe.
 	if sel.X.Type().HasShape() {
-		if base.Flag.LowerM != 0 {
+		if curfunc.Target.Flags.LowerM != 0 {
 			base.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped interface %v", call, sel.X.Type())
 		}
 		return
@@ -141,14 +141,14 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	x := typecheck.XDotMethod(curfunc, sel.Pos(), dt, sel.Sel, true)
 	switch x.Op() {
 	case ir.ODOTMETH:
-		if base.Flag.LowerM != 0 {
+		if curfunc.Target.Flags.LowerM != 0 {
 			base.WarnfAt(call.Pos(), "devirtualizing %v to %v", sel, typ)
 		}
 		call.SetOp(ir.OCALLMETH)
 		call.Fun = x
 	case ir.ODOTINTER:
 		// Promoted method from embedded interface-typed field (#42279).
-		if base.Flag.LowerM != 0 {
+		if curfunc.Target.Flags.LowerM != 0 {
 			base.WarnfAt(call.Pos(), "partially devirtualizing %v to %v", sel, typ)
 		}
 		call.SetOp(ir.OCALLINTER)

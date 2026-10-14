@@ -13,11 +13,11 @@ import (
 
 func TestSymCompare(t *testing.T) {
 	var (
-		local = types.NewPkg("", "")
-		abc   = types.NewPkg("abc", "")
-		uvw   = types.NewPkg("uvw", "")
-		xyz   = types.NewPkg("xyz", "")
-		gr    = types.NewPkg("gr", "")
+		local = types.NewPkgInstance("", "")
+		abc   = types.NewPkgInstance("abc", "")
+		uvw   = types.NewPkgInstance("uvw", "")
+		xyz   = types.NewPkgInstance("xyz", "")
+		gr    = types.NewPkgInstance("gr", "")
 	)
 
 	data := []*types.Sym{

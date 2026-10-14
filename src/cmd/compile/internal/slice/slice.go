@@ -111,14 +111,13 @@ package slice
 // the length, which saves memory and copying cost.
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/escape"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/reflectdata"
 )
 
 func Funcs(all []*ir.Func) {
-	if base.Flag.N != 0 {
+	if len(all) == 0 || all[0].Target.Flags.N != 0 {
 		return
 	}
 	for _, fn := range all {
@@ -170,7 +169,7 @@ func analyze(fn *ir.Func) {
 	// Every variable (*ir.Name) that we are tracking will have
 	// a non-nil *sliceInfo in its Opt field.
 	haveLocalSlice := false
-	maxStackSize := int64(base.Debug.VariableMakeThreshold)
+	maxStackSize := int64(fn.Target.Debug.VariableMakeThreshold)
 	var namedRets []*ir.Name
 	for _, s := range fn.Dcl {
 		if !s.Type().IsSlice() {
@@ -179,7 +178,7 @@ func analyze(fn *ir.Func) {
 		if s.Type().Elem().Size() > maxStackSize {
 			continue
 		}
-		if !base.VariableMakeHash.MatchPos(s.Pos(), nil) {
+		if !fn.Target.VariableMakeHash.MatchPosWithLink(fn.Target.Ctxt, s.Pos(), nil) {
 			continue
 		}
 		s.Opt = &sliceInfo{s: s} // start tracking s

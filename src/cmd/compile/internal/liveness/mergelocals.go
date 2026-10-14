@@ -78,7 +78,7 @@ func MergeLocals(fn *ir.Func, f *ssa.Func) *MergeLocalsState {
 	cs := &cstate{
 		fn:    fn,
 		f:     f,
-		trace: base.Debug.MergeLocalsTrace,
+		trace: fn.Target.Debug.MergeLocalsTrace,
 	}
 	cs.collectMergeCandidates()
 	if len(cs.regions) == 0 {
@@ -321,7 +321,7 @@ func (cs *cstate) collectMergeCandidates() {
 	if cs.trace > 1 {
 		fmt.Fprintf(os.Stderr, "=-= raw cand list for func %v:\n", cs.fn)
 		for i := range cands {
-			dumpCand(cands[i], i)
+			dumpCand(cs.fn.Target, cands[i], i)
 		}
 	}
 
@@ -355,7 +355,7 @@ func (cs *cstate) collectMergeCandidates() {
 	if cs.trace > 1 {
 		fmt.Fprintf(os.Stderr, "=-= pruned candidate list for fn %v:\n", cs.fn)
 		for i := range cs.cands {
-			dumpCand(cs.cands[i], i)
+			dumpCand(cs.fn.Target, cs.cands[i], i)
 		}
 	}
 }
@@ -399,7 +399,7 @@ func (cs *cstate) dumpFunc() {
 	for k, b := range cs.f.Blocks {
 		fmt.Fprintf(os.Stderr, "b%d:\n", k)
 		for _, v := range b.Values {
-			pos := base.Ctxt.PosTable.Pos(v.Pos)
+			pos := cs.fn.Target.Ctxt.PosTable.Pos(v.Pos)
 			fmt.Fprintf(os.Stderr, "=-= %d L%d|C%d %s\n", ii, pos.RelLine(), pos.RelCol(), v.LongString())
 			ii++
 		}
@@ -407,11 +407,11 @@ func (cs *cstate) dumpFunc() {
 }
 
 func (cs *cstate) dumpFuncIfSelected() {
-	if base.Debug.MergeLocalsDumpFunc == "" {
+	if cs.fn.Target.Debug.MergeLocalsDumpFunc == "" {
 		return
 	}
 	if !strings.HasSuffix(fmt.Sprintf("%v", cs.fn),
-		base.Debug.MergeLocalsDumpFunc) {
+		cs.fn.Target.Debug.MergeLocalsDumpFunc) {
 		return
 	}
 	cs.dumpFunc()
@@ -423,13 +423,13 @@ func (cs *cstate) dumpFuncIfSelected() {
 // on debug tracing only if we have at least two candidates
 // selected by the hash debug for this function.
 func (cs *cstate) setupHashBisection(cands []*ir.Name) {
-	if base.Debug.MergeLocalsHash == "" {
+	if cs.fn.Target.Debug.MergeLocalsHash == "" {
 		return
 	}
 	deselected := make(map[*ir.Name]bool)
 	selCount := 0
 	for _, cand := range cands {
-		if !base.MergeLocalsHash.MatchPosWithInfo(cand.Pos(), "mergelocals", nil) {
+		if !cs.fn.Target.MergeLocalsHash.MatchPosWithInfoAndLink(cs.fn.Target.Ctxt, cand.Pos(), "mergelocals", nil) {
 			deselected[cand] = true
 		} else {
 			deselected[cand] = false
@@ -439,8 +439,8 @@ func (cs *cstate) setupHashBisection(cands []*ir.Name) {
 	if selCount < len(cands) {
 		cs.hashDeselected = deselected
 	}
-	if base.Debug.MergeLocalsHTrace != 0 && selCount >= 2 {
-		cs.trace = base.Debug.MergeLocalsHTrace
+	if cs.fn.Target.Debug.MergeLocalsHTrace != 0 && selCount >= 2 {
+		cs.trace = cs.fn.Target.Debug.MergeLocalsHTrace
 	}
 }
 
@@ -779,7 +779,7 @@ func (cs *cstate) mergeVisitRegion(mls *MergeLocalsState, st, en int) {
 			if cs.trace > 1 {
 				fmt.Fprintf(os.Stderr, "=-= overlapping %+v:\n", sl)
 				for i := range sl {
-					dumpCand(mls.vars[sl[i]], sl[i])
+					dumpCand(cs.fn.Target, mls.vars[sl[i]], sl[i])
 				}
 				for i, v := range elems {
 					fmt.Fprintf(os.Stderr, "=-= %d: sl=%d %s\n", i, v, ivs[v])
@@ -1019,10 +1019,10 @@ func (cs *cstate) computeIntervals() {
 	cs.ivs = ivs
 }
 
-func fmtFullPos(p src.XPos) string {
+func fmtFullPos(target *ir.Package, p src.XPos) string {
 	var sb strings.Builder
 	sep := ""
-	base.Ctxt.AllPos(p, func(pos src.Pos) {
+	target.Ctxt.AllPos(p, func(pos src.Pos) {
 		sb.WriteString(sep)
 		sep = "|"
 		file := filepath.Base(pos.Filename())
@@ -1031,9 +1031,9 @@ func fmtFullPos(p src.XPos) string {
 	return sb.String()
 }
 
-func dumpCand(c *ir.Name, i int) {
+func dumpCand(target *ir.Package, c *ir.Name, i int) {
 	fmt.Fprintf(os.Stderr, " %d: %s %q sz=%d hp=%v align=%d t=%v\n",
-		i, fmtFullPos(c.Pos()), c.Sym().Name, c.Type().Size(),
+		i, fmtFullPos(target, c.Pos()), c.Sym().Name, c.Type().Size(),
 		c.Type().HasPointers(), c.Type().Alignment(), c.Type())
 }
 

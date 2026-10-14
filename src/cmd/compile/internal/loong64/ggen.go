@@ -5,7 +5,6 @@
 package loong64
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/objw"
 	"cmd/internal/obj"
 	"cmd/internal/obj/loong64"
@@ -17,7 +16,7 @@ func zerorange(pp *objw.Progs, p *obj.Prog, off, cnt int64, _ *uint32) *obj.Prog
 	}
 
 	// Adjust the frame to account for LR.
-	off += base.Ctxt.Arch.FixedFrameSize
+	off += pp.CurFunc.Target.Ctxt.Arch.FixedFrameSize
 
 	for cnt != 0 {
 		p = pp.Append(p, loong64.AMOVV, obj.TYPE_REG, loong64.REGZERO, 0, obj.TYPE_MEM, loong64.REGSP, off)

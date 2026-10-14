@@ -5,9 +5,7 @@
 package x86
 
 import (
-	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
-	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 	"cmd/internal/obj/x86"
 )
@@ -21,16 +19,16 @@ func zerorange(pp *objw.Progs, p *obj.Prog, off, cnt int64, ax *uint32) *obj.Pro
 		*ax = 1
 	}
 
-	if cnt <= int64(4*types.RegSize) {
-		for i := int64(0); i < cnt; i += int64(types.RegSize) {
+	if cnt <= int64(4*pp.CurFunc.Target.RegSize) {
+		for i := int64(0); i < cnt; i += int64(pp.CurFunc.Target.RegSize) {
 			p = pp.Append(p, x86.AMOVL, obj.TYPE_REG, x86.REG_AX, 0, obj.TYPE_MEM, x86.REG_SP, off+i)
 		}
-	} else if cnt <= int64(128*types.RegSize) {
+	} else if cnt <= int64(128*pp.CurFunc.Target.RegSize) {
 		p = pp.Append(p, x86.ALEAL, obj.TYPE_MEM, x86.REG_SP, off, obj.TYPE_REG, x86.REG_DI, 0)
-		p = pp.Append(p, obj.ADUFFZERO, obj.TYPE_NONE, 0, 0, obj.TYPE_ADDR, 0, 1*(128-cnt/int64(types.RegSize)))
-		p.To.Sym = ir.Syms.Duffzero
+		p = pp.Append(p, obj.ADUFFZERO, obj.TYPE_NONE, 0, 0, obj.TYPE_ADDR, 0, 1*(128-cnt/int64(pp.CurFunc.Target.RegSize)))
+		p.To.Sym = pp.CurFunc.Target.Symbols.Duffzero
 	} else {
-		p = pp.Append(p, x86.AMOVL, obj.TYPE_CONST, 0, cnt/int64(types.RegSize), obj.TYPE_REG, x86.REG_CX, 0)
+		p = pp.Append(p, x86.AMOVL, obj.TYPE_CONST, 0, cnt/int64(pp.CurFunc.Target.RegSize), obj.TYPE_REG, x86.REG_CX, 0)
 		p = pp.Append(p, x86.ALEAL, obj.TYPE_MEM, x86.REG_SP, off, obj.TYPE_REG, x86.REG_DI, 0)
 		p = pp.Append(p, x86.AREP, obj.TYPE_NONE, 0, 0, obj.TYPE_NONE, 0, 0)
 		p = pp.Append(p, x86.ASTOSL, obj.TYPE_NONE, 0, 0, obj.TYPE_NONE, 0, 0)

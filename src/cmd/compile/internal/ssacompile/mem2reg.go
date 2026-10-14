@@ -16,7 +16,6 @@ package ssacompile
 // replaced with the value that was stored.
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssaop"
@@ -291,7 +290,7 @@ func sortLoadStores(bb *ssa.Block, loadStores []*ssa.Value, memoryOrders map[ssa
 
 func mem2reg(f *ssa.Func) {
 	changed := false
-	if base.Flag.N != 0 {
+	if f.Config.Target.Flags.N != 0 {
 		return
 	}
 	st := f.NewStats("mem2reg")

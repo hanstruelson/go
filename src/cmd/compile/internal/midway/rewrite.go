@@ -6,6 +6,7 @@ package midway
 
 import (
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
 	"cmd/compile/internal/types2"
 	"fmt"
@@ -224,7 +225,7 @@ func (r *Rewriter) generateDispatchers(fileAST *syntax.File) {
 
 			change = true
 			if r.analyzer.HasDependentSignature(sig) {
-				if base.Debug.Simd > 0 {
+				if r.analyzer.target.Debug.Simd > 0 {
 					base.Warn("%s: removing body of dependent-sig original function %v", d.Pos().String(), d.Name.Value)
 				}
 				d.Body = r.blockOf(d.Pos(), r.panicStmt(d.Pos(),
@@ -559,7 +560,7 @@ func (r *Rewriter) shouldIncludeDecl(decl syntax.Decl) bool {
 }
 
 // Generate an API matching the standalone compilation call
-func RewriteWrapper(pkg *types2.Package, info *types2.Info, files []*syntax.File) bool {
+func RewriteWrapper(target *ir.Package, pkg *types2.Package, info *types2.Info, files []*syntax.File) bool {
 	if !buildcfg.Experiment.SIMD {
 		return false
 	}
@@ -574,7 +575,7 @@ func RewriteWrapper(pkg *types2.Package, info *types2.Info, files []*syntax.File
 	if len(sizes) == 0 {
 		return false
 	}
-	analyzer := NewAnalyzer(pkg, info)
+	analyzer := NewAnalyzer(target, pkg, info)
 	if !analyzer.Analyze(files) {
 		return false
 	}

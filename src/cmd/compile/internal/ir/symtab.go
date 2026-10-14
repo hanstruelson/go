@@ -5,12 +5,8 @@
 package ir
 
 import (
-	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 )
-
-// Syms holds known symbols.
-var Syms symsStruct
 
 type symsStruct struct {
 	AssertE2I                 *obj.LSym
@@ -91,13 +87,4 @@ type symsStruct struct {
 	WasmTruncS *obj.LSym
 	// Wasm
 	WasmTruncU *obj.LSym
-}
-
-// Pkgs holds known packages.
-var Pkgs struct {
-	Go           *types.Pkg
-	Itab         *types.Pkg
-	Runtime      *types.Pkg
-	InternalMaps *types.Pkg
-	Coverage     *types.Pkg
 }

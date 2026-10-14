@@ -709,13 +709,13 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Udiv
+		p.To.Sym = s.Target().Symbols.Udiv
 	case ssaop.OpARMLoweredWB:
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.OpARMLoweredPanicBoundsRR, ssaop.OpARMLoweredPanicBoundsRC, ssaop.OpARMLoweredPanicBoundsCR, ssaop.OpARMLoweredPanicBoundsCC,
 		ssaop.OpARMLoweredPanicExtendRR, ssaop.OpARMLoweredPanicExtendRC:
@@ -872,22 +872,22 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		if extend {
-			p.To.Sym = ir.Syms.PanicExtend
+			p.To.Sym = s.Target().Symbols.PanicExtend
 		} else {
-			p.To.Sym = ir.Syms.PanicBounds
+			p.To.Sym = s.Target().Symbols.PanicBounds
 		}
 
 	case ssaop.OpARMDUFFZERO:
 		p := s.Prog(obj.ADUFFZERO)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Duffzero
+		p.To.Sym = s.Target().Symbols.Duffzero
 		p.To.Offset = v.AuxInt
 	case ssaop.OpARMDUFFCOPY:
 		p := s.Prog(obj.ADUFFCOPY)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Duffcopy
+		p.To.Sym = s.Target().Symbols.Duffcopy
 		p.To.Offset = v.AuxInt
 	case ssaop.OpARMLoweredNilCheck:
 		// Issue a load which will fault if arg is nil.
@@ -900,7 +900,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpARMLoweredZero:
@@ -1008,7 +1008,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(arm.AMOVW)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()

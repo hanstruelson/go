@@ -112,7 +112,11 @@ type edge struct {
 }
 
 func (l *location) asHole() hole {
-	return hole{dst: l}
+	h := hole{dst: l}
+	if l.curfn != nil {
+		h.target = l.curfn.Target
+	}
+	return h
 }
 
 // leak records that parameter l leaks to sink.
@@ -144,6 +148,7 @@ type hole struct {
 	dst    *location
 	derefs int // >= -1
 	notes  *note
+	target *ir.Package
 
 	// addrtaken indicates whether this context is taking the address of
 	// the expression, independent of whether the address will actually
@@ -161,7 +166,7 @@ func (k hole) note(where ir.Node, why string) hole {
 	if where == nil || why == "" {
 		base.Fatalf("note: missing where/why")
 	}
-	if base.Flag.LowerM >= 2 || logopt.Enabled() {
+	if k.target.Flags.LowerM >= 2 || logopt.Enabled() {
 		k.notes = &note{
 			next:  k.notes,
 			where: where,
@@ -203,9 +208,9 @@ func (b *batch) flow(k hole, src *location) {
 		return
 	}
 	if dst.hasAttr(attrEscapes) && k.derefs < 0 { // dst = &src
-		if base.Flag.LowerM >= 2 || logopt.Enabled() {
+		if b.target.Flags.LowerM >= 2 || logopt.Enabled() {
 			pos := base.FmtPos(src.n.Pos())
-			if base.Flag.LowerM >= 2 {
+			if b.target.Flags.LowerM >= 2 {
 				fmt.Printf("%s: %v escapes to heap in %v:\n", pos, src.n, ir.FuncName(src.curfn))
 			}
 			explanation := b.explainFlow(pos, dst, src, k.derefs, k.notes, []*logopt.LoggedOpt{})
@@ -223,10 +228,10 @@ func (b *batch) flow(k hole, src *location) {
 	dst.edges = append(dst.edges, edge{src: src, derefs: k.derefs, notes: k.notes})
 }
 
-func (b *batch) heapHole() hole    { return b.heapLoc.asHole() }
-func (b *batch) mutatorHole() hole { return b.mutatorLoc.asHole() }
-func (b *batch) calleeHole() hole  { return b.calleeLoc.asHole() }
-func (b *batch) discardHole() hole { return b.blankLoc.asHole() }
+func (b *batch) heapHole() hole    { h := b.heapLoc.asHole(); h.target = b.target; return h }
+func (b *batch) mutatorHole() hole { h := b.mutatorLoc.asHole(); h.target = b.target; return h }
+func (b *batch) calleeHole() hole  { h := b.calleeLoc.asHole(); h.target = b.target; return h }
+func (b *batch) discardHole() hole { h := b.blankLoc.asHole(); h.target = b.target; return h }
 
 func (b *batch) oldLoc(n *ir.Name) *location {
 	if n.Canonical().Opt == nil {

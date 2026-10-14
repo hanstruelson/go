@@ -9,7 +9,6 @@ import (
 	"math"
 
 	"cmd/compile/internal/base"
-	"cmd/compile/internal/ir"
 	"cmd/compile/internal/logopt"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/block"
@@ -468,9 +467,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Name = obj.NAME_EXTERN
 		f := math.Float64frombits(uint64(v.AuxInt))
 		if v.Op == ssaop.Op386MOVSDconst1 {
-			p.From.Sym = base.Ctxt.Float64Sym(f)
+			p.From.Sym = s.Target().Ctxt.Float64Sym(f)
 		} else {
-			p.From.Sym = base.Ctxt.Float32Sym(float32(f))
+			p.From.Sym = s.Target().Ctxt.Float32Sym(float32(f))
 		}
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
@@ -652,12 +651,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.Op386DUFFZERO:
 		p := s.Prog(obj.ADUFFZERO)
 		p.To.Type = obj.TYPE_ADDR
-		p.To.Sym = ir.Syms.Duffzero
+		p.To.Sym = s.Target().Symbols.Duffzero
 		p.To.Offset = v.AuxInt
 	case ssaop.Op386DUFFCOPY:
 		p := s.Prog(obj.ADUFFCOPY)
 		p.To.Type = obj.TYPE_ADDR
-		p.To.Sym = ir.Syms.Duffcopy
+		p.To.Sym = s.Target().Symbols.Duffcopy
 		p.To.Offset = v.AuxInt
 
 	case ssaop.OpCopy: // TODO: use MOVLreg for reg->reg copies instead of OpCopy?
@@ -695,7 +694,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		r := v.Reg()
 		// See the comments in cmd/internal/obj/x86/obj6.go
 		// near CanUse1InsnTLS for a detailed explanation of these instructions.
-		if x86.CanUse1InsnTLS(base.Ctxt) {
+		if x86.CanUse1InsnTLS(s.Target().Ctxt) {
 			// MOVL (TLS), r
 			p := s.Prog(x86.AMOVL)
 			p.From.Type = obj.TYPE_MEM
@@ -731,7 +730,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is the address of the first arg
 		p := s.Prog(x86.AMOVL)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize // 0 on 386, just to be consistent with other architectures
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize // 0 on 386, just to be consistent with other architectures
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
@@ -741,7 +740,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.Op386LoweredPanicBoundsRR, ssaop.Op386LoweredPanicBoundsRC, ssaop.Op386LoweredPanicBoundsCR, ssaop.Op386LoweredPanicBoundsCC,
 		ssaop.Op386LoweredPanicExtendRR, ssaop.Op386LoweredPanicExtendRC:
@@ -898,9 +897,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		if extend {
-			p.To.Sym = ir.Syms.PanicExtend
+			p.To.Sym = s.Target().Symbols.PanicExtend
 		} else {
-			p.To.Sym = ir.Syms.PanicBounds
+			p.To.Sym = s.Target().Symbols.PanicBounds
 		}
 
 	case ssaop.Op386CALLstatic, ssaop.Op386CALLclosure, ssaop.Op386CALLinter:
@@ -977,7 +976,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.Op386LoweredCtz32:

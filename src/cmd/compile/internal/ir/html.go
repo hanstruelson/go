@@ -505,23 +505,23 @@ func nodeHasChildren(n Node) bool {
 
 func (h *HTMLWriter) dumpNodeHeaderHTML(n Node) {
 	// print pointer to be able to see identical nodes
-	if base.Debug.DumpPtrs != 0 {
+	if h.Func.Target.Debug.DumpPtrs != 0 {
 		h.Printf(" p(%p)", n)
 	}
 
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Defn != nil {
+	if h.Func.Target.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Defn != nil {
 		h.Printf(" defn(%p)", n.Name().Defn)
 	}
 
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Curfn != nil {
+	if h.Func.Target.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Curfn != nil {
 		h.Printf(" curfn(%p)", n.Name().Curfn)
 	}
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Outer != nil {
+	if h.Func.Target.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Outer != nil {
 		h.Printf(" outer(%p)", n.Name().Outer)
 	}
 
-	if EscFmt != nil {
-		if esc := EscFmt(n); esc != "" {
+	if h.Func.Target.EscFmt != nil {
+		if esc := h.Func.Target.EscFmt(n); esc != "" {
 			h.Printf(" %s", html.EscapeString(esc))
 		}
 	}
@@ -601,7 +601,7 @@ func (h *HTMLWriter) dumpNodeHeaderHTML(n Node) {
 			h.Print("+")
 		}
 		sep := ""
-		base.Ctxt.AllPos(n.Pos(), func(pos src.Pos) {
+		h.Func.Target.Ctxt.AllPos(n.Pos(), func(pos src.Pos) {
 			h.Print(sep)
 			sep = " "
 			// Hierarchical highlighting:

@@ -7,7 +7,6 @@ package pkginit
 import (
 	"strings"
 
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -15,104 +14,104 @@ import (
 )
 
 // instrumentGlobals declares a global array of _asan_global structures and initializes it.
-func instrumentGlobals(fn *ir.Func) *ir.Name {
-	asanGlobalStruct, asanLocationStruct, defStringstruct := createtypes()
-	lname := typecheck.Lookup
+func instrumentGlobals(target *ir.Package, fn *ir.Func) *ir.Name {
+	asanGlobalStruct, asanLocationStruct, defStringstruct := createtypes(target)
+	lname := func(name string) *types.Sym { return typecheck.Lookup(target, name) }
 	// Make a global array of asanGlobalStruct type.
 	// var asanglobals []asanGlobalStruct
-	arraytype := types.NewArray(asanGlobalStruct, int64(len(InstrumentGlobalsMap)))
+	arraytype := types.NewArray(asanGlobalStruct, int64(len(target.InstrumentedGlobalsMap)))
 	symG := lname(".asanglobals")
-	globals := ir.NewNameAt(base.Pos, symG, arraytype)
+	globals := ir.NewNameAt(target.Pos, symG, arraytype)
 	globals.Class = ir.PEXTERN
 	symG.Def = globals
-	typecheck.Target.Externs = append(typecheck.Target.Externs, globals)
+	target.Externs = append(target.Externs, globals)
 	// Make a global array of asanLocationStruct type.
 	// var asanL []asanLocationStruct
-	arraytype = types.NewArray(asanLocationStruct, int64(len(InstrumentGlobalsMap)))
+	arraytype = types.NewArray(asanLocationStruct, int64(len(target.InstrumentedGlobalsMap)))
 	symL := lname(".asanL")
-	asanlocation := ir.NewNameAt(base.Pos, symL, arraytype)
+	asanlocation := ir.NewNameAt(target.Pos, symL, arraytype)
 	asanlocation.Class = ir.PEXTERN
 	symL.Def = asanlocation
-	typecheck.Target.Externs = append(typecheck.Target.Externs, asanlocation)
+	target.Externs = append(target.Externs, asanlocation)
 	// Make three global string variables to pass the global name and module name
 	// and the name of the source file that defines it.
 	// var asanName string
 	// var asanModulename string
 	// var asanFilename string
 	symL = lname(".asanName")
-	asanName := ir.NewNameAt(base.Pos, symL, types.Types[types.TSTRING])
+	asanName := ir.NewNameAt(target.Pos, symL, target.Type(types.TSTRING))
 	asanName.Class = ir.PEXTERN
 	symL.Def = asanName
-	typecheck.Target.Externs = append(typecheck.Target.Externs, asanName)
+	target.Externs = append(target.Externs, asanName)
 
 	symL = lname(".asanModulename")
-	asanModulename := ir.NewNameAt(base.Pos, symL, types.Types[types.TSTRING])
+	asanModulename := ir.NewNameAt(target.Pos, symL, target.Type(types.TSTRING))
 	asanModulename.Class = ir.PEXTERN
 	symL.Def = asanModulename
-	typecheck.Target.Externs = append(typecheck.Target.Externs, asanModulename)
+	target.Externs = append(target.Externs, asanModulename)
 
 	symL = lname(".asanFilename")
-	asanFilename := ir.NewNameAt(base.Pos, symL, types.Types[types.TSTRING])
+	asanFilename := ir.NewNameAt(target.Pos, symL, target.Type(types.TSTRING))
 	asanFilename.Class = ir.PEXTERN
 	symL.Def = asanFilename
-	typecheck.Target.Externs = append(typecheck.Target.Externs, asanFilename)
+	target.Externs = append(target.Externs, asanFilename)
 
 	var init ir.Nodes
 	var c ir.Node
 	// globals[i].odrIndicator = 0 is the default, no need to set it explicitly here.
-	for i, n := range InstrumentGlobalsSlice {
+	for i, n := range target.InstrumentedGlobalsSlice {
 		setField := func(f string, val ir.Node, i int) {
-			r := ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT,
-				ir.NewIndexExpr(base.Pos, globals, ir.NewInt(base.Pos, int64(i))), lname(f)), val)
+			r := ir.NewAssignStmt(target.Pos, ir.NewSelectorExpr(target.Pos, ir.ODOT,
+				ir.NewIndexExpr(target.Pos, globals, ir.NewInt(target.Pos, int64(i))), lname(f)), val)
 			init.Append(typecheck.Stmt(fn, r))
 		}
 		// globals[i].beg = uintptr(unsafe.Pointer(&n))
-		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, n), types.Types[types.TUNSAFEPTR])
-		c = typecheck.ConvNop(fn, c, types.Types[types.TUINTPTR])
+		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, n), target.Type(types.TUNSAFEPTR))
+		c = typecheck.ConvNop(fn, c, target.Type(types.TUINTPTR))
 		setField("beg", c, i)
 		// Assign globals[i].size.
 		g := n.(*ir.Name)
 		size := g.Type().Size()
-		c = typecheck.DefaultLit(ir.NewInt(base.Pos, size), types.Types[types.TUINTPTR])
+		c = typecheck.DefaultLitFor(target, ir.NewInt(target.Pos, size), target.Type(types.TUINTPTR))
 		setField("size", c, i)
 		// Assign globals[i].sizeWithRedzone.
 		rzSize := GetRedzoneSizeForGlobal(size)
 		sizeWithRz := rzSize + size
-		c = typecheck.DefaultLit(ir.NewInt(base.Pos, sizeWithRz), types.Types[types.TUINTPTR])
+		c = typecheck.DefaultLitFor(target, ir.NewInt(target.Pos, sizeWithRz), target.Type(types.TUINTPTR))
 		setField("sizeWithRedzone", c, i)
 		// The C string type is terminated by a null character "\0", Go should use three-digit
 		// octal "\000" or two-digit hexadecimal "\x00" to create null terminated string.
 		// asanName = symbol's linkname + "\000"
 		// globals[i].name = (*defString)(unsafe.Pointer(&asanName)).data
 		name := g.Linksym().Name
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, asanName, ir.NewString(base.Pos, name+"\000"))))
-		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanName), types.Types[types.TUNSAFEPTR])
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, asanName, ir.NewString(target.Pos, name+"\000"))))
+		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanName), target.Type(types.TUNSAFEPTR))
 		c = typecheck.ConvNop(fn, c, types.NewPtr(defStringstruct))
-		c = ir.NewSelectorExpr(base.Pos, ir.ODOT, c, lname("data"))
+		c = ir.NewSelectorExpr(target.Pos, ir.ODOT, c, lname("data"))
 		setField("name", c, i)
 
 		// Set the name of package being compiled as a unique identifier of a module.
 		// asanModulename = pkgName + "\000"
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, asanModulename, ir.NewString(base.Pos, types.LocalPkg.Name+"\000"))))
-		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanModulename), types.Types[types.TUNSAFEPTR])
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, asanModulename, ir.NewString(target.Pos, target.LocalPkg.Name+"\000"))))
+		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanModulename), target.Type(types.TUNSAFEPTR))
 		c = typecheck.ConvNop(fn, c, types.NewPtr(defStringstruct))
-		c = ir.NewSelectorExpr(base.Pos, ir.ODOT, c, lname("data"))
+		c = ir.NewSelectorExpr(target.Pos, ir.ODOT, c, lname("data"))
 		setField("moduleName", c, i)
 		// Assign asanL[i].filename, asanL[i].line, asanL[i].column
 		// and assign globals[i].location = uintptr(unsafe.Pointer(&asanL[i]))
-		asanLi := ir.NewIndexExpr(base.Pos, asanlocation, ir.NewInt(base.Pos, int64(i)))
-		filename := ir.NewString(base.Pos, base.Ctxt.PosTable.Pos(n.Pos()).Filename()+"\000")
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, asanFilename, filename)))
-		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanFilename), types.Types[types.TUNSAFEPTR])
+		asanLi := ir.NewIndexExpr(target.Pos, asanlocation, ir.NewInt(target.Pos, int64(i)))
+		filename := ir.NewString(target.Pos, target.Ctxt.PosTable.Pos(n.Pos()).Filename()+"\000")
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, asanFilename, filename)))
+		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanFilename), target.Type(types.TUNSAFEPTR))
 		c = typecheck.ConvNop(fn, c, types.NewPtr(defStringstruct))
-		c = ir.NewSelectorExpr(base.Pos, ir.ODOT, c, lname("data"))
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, asanLi, lname("filename")), c)))
-		line := ir.NewInt(base.Pos, int64(n.Pos().Line()))
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, asanLi, lname("line")), line)))
-		col := ir.NewInt(base.Pos, int64(n.Pos().Col()))
-		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, asanLi, lname("column")), col)))
-		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanLi), types.Types[types.TUNSAFEPTR])
-		c = typecheck.ConvNop(fn, c, types.Types[types.TUINTPTR])
+		c = ir.NewSelectorExpr(target.Pos, ir.ODOT, c, lname("data"))
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, ir.NewSelectorExpr(target.Pos, ir.ODOT, asanLi, lname("filename")), c)))
+		line := ir.NewInt(target.Pos, int64(n.Pos().Line()))
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, ir.NewSelectorExpr(target.Pos, ir.ODOT, asanLi, lname("line")), line)))
+		col := ir.NewInt(target.Pos, int64(n.Pos().Col()))
+		init.Append(typecheck.Stmt(fn, ir.NewAssignStmt(target.Pos, ir.NewSelectorExpr(target.Pos, ir.ODOT, asanLi, lname("column")), col)))
+		c = typecheck.ConvNop(fn, typecheck.NodAddr(fn, asanLi), target.Type(types.TUNSAFEPTR))
+		c = typecheck.ConvNop(fn, c, target.Type(types.TUINTPTR))
 		setField("sourceLocation", c, i)
 	}
 	fn.Body.Append(init...)
@@ -149,10 +148,10 @@ func instrumentGlobals(fn *ir.Func) *ir.Name {
 //	len  uintptr
 // }
 
-func createtypes() (*types.Type, *types.Type, *types.Type) {
-	up := types.Types[types.TUINTPTR]
-	i32 := types.Types[types.TINT32]
-	fname := typecheck.Lookup
+func createtypes(target *ir.Package) (*types.Type, *types.Type, *types.Type) {
+	up := target.Type(types.TUINTPTR)
+	i32 := target.Type(types.TINT32)
+	fname := func(name string) *types.Sym { return typecheck.Lookup(target, name) }
 	nxp := src.NoXPos
 	nfield := types.NewField
 	asanGlobal := types.NewStruct([]*types.Field{
@@ -201,16 +200,7 @@ func GetRedzoneSizeForGlobal(size int64) int64 {
 	return redZone
 }
 
-// InstrumentGlobalsMap contains only package-local (and unlinknamed from somewhere else)
-// globals.
-// And the key is the object name. For example, in package p, a global foo would be in this
-// map as "foo".
-// Consider range over maps is nondeterministic, make a slice to hold all the values in the
-// InstrumentGlobalsMap and iterate over the InstrumentGlobalsSlice.
-var InstrumentGlobalsMap = make(map[string]ir.Node)
-var InstrumentGlobalsSlice = make([]ir.Node, 0, 0)
-
-func canInstrumentGlobal(g ir.Node) bool {
+func canInstrumentGlobal(target *ir.Package, g ir.Node) bool {
 	if g.Op() != ir.ONAME {
 		return false
 	}
@@ -218,7 +208,7 @@ func canInstrumentGlobal(g ir.Node) bool {
 	if n.Class == ir.PFUNC {
 		return false
 	}
-	if n.Sym().Pkg != types.LocalPkg {
+	if n.Sym().Pkg != target.LocalPkg {
 		return false
 	}
 	// Do not instrument any _cgo_ related global variables, because they are declared in C code.

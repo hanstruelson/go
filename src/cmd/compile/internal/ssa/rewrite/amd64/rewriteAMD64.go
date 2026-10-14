@@ -5,7 +5,6 @@ package amd64
 import "internal/buildcfg"
 import "math"
 import "cmd/internal/obj"
-import "cmd/compile/internal/base"
 import "cmd/compile/internal/types"
 import "cmd/compile/internal/ssa/block"
 import "cmd/compile/internal/ssa/ssaop"
@@ -7602,7 +7601,7 @@ func rewriteValue_OpAMD64ADCQ(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ADCQ x y (InvertFlags f))
-	// result: (ADCQ x y (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <types.Types[types.TUINT32]> (SETA <types.Types[types.TUINT8]> f)))))
+	// result: (ADCQ x y (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <v.Block.Func.Config.Types.UInt32> (SETA <v.Block.Func.Config.Types.UInt8> f)))))
 	for {
 		x := v_0
 		y := v_1
@@ -7613,8 +7612,8 @@ func rewriteValue_OpAMD64ADCQ(v *ssa.Value) bool {
 		v.Reset(ssaop.OpAMD64ADCQ)
 		v0 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v1 := b.NewValue0(v.Pos, ssaop.OpAMD64NEGLflags, types.NewTuple(typ.UInt32, types.TypeFlags))
-		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, types.Types[types.TUINT32])
-		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, types.Types[types.TUINT8])
+		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, v.Block.Func.Config.Types.UInt32)
+		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, v.Block.Func.Config.Types.UInt8)
 		v3.AddArg(f)
 		v2.AddArg(v3)
 		v1.AddArg(v2)
@@ -7643,7 +7642,7 @@ func rewriteValue_OpAMD64ADCQconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ADCQconst x [c] (InvertFlags f))
-	// result: (ADCQconst x [c] (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <types.Types[types.TUINT32]> (SETA <types.Types[types.TUINT8]> f)))))
+	// result: (ADCQconst x [c] (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <v.Block.Func.Config.Types.UInt32> (SETA <v.Block.Func.Config.Types.UInt8> f)))))
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
@@ -7655,8 +7654,8 @@ func rewriteValue_OpAMD64ADCQconst(v *ssa.Value) bool {
 		v.AuxInt = ssa.Int32ToAuxInt(c)
 		v0 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v1 := b.NewValue0(v.Pos, ssaop.OpAMD64NEGLflags, types.NewTuple(typ.UInt32, types.TypeFlags))
-		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, types.Types[types.TUINT32])
-		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, types.Types[types.TUINT8])
+		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, v.Block.Func.Config.Types.UInt32)
+		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, v.Block.Func.Config.Types.UInt8)
 		v3.AddArg(f)
 		v2.AddArg(v3)
 		v1.AddArg(v2)
@@ -32413,7 +32412,7 @@ func rewriteValue_OpAMD64SBBQ(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SBBQ x y (InvertFlags f))
-	// result: (SBBQ x y (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <types.Types[types.TUINT32]> (SETA <types.Types[types.TUINT8]> f)))))
+	// result: (SBBQ x y (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <v.Block.Func.Config.Types.UInt32> (SETA <v.Block.Func.Config.Types.UInt8> f)))))
 	for {
 		x := v_0
 		y := v_1
@@ -32424,8 +32423,8 @@ func rewriteValue_OpAMD64SBBQ(v *ssa.Value) bool {
 		v.Reset(ssaop.OpAMD64SBBQ)
 		v0 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v1 := b.NewValue0(v.Pos, ssaop.OpAMD64NEGLflags, types.NewTuple(typ.UInt32, types.TypeFlags))
-		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, types.Types[types.TUINT32])
-		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, types.Types[types.TUINT8])
+		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, v.Block.Func.Config.Types.UInt32)
+		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, v.Block.Func.Config.Types.UInt8)
 		v3.AddArg(f)
 		v2.AddArg(v3)
 		v1.AddArg(v2)
@@ -32508,7 +32507,7 @@ func rewriteValue_OpAMD64SBBQconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SBBQconst x [c] (InvertFlags f))
-	// result: (SBBQconst x [c] (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <types.Types[types.TUINT32]> (SETA <types.Types[types.TUINT8]> f)))))
+	// result: (SBBQconst x [c] (Select1 <types.TypeFlags> (NEGLflags (MOVBQZX <v.Block.Func.Config.Types.UInt32> (SETA <v.Block.Func.Config.Types.UInt8> f)))))
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
@@ -32520,8 +32519,8 @@ func rewriteValue_OpAMD64SBBQconst(v *ssa.Value) bool {
 		v.AuxInt = ssa.Int32ToAuxInt(c)
 		v0 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v1 := b.NewValue0(v.Pos, ssaop.OpAMD64NEGLflags, types.NewTuple(typ.UInt32, types.TypeFlags))
-		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, types.Types[types.TUINT32])
-		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, types.Types[types.TUINT8])
+		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64MOVBQZX, v.Block.Func.Config.Types.UInt32)
+		v3 := b.NewValue0(v.Pos, ssaop.OpAMD64SETA, v.Block.Func.Config.Types.UInt8)
 		v3.AddArg(f)
 		v2.AddArg(v3)
 		v1.AddArg(v2)
@@ -98168,12 +98167,12 @@ func rewriteValue_OpCvt32Fto32(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Cvt32Fto32 <t> x)
-	// cond: base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (XORL <t> y (SARLconst <t> [31] (ANDL <t> y:(CVTTSS2SL <t> x) (NOTL <typ.Int32> (MOVLf2i x)))))
 	for {
 		t := v.Type
 		x := v_0
-		if !(base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64XORL)
@@ -98193,12 +98192,12 @@ func rewriteValue_OpCvt32Fto32(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Cvt32Fto32 <t> x)
-	// cond: !base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: !v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (CVTTSS2SL <t> x)
 	for {
 		t := v.Type
 		x := v_0
-		if !(!base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(!v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64CVTTSS2SL)
@@ -98213,12 +98212,12 @@ func rewriteValue_OpCvt32Fto64(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Cvt32Fto64 <t> x)
-	// cond: base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (XORQ <t> y (SARQconst <t> [63] (ANDQ <t> y:(CVTTSS2SQ <t> x) (NOTQ <typ.Int64> (MOVQf2i (CVTSS2SD <typ.Float64> x))) )))
 	for {
 		t := v.Type
 		x := v_0
-		if !(base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64XORQ)
@@ -98240,12 +98239,12 @@ func rewriteValue_OpCvt32Fto64(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Cvt32Fto64 <t> x)
-	// cond: !base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: !v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (CVTTSS2SQ <t> x)
 	for {
 		t := v.Type
 		x := v_0
-		if !(!base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(!v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64CVTTSS2SQ)
@@ -98292,12 +98291,12 @@ func rewriteValue_OpCvt64Fto32(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Cvt64Fto32 <t> x)
-	// cond: base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (XORL <t> y (SARLconst <t> [31] (ANDL <t> y:(CVTTSD2SL <t> x) (NOTL <typ.Int32> (MOVLf2i (CVTSD2SS <typ.Float32> x))))))
 	for {
 		t := v.Type
 		x := v_0
-		if !(base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64XORL)
@@ -98319,12 +98318,12 @@ func rewriteValue_OpCvt64Fto32(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Cvt64Fto32 <t> x)
-	// cond: !base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: !v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (CVTTSD2SL <t> x)
 	for {
 		t := v.Type
 		x := v_0
-		if !(!base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(!v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64CVTTSD2SL)
@@ -98339,12 +98338,12 @@ func rewriteValue_OpCvt64Fto64(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Cvt64Fto64 <t> x)
-	// cond: base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (XORQ <t> y (SARQconst <t> [63] (ANDQ <t> y:(CVTTSD2SQ <t> x) (NOTQ <typ.Int64> (MOVQf2i x)))))
 	for {
 		t := v.Type
 		x := v_0
-		if !(base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64XORQ)
@@ -98364,12 +98363,12 @@ func rewriteValue_OpCvt64Fto64(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Cvt64Fto64 <t> x)
-	// cond: !base.ConvertHash.MatchPos(v.Pos, nil)
+	// cond: !v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)
 	// result: (CVTTSD2SQ <t> x)
 	for {
 		t := v.Type
 		x := v_0
-		if !(!base.ConvertHash.MatchPos(v.Pos, nil)) {
+		if !(!v.Block.Func.Config.Target.ConvertHash.MatchPosWithLink(v.Block.Func.Config.Target.Ctxt, v.Pos, nil)) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64CVTTSD2SQ)
@@ -105481,7 +105480,7 @@ func rewriteValue_OpSelect1(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Select1 (Add64carry x y c))
-	// result: (MOVBQZX (SETB <types.Types[types.TUINT8]> (Select1 <types.TypeFlags> (ADCQ x y (Select1 <types.TypeFlags> (NEGLflags c))))))
+	// result: (MOVBQZX (SETB <v.Block.Func.Config.Types.UInt8> (Select1 <types.TypeFlags> (ADCQ x y (Select1 <types.TypeFlags> (NEGLflags c))))))
 	for {
 		if v_0.Op != ssaop.OpAdd64carry {
 			break
@@ -105490,7 +105489,7 @@ func rewriteValue_OpSelect1(v *ssa.Value) bool {
 		x := v_0.Args[0]
 		y := v_0.Args[1]
 		v.Reset(ssaop.OpAMD64MOVBQZX)
-		v0 := b.NewValue0(v.Pos, ssaop.OpAMD64SETB, types.Types[types.TUINT8])
+		v0 := b.NewValue0(v.Pos, ssaop.OpAMD64SETB, v.Block.Func.Config.Types.UInt8)
 		v1 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64ADCQ, types.NewTuple(typ.UInt64, types.TypeFlags))
 		v3 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
@@ -105504,7 +105503,7 @@ func rewriteValue_OpSelect1(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Select1 (Sub64borrow x y c))
-	// result: (MOVBQZX (SETB <types.Types[types.TUINT8]> (Select1 <types.TypeFlags> (SBBQ x y (Select1 <types.TypeFlags> (NEGLflags c))))))
+	// result: (MOVBQZX (SETB <v.Block.Func.Config.Types.UInt8> (Select1 <types.TypeFlags> (SBBQ x y (Select1 <types.TypeFlags> (NEGLflags c))))))
 	for {
 		if v_0.Op != ssaop.OpSub64borrow {
 			break
@@ -105513,7 +105512,7 @@ func rewriteValue_OpSelect1(v *ssa.Value) bool {
 		x := v_0.Args[0]
 		y := v_0.Args[1]
 		v.Reset(ssaop.OpAMD64MOVBQZX)
-		v0 := b.NewValue0(v.Pos, ssaop.OpAMD64SETB, types.Types[types.TUINT8])
+		v0 := b.NewValue0(v.Pos, ssaop.OpAMD64SETB, v.Block.Func.Config.Types.UInt8)
 		v1 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)
 		v2 := b.NewValue0(v.Pos, ssaop.OpAMD64SBBQ, types.NewTuple(typ.UInt64, types.TypeFlags))
 		v3 := b.NewValue0(v.Pos, ssaop.OpSelect1, types.TypeFlags)

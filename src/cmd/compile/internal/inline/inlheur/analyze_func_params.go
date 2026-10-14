@@ -14,6 +14,7 @@ import (
 // flags for a Go functions parameters, for use in inline heuristics.
 // Note that the params slice below includes entries for blanks.
 type paramsAnalyzer struct {
+	ctx    *Context
 	fname  string
 	values []ParamPropBits
 	params []*ir.Name
@@ -35,8 +36,8 @@ func getParams(fn *ir.Func) []*ir.Name {
 // new list. If the function in question doesn't have any interesting
 // parameters then the analyzer list is returned unchanged, and the
 // params flags in "fp" are updated accordingly.
-func addParamsAnalyzer(fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, nf *nameFinder) []propAnalyzer {
-	pa, props := makeParamsAnalyzer(fn, nf)
+func addParamsAnalyzer(ctx *Context, fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, nf *nameFinder) []propAnalyzer {
+	pa, props := makeParamsAnalyzer(ctx, fn, nf)
 	if pa != nil {
 		analyzers = append(analyzers, pa)
 	} else {
@@ -49,7 +50,7 @@ func addParamsAnalyzer(fn *ir.Func, analyzers []propAnalyzer, fp *FuncProps, nf 
 // of function fn. If the function doesn't have any interesting
 // params, a nil helper is returned along with a set of default param
 // flags for the func.
-func makeParamsAnalyzer(fn *ir.Func, nf *nameFinder) (*paramsAnalyzer, []ParamPropBits) {
+func makeParamsAnalyzer(ctx *Context, fn *ir.Func, nf *nameFinder) (*paramsAnalyzer, []ParamPropBits) {
 	params := getParams(fn) // includes receiver if applicable
 	if len(params) == 0 {
 		return nil, nil
@@ -94,6 +95,7 @@ func makeParamsAnalyzer(fn *ir.Func, nf *nameFinder) (*paramsAnalyzer, []ParamPr
 		}
 	}
 	pa := &paramsAnalyzer{
+		ctx:              ctx,
 		fname:            fn.Sym().Name,
 		values:           vals,
 		params:           params,
@@ -219,7 +221,7 @@ func (pa *paramsAnalyzer) callCheckParams(ce *ir.CallExpr) {
 // foo's param 'f' since we know that bar has that flag set for
 // its second param, and we're passing that param a function.
 func (pa *paramsAnalyzer) deriveFlagsFromCallee(ce *ir.CallExpr, callee *ir.Func) {
-	calleeProps := propsForFunc(callee)
+	calleeProps := propsForFunc(pa.ctx, callee)
 	if calleeProps == nil {
 		return
 	}

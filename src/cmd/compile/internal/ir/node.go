@@ -458,8 +458,6 @@ const (
 
 )
 
-var BlankNode *Name
-
 func IsConst(n Node, ct constant.Kind) bool {
 	return ConstType(n) == ct
 }
@@ -499,7 +497,11 @@ func HasUniquePos(n Node) bool {
 	}
 
 	if !n.Pos().IsKnown() {
-		if base.Flag.K != 0 {
+		verbose := base.Flag.K != 0
+		if target := nodeTarget(n); target != nil {
+			verbose = target.Flags.K != 0
+		}
+		if verbose {
 			base.Warn("setlineno: unknown position (line 0)")
 		}
 		return false
@@ -516,6 +518,50 @@ func SetPos(n Node) src.XPos {
 	return lno
 }
 
+// SetPosFor is SetPos scoped to target. It also updates base.Pos for legacy
+// helpers that have not yet accepted a package context.
+func SetPosFor(target *Package, n Node) src.XPos {
+	old := target.Pos
+	if n != nil && HasUniquePos(n) {
+		target.Pos = n.Pos()
+	}
+	base.Pos = target.Pos
+	return old
+}
+
+// SetPosValue updates the current position for target and the legacy adapter.
+func SetPosValue(target *Package, pos src.XPos) {
+	target.Pos = pos
+	base.Pos = pos
+}
+
+// CurrentPos returns curfn's position when it has a target, and otherwise
+// falls back to the legacy current position.
+func CurrentPos(curfn *Func) src.XPos {
+	if curfn != nil && curfn.Target != nil {
+		return curfn.Target.Pos
+	}
+	return base.Pos
+}
+
+// SetPosIn is SetPosFor with a legacy fallback for package-level typechecking.
+func SetPosIn(curfn *Func, n Node) src.XPos {
+	if curfn != nil && curfn.Target != nil {
+		return SetPosFor(curfn.Target, n)
+	}
+	return SetPos(n)
+}
+
+// SetPosValueIn updates curfn's target position when available, as well as the
+// legacy adapter used by package-level typechecking.
+func SetPosValueIn(curfn *Func, pos src.XPos) {
+	if curfn != nil && curfn.Target != nil {
+		SetPosValue(curfn.Target, pos)
+	} else {
+		base.Pos = pos
+	}
+}
+
 // The result of InitExpr MUST be assigned back to n, e.g.
 //
 //	n.X = InitExpr(init, n.X)
@@ -527,7 +573,7 @@ func InitExpr(init []Node, expr Node) Node {
 	n, ok := expr.(InitNode)
 	if !ok || MayBeShared(n) {
 		// Introduce OCONVNOP to hold init list.
-		n = NewConvExpr(base.Pos, OCONVNOP, nil, expr)
+		n = NewConvExpr(expr.Pos(), OCONVNOP, nil, expr)
 		n.SetType(expr.Type())
 		n.SetTypecheck(1)
 	}

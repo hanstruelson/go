@@ -572,7 +572,12 @@ func exprFmt(n Node, s fmt.State, prec int) {
 		val := n.Val()
 
 		// Special case for rune constants.
-		if typ == types.RuneType || typ == types.UntypedRune {
+		target := nodeTarget(n)
+		runeType := types.RuneType
+		if target != nil {
+			runeType = target.RuneType
+		}
+		if typ == runeType || typ == types.UntypedRune {
 			if x, ok := constant.Uint64Val(val); ok && x <= utf8.MaxRune {
 				fmt.Fprintf(s, "%q", rune(x))
 				return
@@ -581,7 +586,7 @@ func exprFmt(n Node, s fmt.State, prec int) {
 
 		// Only include typ if it's neither the default nor untyped type
 		// for the constant value.
-		if k := val.Kind(); typ == types.Types[types.DefaultKinds[k]] || typ == types.UntypedTypes[k] {
+		if k := val.Kind(); typ == basicTypeForNode(target, types.DefaultKinds[k]) || typ == types.UntypedTypes[k] {
 			fmt.Fprint(s, val)
 		} else {
 			fmt.Fprintf(s, "%v(%v)", typ, val)
@@ -854,6 +859,13 @@ func exprFmt(n Node, s fmt.State, prec int) {
 	}
 }
 
+func basicTypeForNode(target *Package, kind types.Kind) *types.Type {
+	if target != nil {
+		return target.Type(kind)
+	}
+	return types.Types[kind]
+}
+
 func ellipsisIf(b bool) string {
 	if b {
 		return "..."
@@ -932,32 +944,34 @@ func indent(w io.Writer, depth int) {
 	}
 }
 
-// EscFmt is set by the escape analysis code to add escape analysis details to the node print.
-var EscFmt func(n Node) string
-
 // dumpNodeHeader prints the debug-format node header line to w.
 func dumpNodeHeader(w io.Writer, n Node) {
+	target := nodeTarget(n)
+	dumpPtrs := base.Debug.DumpPtrs
+	if target != nil {
+		dumpPtrs = target.Debug.DumpPtrs
+	}
 	// Useful to see which nodes in an AST printout are actually identical
-	if base.Debug.DumpPtrs != 0 {
+	if dumpPtrs != 0 {
 		fmt.Fprintf(w, " p(%p)", n)
 	}
 
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Defn != nil {
+	if dumpPtrs != 0 && n.Name() != nil && n.Name().Defn != nil {
 		// Useful to see where Defn is set and what node it points to
 		fmt.Fprintf(w, " defn(%p)", n.Name().Defn)
 	}
 
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Curfn != nil {
+	if dumpPtrs != 0 && n.Name() != nil && n.Name().Curfn != nil {
 		// Useful to see where Defn is set and what node it points to
 		fmt.Fprintf(w, " curfn(%p)", n.Name().Curfn)
 	}
-	if base.Debug.DumpPtrs != 0 && n.Name() != nil && n.Name().Outer != nil {
+	if dumpPtrs != 0 && n.Name() != nil && n.Name().Outer != nil {
 		// Useful to see where Defn is set and what node it points to
 		fmt.Fprintf(w, " outer(%p)", n.Name().Outer)
 	}
 
-	if EscFmt != nil {
-		if esc := EscFmt(n); esc != "" {
+	if target := nodeTarget(n); target != nil && target.EscFmt != nil {
+		if esc := target.EscFmt(n); esc != "" {
 			fmt.Fprintf(w, " %s", esc)
 		}
 	}
@@ -1046,15 +1060,34 @@ func dumpNodeHeader(w io.Writer, n Node) {
 			fmt.Fprint(w, "+")
 		}
 		sep := ""
-		base.Ctxt.AllPos(n.Pos(), func(pos src.Pos) {
-			fmt.Fprint(w, sep)
-			sep = " "
-			// TODO(mdempsky): Print line pragma details too.
-			file := filepath.Base(pos.Filename())
-			// Note: this output will be parsed by ssa/html.go:(*HTMLWriter).WriteAST. Keep in sync.
-			fmt.Fprintf(w, "%s:%d:%d", file, pos.Line(), pos.Col())
-		})
+		if target != nil {
+			target.Ctxt.AllPos(n.Pos(), func(pos src.Pos) {
+				fmt.Fprint(w, sep)
+				sep = " "
+				// TODO(mdempsky): Print line pragma details too.
+				file := filepath.Base(pos.Filename())
+				// Note: this output will be parsed by ssa/html.go:(*HTMLWriter).WriteAST. Keep in sync.
+				fmt.Fprintf(w, "%s:%d:%d", file, pos.Line(), pos.Col())
+			})
+		} else {
+			fmt.Fprintf(w, "%s:%s", n.Pos().LineNumber(), n.Pos().ColumnNumber())
+		}
 	}
+}
+
+func nodeTarget(n Node) *Package {
+	if fn, ok := n.(*Func); ok {
+		return fn.Target
+	}
+	if name := n.Name(); name != nil {
+		if name.Curfn != nil {
+			return name.Curfn.Target
+		}
+		if name.Func != nil {
+			return name.Func.Target
+		}
+	}
+	return nil
 }
 
 func dumpNode(w io.Writer, n Node, depth int) {

@@ -27,7 +27,7 @@ import (
 	"cmd/internal/src"
 )
 
-func Info(ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym, curfn obj.Func) (scopes []dwarf.Scope, inlcalls dwarf.InlCalls) {
+func Info(target *ir.Package, ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym, curfn obj.Func) (scopes []dwarf.Scope, inlcalls dwarf.InlCalls) {
 	fn := curfn.(*ir.Func)
 
 	if fn.Nname != nil {
@@ -103,14 +103,14 @@ func Info(ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym, curfn obj.Func) (s
 				// spill locations, so not a huge deal.
 				continue
 			}
-			fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(n.Type()))
+			fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(fn.Target, n.Type()))
 		}
 	}
 
 	var closureVars map[*ir.Name]int64
 	if fn.Needctxt() {
 		closureVars = make(map[*ir.Name]int64)
-		csiter := typecheck.NewClosureStructIter(fn.ClosureVars)
+		csiter := typecheck.NewClosureStructIter(fn.Target, fn.ClosureVars)
 		for {
 			n, _, offset := csiter.Next()
 			if n == nil {
@@ -159,12 +159,12 @@ func Info(ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym, curfn obj.Func) (s
 	var varScopes []ir.ScopeID
 	for _, decl := range decls {
 		pos := declPos(decl)
-		varScopes = append(varScopes, findScope(fn.Marks, pos))
+		varScopes = append(varScopes, findScope(ctxt, fn.Marks, pos))
 	}
 
-	scopes = assembleScopes(fnsym, fn, dwarfVars, varScopes)
-	if base.Flag.GenDwarfInl > 0 {
-		inlcalls = assembleInlines(fnsym, dwarfVars)
+	scopes = assembleScopes(ctxt, fnsym, fn, dwarfVars, varScopes)
+	if fn.Target.Flags.GenDwarfInl > 0 {
+		inlcalls = assembleInlines(fn.Target, ctxt, fnsym, dwarfVars)
 	}
 	return scopes, inlcalls
 }
@@ -225,7 +225,7 @@ func createDwarfVars(fnsym *obj.LSym, complexOK bool, fn *ir.Func, apDecls []*ir
 		}
 		seen[n] = true
 		decls = append(decls, n)
-		vars = append(vars, createSimpleVar(fnsym, n, closureVars))
+		vars = append(vars, createSimpleVar(fn.Target, fnsym, n, closureVars))
 	}
 
 	// Add SSA-tracked vars not in apDecls.
@@ -257,9 +257,9 @@ func createDwarfVars(fnsym *obj.LSym, complexOK bool, fn *ir.Func, apDecls []*ir
 			types.CalcSize(n.Type())
 			if n.Type().Size() == 0 {
 				decls = append(decls, n)
-				vars = append(vars, createSimpleVar(fnsym, n, closureVars))
+				vars = append(vars, createSimpleVar(fn.Target, fnsym, n, closureVars))
 				vars[len(vars)-1].StackOffset = 0
-				fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(n.Type()))
+				fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(fn.Target, n.Type()))
 				seen[n] = true
 			}
 		}
@@ -269,7 +269,7 @@ func createDwarfVars(fnsym *obj.LSym, complexOK bool, fn *ir.Func, apDecls []*ir
 	// collect additional declarations that may not be in apDecls.
 	dcl := apDecls
 	if fnsym.WasInlined() {
-		dcl = preInliningDcls(fnsym)
+		dcl = preInliningDcls(fn.Target.Ctxt, fnsym)
 	} else if debug != nil {
 		// The backend's stackframe pass prunes away entries from the
 		// fn's Dcl list, including PARAMOUT nodes that correspond to
@@ -307,9 +307,9 @@ func createDwarfVars(fnsym *obj.LSym, complexOK bool, fn *ir.Func, apDecls []*ir
 				}
 			}
 		}
-		if n.Class == ir.PPARAM && !ssa.CanSSA(n.Type()) {
+		if n.Class == ir.PPARAM && !ssa.CanSSA(int64(fn.Target.PtrSize), n.Type()) {
 			decls = append(decls, n)
-			vars = append(vars, createSimpleVar(fnsym, n, closureVars))
+			vars = append(vars, createSimpleVar(fn.Target, fnsym, n, closureVars))
 			continue
 		}
 		decls = append(decls, n)
@@ -337,22 +337,22 @@ func createConservativeVar(fnsym *obj.LSym, fn *ir.Func, n *ir.Name, closureVars
 		tag = dwarf.DW_TAG_formal_parameter
 	}
 	inlIndex := 0
-	if base.Flag.GenDwarfInl > 1 {
+	if fn.Target.Flags.GenDwarfInl > 1 {
 		if n.InlFormal() || n.InlLocal() {
-			inlIndex = posInlIndex(n.Pos()) + 1
+			inlIndex = posInlIndex(fn.Target.Ctxt, n.Pos()) + 1
 			if n.InlFormal() {
 				tag = dwarf.DW_TAG_formal_parameter
 			}
 		}
 	}
-	declpos := base.Ctxt.InnermostPos(n.Pos())
+	declpos := fn.Target.Ctxt.InnermostPos(n.Pos())
 	dvar := &dwarf.Var{
 		Name:          n.Sym().Name,
 		IsReturnValue: isReturnValue,
 		Tag:           tag,
 		WithLoclist:   true,
 		StackOffset:   int32(n.FrameOffset()),
-		Type:          base.Ctxt.Lookup(typename),
+		Type:          fn.Target.Ctxt.Lookup(typename),
 		DeclFile:      declpos.RelFilename(),
 		DeclLine:      declpos.RelLine(),
 		DeclCol:       declpos.RelCol(),
@@ -370,13 +370,13 @@ func createConservativeVar(fnsym *obj.LSym, fn *ir.Func, n *ir.Name, closureVars
 		// declaration and never allocates the address. In that case fall
 		// through and emit a conservative variable with no location list.
 		debug := fn.DebugInfo.(*ssadebug.FuncDebug)
-		list := createHeapDerefLocationList(n, debug.EntryID)
+		list := createHeapDerefLocationList(fn.Target, n, debug.EntryID)
 		dvar.PutLocationList = func(listSym, startPC dwarf.Sym) {
-			debug.PutLocationList(list, base.Ctxt, listSym.(*obj.LSym), startPC.(*obj.LSym))
+			debug.PutLocationList(list, fn.Target.Ctxt, listSym.(*obj.LSym), startPC.(*obj.LSym))
 		}
 	}
 	// Record go type to ensure that it gets emitted by the linker.
-	fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(n.Type()))
+	fnsym.Func().RecordAutoType(reflectdata.TypeLinksym(fn.Target, n.Type()))
 	return dvar
 }
 
@@ -435,8 +435,8 @@ func (v varsAndDecls) Swap(i, j int) {
 // function that is not local to the package being compiled, then the
 // names of the variables may have been "versioned" to avoid conflicts
 // with local vars; disregard this versioning when sorting.
-func preInliningDcls(fnsym *obj.LSym) []*ir.Name {
-	fn := base.Ctxt.DwFixups.GetPrecursorFunc(fnsym).(*ir.Func)
+func preInliningDcls(ctxt *obj.Link, fnsym *obj.LSym) []*ir.Name {
+	fn := ctxt.DwFixups.GetPrecursorFunc(fnsym).(*ir.Func)
 	var rdcl []*ir.Name
 	for _, n := range fn.Inl.Dcl {
 		if n.Sym().Name[0] == '.' || !shouldEmitDwarfVarSafe(n) {
@@ -447,17 +447,17 @@ func preInliningDcls(fnsym *obj.LSym) []*ir.Name {
 	return rdcl
 }
 
-func createSimpleVar(fnsym *obj.LSym, n *ir.Name, closureVars map[*ir.Name]int64) *dwarf.Var {
+func createSimpleVar(target *ir.Package, fnsym *obj.LSym, n *ir.Name, closureVars map[*ir.Name]int64) *dwarf.Var {
 	var tag int
 	var offs int64
 
 	localAutoOffset := func() int64 {
 		offs = n.FrameOffset()
-		if base.Ctxt.Arch.FixedFrameSize == 0 {
-			offs -= int64(types.PtrSize)
+		if target.Ctxt.Arch.FixedFrameSize == 0 {
+			offs -= int64(target.PtrSize)
 		}
 		if buildcfg.FramePointerEnabled {
-			offs -= int64(types.PtrSize)
+			offs -= int64(target.PtrSize)
 		}
 		return offs
 	}
@@ -471,7 +471,7 @@ func createSimpleVar(fnsym *obj.LSym, n *ir.Name, closureVars map[*ir.Name]int64
 		if n.IsOutputParamInRegisters() {
 			offs = localAutoOffset()
 		} else {
-			offs = n.FrameOffset() + base.Ctxt.Arch.FixedFrameSize
+			offs = n.FrameOffset() + target.Ctxt.Arch.FixedFrameSize
 		}
 
 	default:
@@ -479,24 +479,24 @@ func createSimpleVar(fnsym *obj.LSym, n *ir.Name, closureVars map[*ir.Name]int64
 	}
 
 	typename := dwarf.InfoPrefix + types.TypeSymName(n.Type())
-	delete(fnsym.Func().Autot, reflectdata.TypeLinksym(n.Type()))
+	delete(fnsym.Func().Autot, reflectdata.TypeLinksym(target, n.Type()))
 	inlIndex := 0
-	if base.Flag.GenDwarfInl > 1 {
+	if target.Flags.GenDwarfInl > 1 {
 		if n.InlFormal() || n.InlLocal() {
-			inlIndex = posInlIndex(n.Pos()) + 1
+			inlIndex = posInlIndex(target.Ctxt, n.Pos()) + 1
 			if n.InlFormal() {
 				tag = dwarf.DW_TAG_formal_parameter
 			}
 		}
 	}
-	declpos := base.Ctxt.InnermostPos(declPos(n))
+	declpos := target.Ctxt.InnermostPos(declPos(n))
 	return &dwarf.Var{
 		Name:          n.Sym().Name,
 		IsReturnValue: n.Class == ir.PPARAMOUT,
 		IsInlFormal:   n.InlFormal(),
 		Tag:           tag,
 		StackOffset:   int32(offs),
-		Type:          base.Ctxt.Lookup(typename),
+		Type:          target.Ctxt.Lookup(typename),
 		DeclFile:      declpos.RelFilename(),
 		DeclLine:      declpos.RelLine(),
 		DeclCol:       declpos.RelCol(),
@@ -522,26 +522,26 @@ func createComplexVar(fnsym *obj.LSym, fn *ir.Func, varID ssa.VarID, closureVars
 		return nil
 	}
 
-	gotype := reflectdata.TypeLinksym(n.Type())
+	gotype := reflectdata.TypeLinksym(fn.Target, n.Type())
 	delete(fnsym.Func().Autot, gotype)
 	typename := dwarf.InfoPrefix + gotype.Name[len("type:"):]
 	inlIndex := 0
-	if base.Flag.GenDwarfInl > 1 {
+	if fn.Target.Flags.GenDwarfInl > 1 {
 		if n.InlFormal() || n.InlLocal() {
-			inlIndex = posInlIndex(n.Pos()) + 1
+			inlIndex = posInlIndex(fn.Target.Ctxt, n.Pos()) + 1
 			if n.InlFormal() {
 				tag = dwarf.DW_TAG_formal_parameter
 			}
 		}
 	}
-	declpos := base.Ctxt.InnermostPos(n.Pos())
+	declpos := fn.Target.Ctxt.InnermostPos(n.Pos())
 	dvar := &dwarf.Var{
 		Name:          n.Sym().Name,
 		IsReturnValue: n.Class == ir.PPARAMOUT,
 		IsInlFormal:   n.InlFormal(),
 		Tag:           tag,
 		WithLoclist:   true,
-		Type:          base.Ctxt.Lookup(typename),
+		Type:          fn.Target.Ctxt.Lookup(typename),
 		// The stack offset is used as a sorting key, so for decomposed
 		// variables just give it the first one. It's not used otherwise.
 		// This won't work well if the first slot hasn't been assigned a stack
@@ -558,7 +558,7 @@ func createComplexVar(fnsym *obj.LSym, fn *ir.Func, varID ssa.VarID, closureVars
 	list := debug.LocationLists[varID]
 	if len(list) != 0 {
 		dvar.PutLocationList = func(listSym, startPC dwarf.Sym) {
-			debug.PutLocationList(list, base.Ctxt, listSym.(*obj.LSym), startPC.(*obj.LSym))
+			debug.PutLocationList(list, fn.Target.Ctxt, listSym.(*obj.LSym), startPC.(*obj.LSym))
 		}
 	}
 	return dvar
@@ -566,14 +566,14 @@ func createComplexVar(fnsym *obj.LSym, fn *ir.Func, varID ssa.VarID, closureVars
 
 // createHeapDerefLocationList creates a location list for a heap-escaped variable
 // that describes "dereference pointer at stack offset"
-func createHeapDerefLocationList(n *ir.Name, entryID ssa.ID) []ssa.LocListEntry {
+func createHeapDerefLocationList(target *ir.Package, n *ir.Name, entryID ssa.ID) []ssa.LocListEntry {
 	// Get the stack offset where the heap pointer is stored
 	heapPtrOffset := n.Heapaddr.FrameOffset()
-	if base.Ctxt.Arch.FixedFrameSize == 0 {
-		heapPtrOffset -= int64(types.PtrSize)
+	if target.Ctxt.Arch.FixedFrameSize == 0 {
+		heapPtrOffset -= int64(target.PtrSize)
 	}
 	if buildcfg.FramePointerEnabled {
-		heapPtrOffset -= int64(types.PtrSize)
+		heapPtrOffset -= int64(target.PtrSize)
 	}
 
 	// Create a location expression: DW_OP_fbreg <offset> DW_OP_deref
@@ -593,8 +593,8 @@ func createHeapDerefLocationList(n *ir.Name, entryID ssa.ID) []ssa.LocListEntry 
 
 // RecordFlags records the specified command-line flags to be placed
 // in the DWARF info.
-func RecordFlags(flags ...string) {
-	if base.Ctxt.Pkgpath == "" {
+func RecordFlags(target *ir.Package, flags ...string) {
+	if target.Ctxt.Pkgpath == "" {
 		base.Fatalf("missing pkgpath")
 	}
 
@@ -643,25 +643,25 @@ func RecordFlags(flags ...string) {
 	if cmd.Len() == 0 {
 		return
 	}
-	s := base.Ctxt.Lookup(dwarf.CUInfoPrefix + "producer." + base.Ctxt.Pkgpath)
+	s := target.Ctxt.Lookup(dwarf.CUInfoPrefix + "producer." + target.Ctxt.Pkgpath)
 	s.Type = objabi.SDWARFCUINFO
 	// Sometimes (for example when building tests) we can link
 	// together two package main archives. So allow dups.
 	s.Set(obj.AttrDuplicateOK, true)
-	base.Ctxt.Data = append(base.Ctxt.Data, s)
+	target.Ctxt.Data = append(target.Ctxt.Data, s)
 	s.P = cmd.Bytes()[1:]
 }
 
 // RecordPackageName records the name of the package being
 // compiled, so that the linker can save it in the compile unit's DIE.
-func RecordPackageName() {
-	s := base.Ctxt.Lookup(dwarf.CUInfoPrefix + "packagename." + base.Ctxt.Pkgpath)
+func RecordPackageName(target *ir.Package) {
+	s := target.Ctxt.Lookup(dwarf.CUInfoPrefix + "packagename." + target.Ctxt.Pkgpath)
 	s.Type = objabi.SDWARFCUINFO
 	// Sometimes (for example when building tests) we can link
 	// together two package main archives. So allow dups.
 	s.Set(obj.AttrDuplicateOK, true)
-	base.Ctxt.Data = append(base.Ctxt.Data, s)
-	s.P = []byte(types.LocalPkg.Name)
+	target.Ctxt.Data = append(target.Ctxt.Data, s)
+	s.P = []byte(target.LocalPkg.Name)
 }
 
 // shouldEmitDwarfVar reports whether n should have a DWARF variable entry.

@@ -44,9 +44,9 @@ func (w *walkState) walkExpr(n ir.Node, init *ir.Nodes) ir.Node {
 		init.Append(ir.TakeInit(n)...)
 	}
 
-	lno := ir.SetPos(n)
+	lno := ir.SetPosFor(w.curfunc.Target, n)
 
-	if base.Flag.LowerW > 1 {
+	if w.curfunc.Target.Flags.LowerW > 1 {
 		ir.Dump("before walk expr", n)
 	}
 
@@ -70,14 +70,14 @@ func (w *walkState) walkExpr(n ir.Node, init *ir.Nodes) ir.Node {
 	if ir.IsConst(n, constant.String) {
 		// Emit string symbol now to avoid emitting
 		// any concurrently during the backend.
-		_ = staticdata.StringSym(n.Pos(), constant.StringVal(n.Val()))
+		_ = staticdata.StringSym(w.curfunc.Target, n.Pos(), constant.StringVal(n.Val()))
 	}
 
-	if base.Flag.LowerW != 0 && n != nil {
+	if w.curfunc.Target.Flags.LowerW != 0 && n != nil {
 		ir.Dump("after walk expr", n)
 	}
 
-	base.Pos = lno
+	ir.SetPosValue(w.curfunc.Target, lno)
 	return n
 }
 
@@ -101,7 +101,7 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 	case ir.OMETHEXPR:
 		// TODO(mdempsky): Do this right after type checking.
 		n := n.(*ir.SelectorExpr)
-		return n.FuncName()
+		return n.FuncName(w.curfunc.Target)
 
 	case ir.OMIN, ir.OMAX:
 		n := n.(*ir.CallExpr)
@@ -135,9 +135,9 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 		if n.Op() == ir.OUNSAFEADD && ir.ShouldCheckPtr(w.curfunc, 1) {
 			// For unsafe.Add(p, n), just walk "unsafe.Pointer(uintptr(p)+uintptr(n))"
 			// for the side effects of validating unsafe.Pointer rules.
-			x := typecheck.ConvNop(w.curfunc, n.X, types.Types[types.TUINTPTR])
-			y := typecheck.Conv(w.curfunc, n.Y, types.Types[types.TUINTPTR])
-			conv := typecheck.ConvNop(w.curfunc, ir.NewBinaryExpr(n.Pos(), ir.OADD, x, y), types.Types[types.TUNSAFEPTR])
+			x := typecheck.ConvNop(w.curfunc, n.X, w.curfunc.Target.Type(types.TUINTPTR))
+			y := typecheck.Conv(w.curfunc, n.Y, w.curfunc.Target.Type(types.TUINTPTR))
+			conv := typecheck.ConvNop(w.curfunc, ir.NewBinaryExpr(n.Pos(), ir.OADD, x, y), w.curfunc.Target.Type(types.TUNSAFEPTR))
 			w.walkExpr(conv, init)
 		}
 		return n
@@ -290,7 +290,7 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 		panic("unreachable")
 
 	case ir.OCOPY:
-		return w.walkCopy(n.(*ir.BinaryExpr), init, base.Flag.Cfg.Instrumenting && !base.Flag.CompilingRuntime)
+		return w.walkCopy(n.(*ir.BinaryExpr), init, w.curfunc.Target.Flags.Cfg.Instrumenting && !w.curfunc.Target.Flags.CompilingRuntime)
 
 	case ir.OCLEAR:
 		n := n.(*ir.UnaryExpr)
@@ -460,7 +460,7 @@ func (w *walkState) safeExpr(n ir.Node, init *ir.Nodes) ir.Node {
 
 	case ir.OSTRUCTLIT, ir.OARRAYLIT, ir.OSLICELIT:
 		n := n.(*ir.CompLitExpr)
-		if isStaticCompositeLiteral(n) {
+		if isStaticCompositeLiteral(w.curfunc.Target, n) {
 			return n
 		}
 	}
@@ -473,8 +473,8 @@ func (w *walkState) safeExpr(n ir.Node, init *ir.Nodes) ir.Node {
 }
 
 func (w *walkState) copyExpr(n ir.Node, t *types.Type, init *ir.Nodes) ir.Node {
-	l := typecheck.TempAt(base.Pos, w.curfunc, t)
-	w.appendWalkStmt(init, ir.NewAssignStmt(base.Pos, l, n))
+	l := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, t)
+	w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, l, n))
 	return l
 }
 
@@ -496,7 +496,7 @@ func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.
 
 	var fn, fnsmall, fnbig string
 
-	buf := typecheck.NodNil()
+	buf := typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
 	switch {
 	default:
 		base.FatalfAt(x.Pos(), "unexpected type: %v", typ)
@@ -512,7 +512,7 @@ func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.
 			// Don't allocate the buffer if the result won't fit.
 			if sz < tmpstringbufsize {
 				// Create temporary buffer for result string on stack.
-				buf = w.stackBufAddr(tmpstringbufsize, types.Types[types.TUINT8])
+				buf = w.stackBufAddr(tmpstringbufsize, w.curfunc.Target.Type(types.TUINT8))
 			}
 		}
 
@@ -520,7 +520,7 @@ func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.
 		fnsmall, fnbig = "concatstring%d", "concatstrings"
 	case typ.IsSlice() && typ.Elem().IsKind(types.TUINT8): // Optimize []byte(str1+str2+...)
 		if conv != nil && conv.Esc() == ir.EscNone {
-			buf = w.stackBufAddr(tmpstringbufsize, types.Types[types.TUINT8])
+			buf = w.stackBufAddr(tmpstringbufsize, w.curfunc.Target.Type(types.TUINT8))
 		}
 		args = []ir.Node{buf}
 		fnsmall, fnbig = "concatbyte%d", "concatbytes"
@@ -532,25 +532,25 @@ func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.
 		fn = fmt.Sprintf(fnsmall, c)
 
 		for _, n2 := range x.List {
-			args = append(args, typecheck.Conv(w.curfunc, n2, types.Types[types.TSTRING]))
+			args = append(args, typecheck.Conv(w.curfunc, n2, w.curfunc.Target.Type(types.TSTRING)))
 		}
 	} else {
 		// large numbers of strings are passed to the runtime as a slice.
 		fn = fnbig
-		t := types.NewSlice(types.Types[types.TSTRING])
+		t := types.NewSlice(w.curfunc.Target.Type(types.TSTRING))
 
 		slargs := make([]ir.Node, len(x.List))
 		for i, n2 := range x.List {
-			slargs[i] = typecheck.Conv(w.curfunc, n2, types.Types[types.TSTRING])
+			slargs[i] = typecheck.Conv(w.curfunc, n2, w.curfunc.Target.Type(types.TSTRING))
 		}
-		slice := ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, t, slargs)
+		slice := ir.NewCompLitExpr(w.curfunc.Target.Pos, ir.OCOMPLIT, t, slargs)
 		slice.Prealloc = x.Prealloc
 		args = append(args, slice)
 		slice.SetEsc(ir.EscNone)
 	}
 
-	cat := typecheck.LookupRuntime(fn)
-	r := ir.NewCallExpr(base.Pos, ir.OCALL, cat, nil)
+	cat := typecheck.LookupRuntime(w.curfunc.Target, fn)
+	r := ir.NewCallExpr(w.curfunc.Target.Pos, ir.OCALL, cat, nil)
 	r.Args = args
 	r1 := typecheck.Expr(w.curfunc, r)
 	r1 = w.walkExpr(r1, init)
@@ -599,10 +599,10 @@ func (w *walkState) walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 		case "FuncPCABIInternal":
 			wantABI = obj.ABIInternal
 		}
-		if n.Type() != types.Types[types.TUINTPTR] {
+		if n.Type() != w.curfunc.Target.Type(types.TUINTPTR) {
 			base.FatalfAt(n.Pos(), "FuncPC intrinsic should return uintptr, got %v", n.Type()) // as expected by typecheck.FuncPC.
 		}
-		n := ir.FuncPC(n.Pos(), arg, wantABI)
+		n := ir.FuncPC(w.curfunc.Target, n.Pos(), arg, wantABI)
 		return w.walkExpr(n, init)
 	}
 
@@ -661,26 +661,26 @@ func (w *walkState) walkCall1(n *ir.CallExpr, init *ir.Nodes) {
 		// For any argument whose evaluation might require a function call,
 		// store that argument into a temporary variable,
 		// to prevent that calls from clobbering arguments already on the stack.
-		if mayCall(arg) {
+		if mayCall(w.curfunc.Target, arg) {
 			// assignment of arg to Temp
-			tmp := typecheck.TempAt(base.Pos, w.curfunc, param.Type)
-			init.Append(w.convas(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, tmp, arg)).(*ir.AssignStmt), init))
+			tmp := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, param.Type)
+			init.Append(w.convas(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, tmp, arg)).(*ir.AssignStmt), init))
 			// replace arg with temp
 			args[i] = tmp
 		}
 	}
 
 	funSym := n.Fun.Sym()
-	if base.Debug.Libfuzzer != 0 && funSym != nil {
+	if w.curfunc.Target.Debug.Libfuzzer != 0 && funSym != nil {
 		if hook, found := hooks[funSym.Pkg.Path+"."+funSym.Name]; found {
 			if len(args) != hook.argsNum {
 				panic(fmt.Sprintf("%s.%s expects %d arguments, but received %d", funSym.Pkg.Path, funSym.Name, hook.argsNum, len(args)))
 			}
 			var hookArgs []ir.Node
 			for _, arg := range args {
-				hookArgs = append(hookArgs, w.tracecmpArg(arg, types.Types[hook.paramType], init))
+				hookArgs = append(hookArgs, w.tracecmpArg(arg, w.curfunc.Target.Type(hook.paramType), init))
 			}
-			hookArgs = append(hookArgs, fakePC(n))
+			hookArgs = append(hookArgs, fakePC(w.curfunc.Target, n))
 			init.Append(w.mkcall(hook.runtimeFunc, nil, init, hookArgs...))
 		}
 	}
@@ -696,7 +696,7 @@ func (w *walkState) walkDivMod(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 
 	if types.IsComplex[et] && n.Op() == ir.ODIV {
 		t := n.Type()
-		call := w.mkcall("complex128div", types.Types[types.TCOMPLEX128], init, typecheck.Conv(w.curfunc, n.X, types.Types[types.TCOMPLEX128]), typecheck.Conv(w.curfunc, n.Y, types.Types[types.TCOMPLEX128]))
+		call := w.mkcall("complex128div", w.curfunc.Target.Type(types.TCOMPLEX128), init, typecheck.Conv(w.curfunc, n.X, w.curfunc.Target.Type(types.TCOMPLEX128)), typecheck.Conv(w.curfunc, n.Y, w.curfunc.Target.Type(types.TCOMPLEX128)))
 		return typecheck.Conv(w.curfunc, call, t)
 	}
 
@@ -708,7 +708,7 @@ func (w *walkState) walkDivMod(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 	// rewrite 64-bit div and mod on 32-bit architectures.
 	// TODO: Remove this code once we can introduce
 	// runtime calls late in SSA processing.
-	if types.RegSize < 8 && (et == types.TINT64 || et == types.TUINT64) {
+	if w.curfunc.Target.RegSize < 8 && (et == types.TINT64 || et == types.TUINT64) {
 		if n.Y.Op() == ir.OLITERAL {
 			// Leave div/mod by non-zero uint64 constants.
 			// The SSA backend will handle those.
@@ -736,7 +736,7 @@ func (w *walkState) walkDivMod(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 		} else {
 			fn += "mod"
 		}
-		return w.mkcall(fn, n.Type(), init, typecheck.Conv(w.curfunc, n.X, types.Types[et]), typecheck.Conv(w.curfunc, n.Y, types.Types[et]))
+		return w.mkcall(fn, n.Type(), init, typecheck.Conv(w.curfunc, n.X, w.curfunc.Target.Type(et)), typecheck.Conv(w.curfunc, n.Y, w.curfunc.Target.Type(et)))
 	}
 	return n
 }
@@ -753,12 +753,12 @@ func (w *walkState) walkDotType(n *ir.TypeAssertExpr, init *ir.Nodes) ir.Node {
 	n.X = w.walkExpr(n.X, init)
 	// Set up interface type addresses for back end.
 	if !n.Type().IsInterface() && !n.X.Type().IsEmptyInterface() {
-		n.ITab = reflectdata.ITabAddrAt(w.curfunc, base.Pos, n.Type(), n.X.Type())
+		n.ITab = reflectdata.ITabAddrAt(w.curfunc, w.curfunc.Target.Pos, n.Type(), n.X.Type())
 	}
 	if n.X.Type().IsInterface() && n.Type().IsInterface() && !n.Type().IsEmptyInterface() {
 		// This kind of conversion needs a runtime call. Allocate
 		// a descriptor for that call.
-		n.Descriptor = makeTypeAssertDescriptor(n.Type(), n.Op() == ir.ODOTTYPE2)
+		n.Descriptor = makeTypeAssertDescriptor(w.curfunc.Target, n.Type(), n.Op() == ir.ODOTTYPE2)
 	}
 	return n
 }
@@ -774,8 +774,8 @@ func (w *walkState) shapeTypeAssertImpossible(src ir.Node, dst *types.Type) bool
 	if srcShape == nil {
 		return false
 	}
-	return !types.Identical(srcShape, noder.Shapify(dst, false)) &&
-		!types.Identical(srcShape, noder.Shapify(dst, true))
+	return !types.Identical(srcShape, noder.Shapify(w.curfunc.Target, dst, false)) &&
+		!types.Identical(srcShape, noder.Shapify(w.curfunc.Target, dst, true))
 }
 
 // convIfaceShapeType returns the shape type from which src was
@@ -808,21 +808,20 @@ func (w *walkState) convIfaceShapeType(src ir.Node) *types.Type {
 	return nil
 }
 
-func makeTypeAssertDescriptor(target *types.Type, canFail bool) *obj.LSym {
+func makeTypeAssertDescriptor(pkg *ir.Package, target *types.Type, canFail bool) *obj.LSym {
 	// When converting from an interface to a non-empty interface. Needs a runtime call.
 	// Allocate an internal/abi.TypeAssert descriptor for that call.
-	lsym := types.LocalPkg.Lookup(fmt.Sprintf(".typeAssert.%d", typeAssertGen)).LinksymABI(obj.ABI0)
-	typeAssertGen++
-	c := rttype.NewCursor(lsym, 0, rttype.TypeAssert)
+	lsym := pkg.LocalPkg.Lookup(fmt.Sprintf(".typeAssert.%d", pkg.TypeAssertGen)).LinksymABI(obj.ABI0)
+	pkg.TypeAssertGen++
+	rt := rttype.For(pkg)
+	c := rttype.NewCursor(pkg.Ctxt, lsym, 0, rt.TypeAssert)
 	c.Field("Cache").WritePtr(typecheck.LookupRuntimeVar("emptyTypeAssertCache"))
-	c.Field("Inter").WritePtr(reflectdata.TypeLinksym(target))
+	c.Field("Inter").WritePtr(reflectdata.TypeLinksym(pkg, target))
 	c.Field("CanFail").WriteBool(canFail)
-	objw.Global(lsym, int32(rttype.TypeAssert.Size()), obj.LOCAL)
-	lsym.Gotype = reflectdata.TypeLinksym(rttype.TypeAssert)
+	objw.Global(pkg.Ctxt, lsym, int32(rt.TypeAssert.Size()), obj.LOCAL)
+	lsym.Gotype = reflectdata.TypeLinksym(pkg, rt.TypeAssert)
 	return lsym
 }
-
-var typeAssertGen int
 
 // walkDynamicDotType walks an ODYNAMICDOTTYPE or ODYNAMICDOTTYPE2 node.
 func (w *walkState) walkDynamicDotType(n *ir.DynamicTypeAssertExpr, init *ir.Nodes) ir.Node {
@@ -866,12 +865,12 @@ func (w *walkState) walkIndex(n *ir.IndexExpr, init *ir.Nodes) ir.Node {
 	}
 	if t.IsArray() {
 		n.SetBounded(bounded(r, t.NumElem()))
-		if base.Flag.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
+		if w.curfunc.Target.Flags.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
 			base.Warn("index bounds check elided")
 		}
 	} else if ir.IsConst(n.X, constant.String) {
 		n.SetBounded(bounded(r, int64(len(ir.StringVal(n.X)))))
-		if base.Flag.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
+		if w.curfunc.Target.Flags.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
 			base.Warn("index bounds check elided")
 		}
 	}
@@ -894,9 +893,9 @@ func mapKeyArg(curfunc *ir.Func, fast int, n, key ir.Node, assigned bool) ir.Nod
 	// mapaccess and mapdelete don't distinguish pointer vs. integer key.
 	switch fast {
 	case mapfast32ptr:
-		return ir.NewConvExpr(n.Pos(), ir.OCONVNOP, types.Types[types.TUINT32], key)
+		return ir.NewConvExpr(n.Pos(), ir.OCONVNOP, curfunc.Target.Type(types.TUINT32), key)
 	case mapfast64ptr:
-		return ir.NewConvExpr(n.Pos(), ir.OCONVNOP, types.Types[types.TUINT64], key)
+		return ir.NewConvExpr(n.Pos(), ir.OCONVNOP, curfunc.Target.Type(types.TUINT64), key)
 	default:
 		// fast version takes key by value.
 		return key
@@ -910,24 +909,24 @@ func (w *walkState) walkIndexMap(n *ir.IndexExpr, init *ir.Nodes) ir.Node {
 	n.Index = w.walkExpr(n.Index, init)
 	map_ := n.X
 	t := map_.Type()
-	fast := mapfast(t)
+	fast := mapfast(w.curfunc.Target, t)
 	key := mapKeyArg(w.curfunc, fast, n, n.Index, n.Assigned)
-	args := []ir.Node{reflectdata.IndexMapRType(w.curfunc, base.Pos, n), map_, key}
+	args := []ir.Node{reflectdata.IndexMapRType(w.curfunc, w.curfunc.Target.Pos, n), map_, key}
 
 	var mapFn ir.Node
 	switch {
 	case n.Assigned:
-		mapFn = mapfn(mapassign[fast], t, false)
+		mapFn = mapfn(w.curfunc.Target, mapassign[fast], t, false)
 	case t.Elem().Size() > abi.ZeroValSize:
 		args = append(args, reflectdata.ZeroAddr(w.curfunc, t.Elem().Size()))
-		mapFn = mapfn("mapaccess1_fat", t, true)
+		mapFn = mapfn(w.curfunc.Target, "mapaccess1_fat", t, true)
 	default:
-		mapFn = mapfn(mapaccess1[fast], t, false)
+		mapFn = mapfn(w.curfunc.Target, mapaccess1[fast], t, false)
 	}
 	call := w.mkcall1(mapFn, nil, init, args...)
 	call.SetType(types.NewPtr(t.Elem()))
 	call.MarkNonNil() // mapaccess1* and mapassign always return non-nil pointers.
-	star := ir.NewStarExpr(base.Pos, call)
+	star := ir.NewStarExpr(w.curfunc.Target.Pos, call)
 	star.SetType(t.Elem())
 	star.SetTypecheck(1)
 	return star
@@ -953,7 +952,7 @@ func (w *walkState) walkSend(n *ir.SendStmt, init *ir.Nodes) ir.Node {
 	n1 = typecheck.AssignConv(n1, n.Chan.Type().Elem(), "chan send")
 	n1 = w.walkExpr(n1, init)
 	n1 = typecheck.NodAddr(w.curfunc, n1)
-	return w.mkcall1(chanfn("chansend1", 2, n.Chan.Type()), nil, init, n.Chan, n1)
+	return w.mkcall1(chanfn(w.curfunc.Target, "chansend1", 2, n.Chan.Type()), nil, init, n.Chan, n1)
 }
 
 // walkSlice walks an OSLICE, OSLICEARR, OSLICESTR, OSLICE3, or OSLICE3ARR node.
@@ -969,7 +968,7 @@ func (w *walkState) walkSlice(n *ir.SliceExpr, init *ir.Nodes) ir.Node {
 
 	if (n.Op() == ir.OSLICE || n.Op() == ir.OSLICESTR) && n.Low == nil && n.High == nil {
 		// Reduce x[:] to x.
-		if base.Debug.Slice > 0 {
+		if w.curfunc.Target.Debug.Slice > 0 {
 			base.Warn("slice: omit slice operation")
 		}
 		return n.X
@@ -1069,7 +1068,7 @@ func (w *walkState) usemethod(n *ir.CallExpr) {
 	// Don't mark reflect.(*rtype).Method, etc. themselves in the reflect package.
 	// Those functions may be alive via the itab, which should not cause all methods
 	// alive. We only want to mark their callers.
-	if base.Ctxt.Pkgpath == "reflect" {
+	if w.curfunc.Target.Ctxt.Pkgpath == "reflect" {
 		// TODO: is there a better way than hardcoding the names?
 		switch fn := w.curfunc.Nname.Sym().Name; {
 		case fn == "(*rtype).Method", fn == "(*rtype).MethodByName":
@@ -1139,9 +1138,9 @@ func (w *walkState) usemethod(n *ir.CallExpr) {
 
 	if ir.IsConst(targetName, constant.String) {
 		name := constant.StringVal(targetName.Val())
-		w.curfunc.LSym.AddRel(base.Ctxt, obj.Reloc{
+		w.curfunc.LSym.AddRel(w.curfunc.Target.Ctxt, obj.Reloc{
 			Type: objabi.R_USENAMEDMETHOD,
-			Sym:  staticdata.StringSymNoCommon(name),
+			Sym:  staticdata.StringSymNoCommon(w.curfunc.Target, name),
 		})
 	} else {
 		w.curfunc.LSym.Set(obj.AttrReflectMethod, true)

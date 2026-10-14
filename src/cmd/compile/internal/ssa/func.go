@@ -123,10 +123,10 @@ const (
 // marked as open defer slots so as to avoid complicating liveness
 // analysis.
 func IsMergeCandidate(n *ir.Name) bool {
-	if base.Debug.MergeLocals == 0 ||
-		base.Flag.N != 0 ||
+	if n.Curfn.Target.Debug.MergeLocals == 0 ||
+		n.Curfn.Target.Flags.N != 0 ||
 		n.Class != ir.PAUTO ||
-		n.Type().Size() <= int64(3*types.PtrSize) ||
+		n.Type().Size() <= int64(3*n.Curfn.Target.PtrSize) ||
 		n.Addrtaken() ||
 		n.NonMergeable() ||
 		n.OpenDeferSlot() {
@@ -212,12 +212,15 @@ func (f *Func) RetSparseMapPos(ss *SparseMapPos) {
 
 // NewPoset returns a new poset from the internal cache
 func (f *Func) NewPoset() *Poset {
+	var po *Poset
 	if len(f.Cache.scrPoset) > 0 {
-		po := f.Cache.scrPoset[len(f.Cache.scrPoset)-1]
+		po = f.Cache.scrPoset[len(f.Cache.scrPoset)-1]
 		f.Cache.scrPoset = f.Cache.scrPoset[:len(f.Cache.scrPoset)-1]
-		return po
+	} else {
+		po = newPoset()
 	}
-	return newPoset()
+	po.debug = f.Config != nil && f.Config.Target != nil && f.Config.Target.SSACheck
+	return po
 }
 
 // RetPoset returns a poset to the internal cache
@@ -238,8 +241,8 @@ func (f *Func) LocalSlotAddr(slot LocalSlot) *LocalSlot {
 }
 
 func (f *Func) SplitString(name *LocalSlot) (*LocalSlot, *LocalSlot) {
-	ptrType := types.NewPtr(types.Types[types.TUINT8])
-	lenType := types.Types[types.TINT]
+	ptrType := types.NewPtr(f.Config.Target.Type(types.TUINT8))
+	lenType := f.Config.Target.Type(types.TINT)
 	// Split this string up into two separate variables.
 	p := f.SplitSlot(name, ".ptr", 0, ptrType)
 	l := f.SplitSlot(name, ".len", ptrType.Size(), lenType)
@@ -248,8 +251,8 @@ func (f *Func) SplitString(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 
 func (f *Func) SplitInterface(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 	n := name.N
-	u := types.Types[types.TUINTPTR]
-	t := types.NewPtr(types.Types[types.TUINT8])
+	u := f.Config.Target.Type(types.TUINTPTR)
+	t := types.NewPtr(f.Config.Target.Type(types.TUINT8))
 	// Split this interface up into two separate variables.
 	sfx := ".itab"
 	if n.Type().IsEmptyInterface() {
@@ -262,7 +265,7 @@ func (f *Func) SplitInterface(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 
 func (f *Func) SplitSlice(name *LocalSlot) (*LocalSlot, *LocalSlot, *LocalSlot) {
 	ptrType := types.NewPtr(name.Type.Elem())
-	lenType := types.Types[types.TINT]
+	lenType := f.Config.Target.Type(types.TINT)
 	p := f.SplitSlot(name, ".ptr", 0, ptrType)
 	l := f.SplitSlot(name, ".len", ptrType.Size(), lenType)
 	c := f.SplitSlot(name, ".cap", ptrType.Size()+lenType.Size(), lenType)
@@ -273,9 +276,9 @@ func (f *Func) SplitComplex(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 	s := name.Type.Size() / 2
 	var t *types.Type
 	if s == 8 {
-		t = types.Types[types.TFLOAT64]
+		t = f.Config.Target.Type(types.TFLOAT64)
 	} else {
-		t = types.Types[types.TFLOAT32]
+		t = f.Config.Target.Type(types.TFLOAT32)
 	}
 	r := f.SplitSlot(name, ".real", 0, t)
 	i := f.SplitSlot(name, ".imag", t.Size(), t)
@@ -285,14 +288,14 @@ func (f *Func) SplitComplex(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 func (f *Func) SplitInt64(name *LocalSlot) (*LocalSlot, *LocalSlot) {
 	var t *types.Type
 	if name.Type.IsSigned() {
-		t = types.Types[types.TINT32]
+		t = f.Config.Target.Type(types.TINT32)
 	} else {
-		t = types.Types[types.TUINT32]
+		t = f.Config.Target.Type(types.TUINT32)
 	}
 	if f.Config.BigEndian {
-		return f.SplitSlot(name, ".hi", 0, t), f.SplitSlot(name, ".lo", t.Size(), types.Types[types.TUINT32])
+		return f.SplitSlot(name, ".hi", 0, t), f.SplitSlot(name, ".lo", t.Size(), f.Config.Target.Type(types.TUINT32))
 	}
-	return f.SplitSlot(name, ".hi", t.Size(), t), f.SplitSlot(name, ".lo", 0, types.Types[types.TUINT32])
+	return f.SplitSlot(name, ".hi", t.Size(), t), f.SplitSlot(name, ".lo", 0, f.Config.Target.Type(types.TUINT32))
 }
 
 func (f *Func) SplitStruct(name *LocalSlot, i int) *LocalSlot {
@@ -865,11 +868,8 @@ func (f *Func) InvalidateCFG() {
 // environment variable GOCOMPILEDEBUG=gossahash=X is set, in which case "it depends on X".
 // See [base.DebugHashMatch] for more information.
 func (f *Func) DebugHashMatch() bool {
-	if !base.HasDebugHash() {
-		return true
-	}
 	sym := f.Fe.Func().Sym()
-	return base.DebugHashMatchPkgFunc(sym.Pkg.Path, sym.Name)
+	return f.Config.Target.GossaHash.MatchPkgFunc(sym.Pkg.Path, sym.Name, nil)
 }
 
 func (f *Func) SpSb() (sp, sb *Value) {
@@ -897,10 +897,7 @@ func (f *Func) SpSb() (sp, sb *Value) {
 // UseFMA allows targeted debugging w/ GOFMAHASH
 // If you have an architecture-dependent FP glitch, this will help you find it.
 func (f *Func) UseFMA(v *Value) bool {
-	if base.FmaHash == nil {
-		return true
-	}
-	return base.FmaHash.MatchPos(v.Pos, nil)
+	return f.Config.Target.FmaHash.MatchPosWithLink(f.Config.Target.Ctxt, v.Pos, nil)
 }
 
 // NewLocal returns a new anonymous local variable of the given type.

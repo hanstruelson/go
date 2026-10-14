@@ -12,7 +12,13 @@ import (
 	"cmd/internal/obj"
 )
 
-var Arch ArchInfo
+// ArchInfoFor returns the backend architecture configuration for target.
+func ArchInfoFor(target *ir.Package) *ArchInfo {
+	if arch, ok := target.ArchInfo.(*ArchInfo); ok {
+		return arch
+	}
+	panic("compiler target is missing architecture information")
+}
 
 // interface to back end
 

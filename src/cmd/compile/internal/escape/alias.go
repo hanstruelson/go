@@ -168,21 +168,21 @@ func (aa *aliasAnalysis) analyze(fn *ir.Func) {
 	// by counting each node visited in our main pass, and then comparing those counts
 	// against a simple walk at the end. The main intent is to help catch missing
 	// any nodes squirreled away in some spot we forgot to examine in our main pass.
-	aa.doubleCheck = base.Debug.EscapeAliasCheck > 0
+	aa.doubleCheck = aa.fn.Target.Debug.EscapeAliasCheck > 0
 	aa.processed = make(map[ir.Node]int)
 
-	if base.Debug.EscapeAlias >= 2 {
+	if aa.fn.Target.Debug.EscapeAlias >= 2 {
 		aa.diag(fn.Pos(), fn, "====== starting func", "======")
 	}
 
 	ir.DoChildren(fn, aa.visit)
 
 	for _, call := range aa.noAliasAppends {
-		if base.Debug.EscapeAlias >= 1 {
+		if aa.fn.Target.Debug.EscapeAlias >= 1 {
 			base.WarnfAt(call.Pos(), "alias analysis: append using non-aliased slice: %v in func %v",
 				call, fn)
 		}
-		if base.Debug.FreeAppend > 0 {
+		if aa.fn.Target.Debug.FreeAppend > 0 {
 			call.AppendNoAlias = true
 		}
 	}
@@ -197,9 +197,9 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 		return false
 	}
 
-	if base.Debug.EscapeAlias >= 3 {
+	if aa.fn.Target.Debug.EscapeAlias >= 3 {
 		fmt.Printf("%-25s alias analysis: visiting node: %12s  %-18T  %v\n",
-			fmtPosShort(n.Pos())+":", n.Op().String(), n, n)
+			fmtPosShort(aa.fn, n.Pos())+":", n.Op().String(), n, n)
 	}
 
 	// As we visit nodes, we want to ensure we handle all children
@@ -230,7 +230,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 			if _, ok := aa.candidateSlices[s]; ok {
 				base.FatalfAt(n.Pos(), "candidate slice already tracked as candidate: %v", s)
 			}
-			if base.Debug.EscapeAlias >= 2 {
+			if aa.fn.Target.Debug.EscapeAlias >= 2 {
 				aa.diag(n.Pos(), s, "adding candidate slice", "(loop depth: %d)", len(aa.loops))
 			}
 			aa.candidateSlices[s] = candidateSlice{loopDepth: len(aa.loops)}
@@ -248,7 +248,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 			_, ok := aa.candidateSlices[name]
 			if ok {
 				delete(aa.candidateSlices, name)
-				if base.Debug.EscapeAlias >= 2 {
+				if aa.fn.Target.Debug.EscapeAlias >= 2 {
 					aa.diag(n.Pos(), name, "removing candidate slice", "")
 				}
 			}
@@ -308,13 +308,13 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 					// We've returned to the loop depth where the slice was declared and
 					// hence made it all the way through any loops that started after
 					// that declaration.
-					if base.Debug.EscapeAlias >= 2 {
+					if aa.fn.Target.Debug.EscapeAlias >= 2 {
 						aa.diag(n.Pos(), a.s, "proved non-aliased append",
 							"(completed loop, decl at depth: %d)", cs.loopDepth)
 					}
 					aa.noAliasAppends = append(aa.noAliasAppends, a.call)
 				} else if cs.loopDepth < len(aa.loops) {
-					if base.Debug.EscapeAlias >= 2 {
+					if aa.fn.Target.Debug.EscapeAlias >= 2 {
 						aa.diag(n.Pos(), a.s, "cannot prove non-aliased append",
 							"(completed loop, decl at depth: %d)", cs.loopDepth)
 					}
@@ -339,7 +339,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 	case ir.OCLOSURE:
 		// Give up on all our in-progress slices.
 		closure := n.(*ir.ClosureExpr)
-		if base.Debug.EscapeAlias >= 2 {
+		if aa.fn.Target.Debug.EscapeAlias >= 2 {
 			aa.diag(n.Pos(), closure.Func, "clearing all in-progress slices due to OCLOSURE",
 				"(was %d in-progress slices)", len(aa.candidateSlices))
 		}
@@ -348,7 +348,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 
 	case ir.OLABEL, ir.OGOTO:
 		// Give up on all our in-progress slices.
-		if base.Debug.EscapeAlias >= 2 {
+		if aa.fn.Target.Debug.EscapeAlias >= 2 {
 			aa.diag(n.Pos(), n, "clearing all in-progress slices due to label or goto",
 				"(was %d in-progress slices)", len(aa.candidateSlices))
 		}
@@ -390,7 +390,7 @@ func (aa *aliasAnalysis) analyzeAssign(assign ir.Node, dsts, srcs []ir.Node) {
 			continue
 		}
 
-		if base.Debug.EscapeAlias >= 4 {
+		if aa.fn.Target.Debug.EscapeAlias >= 4 {
 			srcfn := ""
 			if src.Op() == ir.ONAME {
 				srcfn = fmt.Sprintf("%v.", src.Name().Curfn)
@@ -416,7 +416,7 @@ func (aa *aliasAnalysis) analyzeAssign(assign ir.Node, dsts, srcs []ir.Node) {
 		case ir.OMAKESLICE, ir.OSLICELIT:
 			name := dst.(*ir.Name)
 			if name.Class == ir.PAUTO {
-				if base.Debug.EscapeAlias > 1 {
+				if aa.fn.Target.Debug.EscapeAlias > 1 {
 					aa.diag(assign.Pos(), assign, "assignment from make or slice literal", "")
 				}
 				// If this is Def=true, the ODCL in the init will causes this to be tracked
@@ -448,7 +448,7 @@ func (aa *aliasAnalysis) analyzeAssign(assign ir.Node, dsts, srcs []ir.Node) {
 					if cs.loopDepth == len(aa.loops) {
 						// No new loop has started after the declaration of s,
 						// so this is definitive.
-						if base.Debug.EscapeAlias >= 2 {
+						if aa.fn.Target.Debug.EscapeAlias >= 2 {
 							aa.diag(assign.Pos(), assign, "proved non-aliased append",
 								"(loop depth: %d, equals decl depth)", len(aa.loops))
 						}
@@ -485,7 +485,7 @@ func (aa *aliasAnalysis) countProcessed(nodes ...ir.Node) {
 
 func (aa *aliasAnalysis) diag(pos src.XPos, n ir.Node, what string, format string, args ...any) {
 	fmt.Printf("%-25s alias analysis: %-30s  %-20s  %s\n",
-		fmtPosShort(pos)+":",
+		fmtPosShort(aa.fn, pos)+":",
 		what+":",
 		fmt.Sprintf("%v", n),
 		fmt.Sprintf(format, args...))
@@ -519,10 +519,10 @@ func doubleCheckProcessed(fn *ir.Func, processed map[ir.Node]int) {
 	}
 }
 
-func fmtPosShort(xpos src.XPos) string {
+func fmtPosShort(fn *ir.Func, xpos src.XPos) string {
 	// TODO(thepudds): I think I did this a simpler way a while ago? Or maybe add base.FmtPosShort
 	// or similar? Or maybe just use base.FmtPos and give up on nicely aligned log messages?
-	pos := base.Ctxt.PosTable.Pos(xpos)
+	pos := fn.Target.Ctxt.PosTable.Pos(xpos)
 	shortLine := filepath.Base(pos.AbsFilename()) + ":" + pos.LineNumber()
 	return shortLine
 }

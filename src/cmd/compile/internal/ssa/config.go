@@ -24,6 +24,7 @@ type (
 // It is created once, early during compilation,
 // and shared across all compilations.
 type Config struct {
+	Target         *ir.Package
 	Arch           string // "amd64", etc.
 	PtrSize        int64  // 4 or 8; copy of cmd/internal/sys.Arch.PtrSize
 	RegSize        int64  // 4 or 8; copy of cmd/internal/sys.Arch.RegSize
@@ -141,37 +142,37 @@ type mulRecipe struct {
 }
 
 // NewTypes creates and populates a Types.
-func NewTypes() *Types {
+func NewTypes(target *ir.Package) *Types {
 	t := new(Types)
-	t.SetTypPtrs()
+	t.SetTypPtrs(target)
 	return t
 }
 
 // SetTypPtrs populates t.
-func (t *Types) SetTypPtrs() {
-	t.Bool = types.Types[types.TBOOL]
-	t.Int8 = types.Types[types.TINT8]
-	t.Int16 = types.Types[types.TINT16]
-	t.Int32 = types.Types[types.TINT32]
-	t.Int64 = types.Types[types.TINT64]
-	t.UInt8 = types.Types[types.TUINT8]
-	t.UInt16 = types.Types[types.TUINT16]
-	t.UInt32 = types.Types[types.TUINT32]
-	t.UInt64 = types.Types[types.TUINT64]
-	t.Int = types.Types[types.TINT]
-	t.Float32 = types.Types[types.TFLOAT32]
-	t.Float64 = types.Types[types.TFLOAT64]
-	t.UInt = types.Types[types.TUINT]
-	t.Uintptr = types.Types[types.TUINTPTR]
-	t.String = types.Types[types.TSTRING]
-	t.BytePtr = types.NewPtr(types.Types[types.TUINT8])
-	t.Int32Ptr = types.NewPtr(types.Types[types.TINT32])
-	t.UInt32Ptr = types.NewPtr(types.Types[types.TUINT32])
-	t.IntPtr = types.NewPtr(types.Types[types.TINT])
-	t.UintptrPtr = types.NewPtr(types.Types[types.TUINTPTR])
-	t.Float32Ptr = types.NewPtr(types.Types[types.TFLOAT32])
-	t.Float64Ptr = types.NewPtr(types.Types[types.TFLOAT64])
-	t.BytePtrPtr = types.NewPtr(types.NewPtr(types.Types[types.TUINT8]))
+func (t *Types) SetTypPtrs(target *ir.Package) {
+	t.Bool = target.Type(types.TBOOL)
+	t.Int8 = target.Type(types.TINT8)
+	t.Int16 = target.Type(types.TINT16)
+	t.Int32 = target.Type(types.TINT32)
+	t.Int64 = target.Type(types.TINT64)
+	t.UInt8 = target.Type(types.TUINT8)
+	t.UInt16 = target.Type(types.TUINT16)
+	t.UInt32 = target.Type(types.TUINT32)
+	t.UInt64 = target.Type(types.TUINT64)
+	t.Int = target.Type(types.TINT)
+	t.Float32 = target.Type(types.TFLOAT32)
+	t.Float64 = target.Type(types.TFLOAT64)
+	t.UInt = target.Type(types.TUINT)
+	t.Uintptr = target.Type(types.TUINTPTR)
+	t.String = target.Type(types.TSTRING)
+	t.BytePtr = types.NewPtr(target.Type(types.TUINT8))
+	t.Int32Ptr = types.NewPtr(target.Type(types.TINT32))
+	t.UInt32Ptr = types.NewPtr(target.Type(types.TUINT32))
+	t.IntPtr = types.NewPtr(target.Type(types.TINT))
+	t.UintptrPtr = types.NewPtr(target.Type(types.TUINTPTR))
+	t.Float32Ptr = types.NewPtr(target.Type(types.TFLOAT32))
+	t.Float64Ptr = types.NewPtr(target.Type(types.TFLOAT64))
+	t.BytePtrPtr = types.NewPtr(types.NewPtr(target.Type(types.TUINT8)))
 	t.Vec128 = types.TypeVec128
 	t.Vec256 = types.TypeVec256
 	t.Vec512 = types.TypeVec512

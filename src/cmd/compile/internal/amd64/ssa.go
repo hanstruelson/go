@@ -229,7 +229,7 @@ func memIdx(a *obj.Addr, v *ssa.Value) {
 func getgFromTLS(s *ssagen.State, r int16) {
 	// See the comments in cmd/internal/obj/x86/obj6.go
 	// near CanUse1InsnTLS for a detailed explanation of these instructions.
-	if x86.CanUse1InsnTLS(base.Ctxt) {
+	if x86.CanUse1InsnTLS(s.Target().Ctxt) {
 		// MOVQ (TLS), r
 		p := s.Prog(x86.AMOVQ)
 		p.From.Type = obj.TYPE_MEM
@@ -1466,12 +1466,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.OpAMD64LoweredGetCallerSP:
 		// caller's SP is the address of the first arg
 		mov := x86.AMOVQ
-		if types.PtrSize == 4 {
+		if s.Target().PtrSize == 4 {
 			mov = x86.AMOVL
 		}
 		p := s.Prog(mov)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize // 0 on amd64, just to be consistent with other architectures
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize // 0 on amd64, just to be consistent with other architectures
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
@@ -1481,7 +1481,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 
 	case ssaop.OpAMD64LoweredPanicBoundsRR, ssaop.OpAMD64LoweredPanicBoundsRC, ssaop.OpAMD64LoweredPanicBoundsCR, ssaop.OpAMD64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
@@ -1567,7 +1567,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.PanicBounds
+		p.To.Sym = s.Target().Symbols.PanicBounds
 
 	case ssaop.OpAMD64NEGQ, ssaop.OpAMD64NEGL,
 		ssaop.OpAMD64BSWAPQ, ssaop.OpAMD64BSWAPL,
@@ -1726,7 +1726,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpAMD64MOVBatomicload, ssaop.OpAMD64MOVLatomicload, ssaop.OpAMD64MOVQatomicload:
@@ -2073,7 +2073,7 @@ func zeroX15(s *ssagen.State) {
 	p := s.Prog(x86.ACMPB)
 	p.From.Type = obj.TYPE_MEM
 	p.From.Name = obj.NAME_EXTERN
-	p.From.Sym = ir.Syms.X86HasAVX
+	p.From.Sym = s.Target().Symbols.X86HasAVX
 	p.To.Type = obj.TYPE_CONST
 	p.To.Offset = 1
 	jmp := s.Prog(x86.AJNE)

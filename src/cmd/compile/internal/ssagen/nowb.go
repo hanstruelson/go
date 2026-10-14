@@ -10,26 +10,23 @@ import (
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
-	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 	"cmd/internal/src"
 )
 
-func EnableNoWriteBarrierRecCheck() {
-	nowritebarrierrecCheck = newNowritebarrierrecChecker()
+func (c *Context) EnableNoWriteBarrierRecCheck(target *ir.Package) {
+	c.nowritebarrierrecCheck = newNowritebarrierrecChecker(target)
 }
 
-func NoWriteBarrierRecCheck() {
-	// Write barriers are now known. Check the
-	// call graph.
-	nowritebarrierrecCheck.check()
-	nowritebarrierrecCheck = nil
+func (c *Context) NoWriteBarrierRecCheck() {
+	// Write barriers are now known. Check the call graph.
+	c.nowritebarrierrecCheck.check()
+	c.nowritebarrierrecCheck = nil
 }
-
-var nowritebarrierrecCheck *nowritebarrierrecChecker
 
 type nowritebarrierrecChecker struct {
+	target *ir.Package
 	// extraCalls contains extra function calls that may not be
 	// visible during later analysis. It maps from the ODCLFUNC of
 	// the caller to a list of callees.
@@ -46,8 +43,9 @@ type nowritebarrierrecCall struct {
 
 // newNowritebarrierrecChecker creates a nowritebarrierrecChecker. It
 // must be called before walk.
-func newNowritebarrierrecChecker() *nowritebarrierrecChecker {
+func newNowritebarrierrecChecker(target *ir.Package) *nowritebarrierrecChecker {
 	c := &nowritebarrierrecChecker{
+		target:     target,
 		extraCalls: make(map[*ir.Func][]nowritebarrierrecCall),
 	}
 
@@ -56,7 +54,7 @@ func newNowritebarrierrecChecker() *nowritebarrierrecChecker {
 	// important to handle it for this check, so we model it
 	// directly. This has to happen before transforming closures in walk since
 	// it's a lot harder to work out the argument after.
-	for _, n := range typecheck.Target.Funcs {
+	for _, n := range target.Funcs {
 		c.curfn = n
 		if c.curfn.ABIWrapper() {
 			// We only want "real" calls to these
@@ -133,7 +131,7 @@ func (c *nowritebarrierrecChecker) check() {
 	// q is the queue of ODCLFUNC Nodes to visit in BFS order.
 	var q ir.NameQueue
 
-	for _, fn := range typecheck.Target.Funcs {
+	for _, fn := range c.target.Funcs {
 		symToFunc[fn.LSym] = fn
 
 		// Make nowritebarrierrec functions BFS roots.

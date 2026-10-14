@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"internal/buildcfg"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,18 +20,49 @@ import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/syntax"
-	"cmd/compile/internal/typecheck"
-	"cmd/compile/internal/types"
 	"cmd/internal/objabi"
 )
 
-func LoadPackage(filenames []string) {
-	base.Timer.Start("fe", "parse")
+// SourceFile is a Go source file supplied directly to the compiler.
+// Name is used for source positions and diagnostics; Data is the source text.
+type SourceFile struct {
+	Name string
+	Data string
+}
+
+type packageInput struct {
+	name     string
+	data     string
+	inMemory bool
+}
+
+func LoadPackage(filenames []string, target *ir.Package, timer *base.Timings) *Context {
+	inputs := make([]packageInput, len(filenames))
+	for i, filename := range filenames {
+		inputs[i] = packageInput{name: filename}
+	}
+	return loadPackage(target, timer, inputs)
+}
+
+// LoadPackageFromSourceFiles parses source files supplied in memory and loads
+// the package through the compiler frontend. Names should be distinct and
+// should identify the source in compiler diagnostics.
+func LoadPackageFromSourceFiles(files []SourceFile, target *ir.Package, timer *base.Timings) *Context {
+	inputs := make([]packageInput, len(files))
+	for i, file := range files {
+		inputs[i] = packageInput{name: file.Name, data: file.Data, inMemory: true}
+	}
+	return loadPackage(target, timer, inputs)
+}
+
+func loadPackage(target *ir.Package, timer *base.Timings, inputs []packageInput) *Context {
+	ctx := newContext(target, timer)
+	ctx.timer.Start("fe", "parse")
 
 	// Limit the number of simultaneously open files.
 	sem := make(chan struct{}, runtime.GOMAXPROCS(0)+10)
 
-	noders := make([]*noder, len(filenames))
+	noders := make([]*noder, len(inputs))
 	for i := range noders {
 		p := noder{
 			err: make(chan syntax.Error),
@@ -40,28 +72,36 @@ func LoadPackage(filenames []string) {
 
 	// Move the entire syntax processing logic into a separate goroutine to avoid blocking on the "sem".
 	go func() {
-		for i, filename := range filenames {
+		for i, input := range inputs {
 			p := noders[i]
+			p.target = target
+			input := input
 			sem <- struct{}{}
 			go func() {
 				defer func() { <-sem }()
 				defer close(p.err)
-				fbase := syntax.NewFileBase(filename)
+				fbase := syntax.NewFileBase(input.name)
 
-				f, err := os.Open(filename)
-				if err != nil {
-					p.error(syntax.Error{Msg: err.Error()})
-					return
+				var r io.Reader
+				if input.inMemory {
+					r = strings.NewReader(input.data)
+				} else {
+					f, err := os.Open(input.name)
+					if err != nil {
+						p.error(syntax.Error{Msg: err.Error()})
+						return
+					}
+					defer f.Close()
+					r = f
 				}
-				defer f.Close()
 
-				p.file, _ = syntax.Parse(fbase, f, p.error, p.pragma, syntax.CheckBranches) // errors are tracked via p.error
+				p.file, _ = syntax.Parse(fbase, r, p.error, p.pragma, syntax.CheckBranches) // errors are tracked via p.error
 			}()
 		}
 	}()
 
 	var lines uint
-	var m posMap
+	m := posMap{target: target}
 	for _, p := range noders {
 		for e := range p.err {
 			base.ErrorfAt(m.makeXPos(e.Pos), 0, "%s", e.Msg)
@@ -71,9 +111,10 @@ func LoadPackage(filenames []string) {
 		}
 		lines += p.file.EOF.Line()
 	}
-	base.Timer.AddEvent(int64(lines), "lines")
+	ctx.timer.AddEvent(int64(lines), "lines")
 
-	unified(m, noders)
+	unified(ctx, m, noders)
+	return ctx
 }
 
 // trimFilename returns the "trimmed" filename of b, which is the
@@ -83,20 +124,21 @@ func LoadPackage(filenames []string) {
 // If b's filename has already been trimmed (i.e., because it was read
 // in from an imported package's export data), then the filename is
 // returned unchanged.
-func trimFilename(b *syntax.PosBase) string {
+func trimFilename(target *ir.Package, b *syntax.PosBase) string {
 	filename := b.Filename()
 	if !b.Trimmed() {
 		dir := ""
 		if b.IsFileBase() {
-			dir = base.Ctxt.Pathname
+			dir = target.Ctxt.Pathname
 		}
-		filename = objabi.AbsFile(dir, filename, base.Flag.TrimPath)
+		filename = objabi.AbsFile(dir, filename, target.Flags.TrimPath)
 	}
 	return filename
 }
 
 // noder transforms package syntax's AST into a Node tree.
 type noder struct {
+	target     *ir.Package
 	file       *syntax.File
 	linknames  []linkname
 	pragcgobuf [][]string
@@ -292,10 +334,10 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		var target string
 		if len(f) == 3 {
 			target = f[2]
-		} else if base.Ctxt.Pkgpath != "" {
+		} else if p.target.Ctxt.Pkgpath != "" {
 			// Use the default object symbol name if the
 			// user didn't provide one.
-			target = objabi.PathToPrefix(base.Ctxt.Pkgpath) + "." + f[1]
+			target = objabi.PathToPrefix(p.target.Ctxt.Pkgpath) + "." + f[1]
 		} else {
 			panic("missing pkgpath")
 		}
@@ -318,7 +360,7 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		fields := pragmaFields(text)
 		if len(fields) >= 4 {
 			lib := strings.Trim(fields[3], `"`)
-			if lib != "" && !safeArg(lib) && !isCgoGeneratedFile(pos) {
+			if lib != "" && !safeArg(lib) && !isCgoGeneratedFile(p.target, pos) {
 				p.error(syntax.Error{Pos: pos, Msg: fmt.Sprintf("invalid library name %q in cgo_import_dynamic directive", lib)})
 			}
 			p.pragcgo(pos, text)
@@ -330,7 +372,7 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		// For security, we disallow //go:cgo_* directives other
 		// than cgo_import_dynamic outside cgo-generated files.
 		// Exception: they are allowed in the standard library, for runtime and syscall.
-		if !isCgoGeneratedFile(pos) && !base.Flag.Std {
+		if !isCgoGeneratedFile(p.target, pos) && !p.target.Flags.Std {
 			p.error(syntax.Error{Pos: pos, Msg: fmt.Sprintf("//%s only allowed in cgo-generated code", text)})
 		}
 		p.pragcgo(pos, text)
@@ -342,13 +384,13 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		}
 		flag := pragmaFlag(verb)
 		const runtimePragmas = ir.Systemstack | ir.Nowritebarrier | ir.Nowritebarrierrec | ir.Yeswritebarrierrec
-		if !base.Flag.CompilingRuntime && flag&runtimePragmas != 0 {
+		if !p.target.Flags.CompilingRuntime && flag&runtimePragmas != 0 {
 			p.error(syntax.Error{Pos: pos, Msg: fmt.Sprintf("//%s only allowed in runtime", verb)})
 		}
-		if flag == ir.UintptrKeepAlive && !base.Flag.Std {
+		if flag == ir.UintptrKeepAlive && !p.target.Flags.Std {
 			p.error(syntax.Error{Pos: pos, Msg: fmt.Sprintf("//%s is only allowed in the standard library", verb)})
 		}
-		if flag == 0 && !allowedStdPragmas[verb] && base.Flag.Std {
+		if flag == 0 && !allowedStdPragmas[verb] && p.target.Flags.Std {
 			p.error(syntax.Error{Pos: pos, Msg: fmt.Sprintf("//%s is not allowed in the standard library", verb)})
 		}
 		pragma.Flag |= flag
@@ -368,10 +410,10 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 // so the only _cgo_ files we will see from cmd/go are generated by cgo.
 // It's easy to bypass this check by calling the compiler directly;
 // we only protect against uses by cmd/go.
-func isCgoGeneratedFile(pos syntax.Pos) bool {
+func isCgoGeneratedFile(target *ir.Package, pos syntax.Pos) bool {
 	// We need the absolute file, independent of //line directives,
 	// so we call pos.Base().Pos().
-	return strings.HasPrefix(filepath.Base(trimFilename(pos.Base().Pos().Base())), "_cgo_")
+	return strings.HasPrefix(filepath.Base(trimFilename(target, pos.Base().Pos().Base())), "_cgo_")
 }
 
 // safeArg reports whether arg is a "safe" command-line argument,
@@ -451,15 +493,7 @@ func parseGoEmbed(args string) ([]string, error) {
 // It is called by the initialization before main is run.
 // To make it unique within a package and also uncallable,
 // the name, normally "pkg.init", is altered to "pkg.init.0".
-var renameinitgen int
-
-func Renameinit() *types.Sym {
-	s := typecheck.LookupNum("init.", renameinitgen)
-	renameinitgen++
-	return s
-}
-
-func checkEmbed(decl *syntax.VarDecl, haveEmbed, withinFunc bool) error {
+func checkEmbed(target *ir.Package, decl *syntax.VarDecl, haveEmbed, withinFunc bool) error {
 	switch {
 	case !haveEmbed:
 		return errors.New("go:embed requires import \"embed\" (or import _ \"embed\", if package is not used)")
@@ -472,8 +506,8 @@ func checkEmbed(decl *syntax.VarDecl, haveEmbed, withinFunc bool) error {
 		return errors.New("go:embed cannot apply to var without type")
 	case withinFunc:
 		return errors.New("go:embed cannot apply to var inside func")
-	case !types.AllowsGoVersion(1, 16):
-		return fmt.Errorf("go:embed requires go1.16 or later (-lang was set to %s; check go.mod)", base.Flag.Lang)
+	case !target.LangVersion.AllowsGoVersion(1, 16):
+		return fmt.Errorf("go:embed requires go1.16 or later (-lang was set to %s; check go.mod)", target.Flags.Lang)
 
 	default:
 		return nil

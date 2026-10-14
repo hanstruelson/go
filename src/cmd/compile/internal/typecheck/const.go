@@ -53,8 +53,16 @@ func trunccmplxlit(v constant.Value, t *types.Type) constant.Value {
 }
 
 // TODO(mdempsky): Replace these with better APIs.
-func convlit(n ir.Node, t *types.Type) ir.Node    { return convlit1(n, t, false, nil) }
-func DefaultLit(n ir.Node, t *types.Type) ir.Node { return convlit1(n, t, false, nil) }
+func convlit(n ir.Node, t *types.Type) ir.Node { return convlit1(nil, n, t, false, nil) }
+
+// DefaultLit uses the legacy target-free basic type table. New compiler code
+// should use DefaultLitFor so default types come from the active target.
+func DefaultLit(n ir.Node, t *types.Type) ir.Node { return convlit1(nil, n, t, false, nil) }
+
+// DefaultLitFor converts an untyped expression using target's basic types.
+func DefaultLitFor(target *ir.Package, n ir.Node, t *types.Type) ir.Node {
+	return convlit1(target, n, t, false, nil)
+}
 
 // convlit1 converts an untyped expression n to type t. If n already
 // has a type, convlit1 has no effect.
@@ -67,7 +75,7 @@ func DefaultLit(n ir.Node, t *types.Type) ir.Node { return convlit1(n, t, false,
 //
 // If there's an error converting n to t, context is used in the error
 // message.
-func convlit1(n ir.Node, t *types.Type, explicit bool, context func() string) ir.Node {
+func convlit1(target *ir.Package, n ir.Node, t *types.Type, explicit bool, context func() string) ir.Node {
 	if explicit && t == nil {
 		base.Fatalf("explicit conversion missing type")
 	}
@@ -104,7 +112,7 @@ func convlit1(n ir.Node, t *types.Type, explicit bool, context func() string) ir
 	}
 
 	if t == nil || !ir.OKForConst[t.Kind()] {
-		t = defaultType(n.Type())
+		t = defaultType(target, n.Type())
 	}
 
 	switch n.Op() {
@@ -124,12 +132,12 @@ func convlit1(n ir.Node, t *types.Type, explicit bool, context func() string) ir
 	case ir.OPLUS, ir.ONEG, ir.OBITNOT, ir.ONOT, ir.OREAL, ir.OIMAG:
 		ot := operandType(n.Op(), t)
 		if ot == nil {
-			n = DefaultLit(n, nil)
+			n = convlit1(target, n, nil, false, nil)
 			break
 		}
 
 		n := n.(*ir.UnaryExpr)
-		n.X = convlit(n.X, ot)
+		n.X = convlit1(target, n.X, ot, false, nil)
 		if n.X.Type() == nil {
 			n.SetType(nil)
 			return n
@@ -140,19 +148,19 @@ func convlit1(n ir.Node, t *types.Type, explicit bool, context func() string) ir
 	case ir.OADD, ir.OSUB, ir.OMUL, ir.ODIV, ir.OMOD, ir.OOR, ir.OXOR, ir.OAND, ir.OANDNOT, ir.OOROR, ir.OANDAND, ir.OCOMPLEX:
 		ot := operandType(n.Op(), t)
 		if ot == nil {
-			n = DefaultLit(n, nil)
+			n = convlit1(target, n, nil, false, nil)
 			break
 		}
 
 		var l, r ir.Node
 		switch n := n.(type) {
 		case *ir.BinaryExpr:
-			n.X = convlit(n.X, ot)
-			n.Y = convlit(n.Y, ot)
+			n.X = convlit1(target, n.X, ot, false, nil)
+			n.Y = convlit1(target, n.Y, ot, false, nil)
 			l, r = n.X, n.Y
 		case *ir.LogicalExpr:
-			n.X = convlit(n.X, ot)
-			n.Y = convlit(n.Y, ot)
+			n.X = convlit1(target, n.X, ot, false, nil)
+			n.Y = convlit1(target, n.Y, ot, false, nil)
 			l, r = n.X, n.Y
 		}
 
@@ -179,7 +187,7 @@ func convlit1(n ir.Node, t *types.Type, explicit bool, context func() string) ir
 
 	case ir.OLSH, ir.ORSH:
 		n := n.(*ir.BinaryExpr)
-		n.X = convlit1(n.X, t, explicit, nil)
+		n.X = convlit1(target, n.X, t, explicit, nil)
 		n.SetType(n.X.Type())
 		if n.Type() != nil && !n.Type().IsInteger() {
 			base.Errorf("invalid operation: %v (shift of type %v)", n, n.Type())
@@ -336,7 +344,7 @@ func makeComplex(real, imag constant.Value) constant.Value {
 // The results of defaultlit2 MUST be assigned back to l and r, e.g.
 //
 //	n.Left, n.Right = defaultlit2(n.Left, n.Right, force)
-func defaultlit2(l ir.Node, r ir.Node, force bool) (ir.Node, ir.Node) {
+func defaultlit2(target *ir.Package, l ir.Node, r ir.Node, force bool) (ir.Node, ir.Node) {
 	if l.Type() == nil || r.Type() == nil {
 		return l, r
 	}
@@ -352,12 +360,12 @@ func defaultlit2(l ir.Node, r ir.Node, force bool) (ir.Node, ir.Node) {
 	}
 
 	if !l.Type().IsUntyped() {
-		r = convlit(r, l.Type())
+		r = convlit1(target, r, l.Type(), false, nil)
 		return l, r
 	}
 
 	if !r.Type().IsUntyped() {
-		l = convlit(l, r.Type())
+		l = convlit1(target, l, r.Type(), false, nil)
 		return l, r
 	}
 
@@ -369,9 +377,9 @@ func defaultlit2(l ir.Node, r ir.Node, force bool) (ir.Node, ir.Node) {
 	if ir.IsNil(l) || ir.IsNil(r) {
 		return l, r
 	}
-	t := defaultType(mixUntyped(l.Type(), r.Type()))
-	l = convlit(l, t)
-	r = convlit(r, t)
+	t := defaultType(target, mixUntyped(l.Type(), r.Type()))
+	l = convlit1(target, l, t, false, nil)
+	r = convlit1(target, r, t, false, nil)
 	return l, r
 }
 
@@ -401,33 +409,48 @@ func mixUntyped(t1, t2 *types.Type) *types.Type {
 	return t1
 }
 
-func defaultType(t *types.Type) *types.Type {
+func defaultType(target *ir.Package, t *types.Type) *types.Type {
 	if !t.IsUntyped() || t.Kind() == types.TNIL {
 		return t
 	}
 
 	switch t {
 	case types.UntypedBool:
-		return types.Types[types.TBOOL]
+		return basicType(target, types.TBOOL)
 	case types.UntypedString:
-		return types.Types[types.TSTRING]
+		return basicType(target, types.TSTRING)
 	case types.UntypedInt:
-		return types.Types[types.TINT]
+		return basicType(target, types.TINT)
 	case types.UntypedRune:
+		if target != nil {
+			return target.RuneType
+		}
 		return types.RuneType
 	case types.UntypedFloat:
-		return types.Types[types.TFLOAT64]
+		return basicType(target, types.TFLOAT64)
 	case types.UntypedComplex:
-		return types.Types[types.TCOMPLEX128]
+		return basicType(target, types.TCOMPLEX128)
 	}
 
 	base.Fatalf("bad type %v", t)
 	return nil
 }
 
+func basicType(target *ir.Package, kind types.Kind) *types.Type {
+	if target != nil {
+		return target.Type(kind)
+	}
+	return types.Types[kind]
+}
+
 // IndexConst returns the index value of constant Node n.
 func IndexConst(n ir.Node) int64 {
-	return ir.IntVal(types.Types[types.TINT], toint(n.Val()))
+	return IndexConstFor(nil, n)
+}
+
+// IndexConstFor returns the index value of constant Node n using target's int type.
+func IndexConstFor(target *ir.Package, n ir.Node) int64 {
+	return ir.IntVal(basicType(target, types.TINT), toint(n.Val()))
 }
 
 // callOrChan reports whether n is a call or channel operation.

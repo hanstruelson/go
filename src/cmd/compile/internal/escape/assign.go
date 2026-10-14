@@ -86,14 +86,14 @@ func (e *escape) assignList(dsts, srcs []ir.Node, why string, where ir.Node) {
 		if dst := dsts[i]; dst != nil {
 			// Detect implicit conversion of uintptr to unsafe.Pointer when
 			// storing into reflect.{Slice,String}Header.
-			if dst.Op() == ir.ODOTPTR && ir.IsReflectHeaderDataField(dst) {
+			if dst.Op() == ir.ODOTPTR && ir.IsReflectHeaderDataField(e.curfn.Target, dst) {
 				e.unsafeValue(e.heapHole().note(where, why), src)
 				continue
 			}
 
 			// Filter out some no-op assignments for escape analysis.
 			if src != nil && isSelfAssign(dst, src) {
-				if base.Flag.LowerM != 0 {
+				if e.curfn.Target.Flags.LowerM != 0 {
 					base.WarnfAt(where.Pos(), "%v ignoring self-assignment in %v", e.curfn, where)
 				}
 				k = e.discardHole()

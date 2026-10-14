@@ -20,9 +20,9 @@ func AssignConv(n ir.Node, t *types.Type, context string) ir.Node {
 	return assignconvfn(n, t, func() string { return context })
 }
 
-// LookupNum returns types.LocalPkg.LookupNum(prefix, n).
-func LookupNum(prefix string, n int) *types.Sym {
-	return types.LocalPkg.LookupNum(prefix, n)
+// LookupNum returns target.LocalPkg.LookupNum(prefix, n).
+func LookupNum(target *ir.Package, prefix string, n int) *types.Sym {
+	return target.LocalPkg.LookupNum(prefix, n)
 }
 
 // Given funarg struct list, return list of fn args.
@@ -36,9 +36,9 @@ func NewFuncParams(origs []*types.Field) []*types.Field {
 	return res
 }
 
-// NodAddr returns a node representing &n at base.Pos.
+// NodAddr returns a node representing &n at the current position.
 func NodAddr(curfunc *ir.Func, n ir.Node) *ir.AddrExpr {
-	return NodAddrAt(curfunc, base.Pos, n)
+	return NodAddrAt(curfunc, ir.CurrentPos(curfunc), n)
 }
 
 // NodAddrAt returns a node representing &n at position pos.
@@ -53,8 +53,9 @@ func LinksymAddr(curfunc *ir.Func, pos src.XPos, lsym *obj.LSym, typ *types.Type
 	return Expr(curfunc, NodAddrAt(curfunc, pos, n)).(*ir.AddrExpr)
 }
 
-func NodNil() ir.Node {
-	return ir.NewNilExpr(base.Pos, types.Types[types.TNIL])
+// NodNilAt returns the nil literal at pos.
+func NodNilAt(target *ir.Package, pos src.XPos) ir.Node {
+	return ir.NewNilExpr(pos, target.Type(types.TNIL))
 }
 
 // AddImplicitDots finds missing fields in obj.field that
@@ -108,8 +109,8 @@ func CalcMethods(t *types.Type) {
 	}
 
 	// generate all reachable methods
-	slist = slist[:0]
-	expand1(t, true)
+	var slist []symlink
+	expand1(t, true, &slist)
 
 	// check each method to be uniquely reachable
 	var ms []*types.Field
@@ -161,11 +162,10 @@ func CalcMethods(t *types.Type) {
 
 // adddot1 returns the number of fields or methods named s at depth d in Type t.
 // If exactly one exists, it will be returned in *save (if save is not nil),
-// and dotlist will contain the path of embedded fields traversed to find it,
-// in reverse order. If none exist, more will indicate whether t contains any
-// embedded fields at depth d, so callers can decide whether to retry at
-// a greater depth.
-func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase bool) (c int, more bool) {
+// and path will contain the embedded fields traversed to find it, in reverse
+// order. If none exist, more will indicate whether t contains any embedded
+// fields at depth d, so callers can decide whether to retry at a greater depth.
+func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase bool, path []dlist) (c int, more bool) {
 	if t.Recur() {
 		return
 	}
@@ -206,9 +206,9 @@ func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase 
 			// Found an embedded field at target depth.
 			return c, true
 		}
-		a, more1 := adddot1(s, f.Type, d, save, ignorecase)
+		a, more1 := adddot1(s, f.Type, d, save, ignorecase, path)
 		if a != 0 && c == 0 {
-			dotlist[d].field = f
+			path[d].field = f
 		}
 		c += a
 		if more1 {
@@ -218,11 +218,6 @@ func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase 
 
 	return c, more
 }
-
-// dotlist is used by adddot1 to record the path of embedded fields
-// used to access a target field or method.
-// Must be non-nil so that dotpath returns a non-nil slice even if d is zero.
-var dotlist = make([]dlist, 10)
 
 // Convert node n for assignment to type t.
 func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
@@ -234,7 +229,7 @@ func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
 		base.Errorf("use of untyped nil")
 	}
 
-	n = convlit1(n, t, false, context)
+	n = convlit1(nil, n, t, false, context)
 	if n.Type() == nil {
 		base.Fatalf("cannot assign %v to %v", n, t)
 	}
@@ -254,7 +249,7 @@ func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
 		op = ir.OCONV
 	}
 
-	r := ir.NewConvExpr(base.Pos, op, t, n)
+	r := ir.NewConvExpr(n.Pos(), op, t, n)
 	r.SetTypecheck(1)
 	r.SetImplicit(true)
 	return r
@@ -392,7 +387,7 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 		return ir.OXXX, why
 	}
 	// (b) Disallow string to []T where T is not-in-heap.
-	if src.IsString() && dst.IsSlice() && dst.Elem().NotInHeap() && (dst.Elem().Kind() == types.ByteType.Kind() || dst.Elem().Kind() == types.RuneType.Kind()) {
+	if src.IsString() && dst.IsSlice() && dst.Elem().NotInHeap() && (dst.Elem().Kind() == types.TUINT8 || dst.Elem().Kind() == types.TINT32) {
 		why := fmt.Sprintf(":\n\t%v is incomplete (or unallocatable)", dst.Elem())
 		return ir.OXXX, why
 	}
@@ -426,7 +421,7 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 
 	// 4. src and dst are both integer or floating point types.
 	if (src.IsInteger() || src.IsFloat()) && (dst.IsInteger() || dst.IsFloat()) {
-		if types.SimType[src.Kind()] == types.SimType[dst.Kind()] {
+		if src.SimType() == dst.SimType() {
 			return ir.OCONVNOP, ""
 		}
 		return ir.OCONV, ""
@@ -434,7 +429,7 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 
 	// 5. src and dst are both complex types.
 	if src.IsComplex() && dst.IsComplex() {
-		if types.SimType[src.Kind()] == types.SimType[dst.Kind()] {
+		if src.SimType() == dst.SimType() {
 			return ir.OCONVNOP, ""
 		}
 		return ir.OCONV, ""
@@ -454,10 +449,10 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 	}
 
 	if src.IsSlice() && dst.IsString() {
-		if src.Elem().Kind() == types.ByteType.Kind() {
+		if src.Elem().Kind() == types.TUINT8 {
 			return ir.OBYTES2STR, ""
 		}
-		if src.Elem().Kind() == types.RuneType.Kind() {
+		if src.Elem().Kind() == types.TINT32 {
 			return ir.ORUNES2STR, ""
 		}
 	}
@@ -465,10 +460,10 @@ func convertOp(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 	// 7. src is a string and dst is []byte or []rune.
 	// String to slice.
 	if src.IsString() && dst.IsSlice() {
-		if dst.Elem().Kind() == types.ByteType.Kind() {
+		if dst.Elem().Kind() == types.TUINT8 {
 			return ir.OSTR2BYTES, ""
 		}
-		if dst.Elem().Kind() == types.RuneType.Kind() {
+		if dst.Elem().Kind() == types.TINT32 {
 			return ir.OSTR2RUNES, ""
 		}
 	}
@@ -511,6 +506,11 @@ type dlist struct {
 // If no such path exists, dotpath returns nil.
 // If there are multiple shortest paths to the same depth, ambig is true.
 func dotpath(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) (path []dlist, ambig bool) {
+	// Keep the traversal path local so independent typechecking requests can
+	// resolve selectors concurrently. The initial allocation also ensures
+	// that a zero-depth result is a non-nil slice, as callers expect.
+	path = make([]dlist, 10)
+
 	// The embedding of types within structs imposes a tree structure onto
 	// types: structs parent the types they embed, and types parent their
 	// fields or methods. Our goal here is to find the shortest path to
@@ -518,11 +518,11 @@ func dotpath(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) (
 	// that, we iteratively perform depth-first searches of increasing depth
 	// until we either find the named field/method or exhaust the tree.
 	for d := 0; ; d++ {
-		if d > len(dotlist) {
-			dotlist = append(dotlist, dlist{})
+		if d >= len(path) {
+			path = append(path, make([]dlist, len(path))...)
 		}
-		if c, more := adddot1(s, t, d, save, ignorecase); c == 1 {
-			return dotlist[:d], false
+		if c, more := adddot1(s, t, d, save, ignorecase, path); c == 1 {
+			return path[:d], false
 		} else if c > 1 {
 			return nil, true
 		} else if !more {
@@ -531,7 +531,7 @@ func dotpath(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) (
 	}
 }
 
-func expand0(t *types.Type) {
+func expand0(t *types.Type, slist *[]symlink) {
 	u := t
 	if u.IsPtr() {
 		u = u.Elem()
@@ -543,7 +543,7 @@ func expand0(t *types.Type) {
 				continue
 			}
 			f.Sym.SetUniq(true)
-			slist = append(slist, symlink{field: f})
+			*slist = append(*slist, symlink{field: f})
 		}
 
 		return
@@ -556,19 +556,19 @@ func expand0(t *types.Type) {
 				continue
 			}
 			f.Sym.SetUniq(true)
-			slist = append(slist, symlink{field: f})
+			*slist = append(*slist, symlink{field: f})
 		}
 	}
 }
 
-func expand1(t *types.Type, top bool) {
+func expand1(t *types.Type, top bool, slist *[]symlink) {
 	if t.Recur() {
 		return
 	}
 	t.SetRecur(true)
 
 	if !top {
-		expand0(t)
+		expand0(t, slist)
 	}
 
 	u := t
@@ -590,7 +590,7 @@ func expand1(t *types.Type, top bool) {
 			if f.Sym == nil {
 				continue
 			}
-			expand1(f.Type, false)
+			expand1(f.Type, false, slist)
 		}
 	}
 
@@ -713,7 +713,7 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 		// if pointer receiver in method,
 		// the method does not exist for value types.
 		if !types.IsMethodApplicable(t0, tm) {
-			if false && base.Flag.LowerR != 0 {
+			if false {
 				base.Errorf("interface pointer mismatch")
 			}
 
@@ -790,8 +790,6 @@ func lookdot0(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) 
 
 	return c
 }
-
-var slist []symlink
 
 // Code to help generate trampoline functions for methods on embedded
 // types. These are approx the same as the corresponding AddImplicitDots

@@ -3,6 +3,7 @@
 package typecheck
 
 import (
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/types"
 	"cmd/internal/src"
 )
@@ -259,39 +260,39 @@ var runtimeDecls = [...]struct {
 	{"KeepAlive", funcTag, 11},
 }
 
-func runtimeTypes() []*types.Type {
+func runtimeTypes(target *ir.Package) []*types.Type {
 	var typs [165]*types.Type
-	typs[0] = types.ByteType
+	typs[0] = target.ByteType
 	typs[1] = types.NewPtr(typs[0])
-	typs[2] = types.Types[types.TANY]
+	typs[2] = target.Type(types.TANY)
 	typs[3] = types.NewPtr(typs[2])
 	typs[4] = newSig(params(typs[1]), params(typs[3]))
-	typs[5] = types.Types[types.TUINTPTR]
-	typs[6] = types.Types[types.TBOOL]
-	typs[7] = types.Types[types.TUNSAFEPTR]
+	typs[5] = target.Type(types.TUINTPTR)
+	typs[6] = target.Type(types.TBOOL)
+	typs[7] = target.Type(types.TUNSAFEPTR)
 	typs[8] = newSig(params(typs[5], typs[1], typs[6]), params(typs[7]))
 	typs[9] = newSig(nil, nil)
-	typs[10] = types.Types[types.TINTER]
+	typs[10] = target.Type(types.TINTER)
 	typs[11] = newSig(params(typs[10]), nil)
 	typs[12] = newSig(nil, params(typs[10]))
-	typs[13] = types.Types[types.TINT]
+	typs[13] = target.Type(types.TINT)
 	typs[14] = newSig(params(typs[13], typs[13]), nil)
-	typs[15] = types.Types[types.TUINT]
+	typs[15] = target.Type(types.TUINT)
 	typs[16] = newSig(params(typs[15], typs[13]), nil)
 	typs[17] = newSig(params(typs[6]), nil)
-	typs[18] = types.Types[types.TFLOAT64]
+	typs[18] = target.Type(types.TFLOAT64)
 	typs[19] = newSig(params(typs[18]), nil)
-	typs[20] = types.Types[types.TFLOAT32]
+	typs[20] = target.Type(types.TFLOAT32)
 	typs[21] = newSig(params(typs[20]), nil)
-	typs[22] = types.Types[types.TINT64]
+	typs[22] = target.Type(types.TINT64)
 	typs[23] = newSig(params(typs[22]), nil)
-	typs[24] = types.Types[types.TUINT64]
+	typs[24] = target.Type(types.TUINT64)
 	typs[25] = newSig(params(typs[24]), nil)
-	typs[26] = types.Types[types.TCOMPLEX128]
+	typs[26] = target.Type(types.TCOMPLEX128)
 	typs[27] = newSig(params(typs[26]), nil)
-	typs[28] = types.Types[types.TCOMPLEX64]
+	typs[28] = target.Type(types.TCOMPLEX64)
 	typs[29] = newSig(params(typs[28]), nil)
-	typs[30] = types.Types[types.TSTRING]
+	typs[30] = target.Type(types.TSTRING)
 	typs[31] = newSig(params(typs[30]), nil)
 	typs[32] = newSig(params(typs[2]), nil)
 	typs[33] = newSig(params(typs[5]), nil)
@@ -315,7 +316,7 @@ func runtimeTypes() []*types.Type {
 	typs[51] = newSig(params(typs[50], typs[22]), params(typs[30]))
 	typs[52] = newSig(params(typs[35], typs[1], typs[13]), params(typs[30]))
 	typs[53] = newSig(params(typs[1], typs[13]), params(typs[30]))
-	typs[54] = types.RuneType
+	typs[54] = target.RuneType
 	typs[55] = types.NewSlice(typs[54])
 	typs[56] = newSig(params(typs[35], typs[55]), params(typs[30]))
 	typs[57] = newSig(params(typs[35], typs[30]), params(typs[42]))
@@ -326,13 +327,13 @@ func runtimeTypes() []*types.Type {
 	typs[62] = newSig(params(typs[30], typs[13]), params(typs[54], typs[13]))
 	typs[63] = newSig(params(typs[30]), params(typs[13]))
 	typs[64] = newSig(params(typs[1], typs[3]), params(typs[7]))
-	typs[65] = types.Types[types.TUINT16]
+	typs[65] = target.Type(types.TUINT16)
 	typs[66] = newSig(params(typs[65]), params(typs[7]))
-	typs[67] = types.Types[types.TUINT32]
+	typs[67] = target.Type(types.TUINT32)
 	typs[68] = newSig(params(typs[67]), params(typs[7]))
 	typs[69] = newSig(params(typs[24]), params(typs[7]))
 	typs[70] = newSig(params(typs[30]), params(typs[7]))
-	typs[71] = types.Types[types.TUINT8]
+	typs[71] = target.Type(types.TUINT8)
 	typs[72] = types.NewSlice(typs[71])
 	typs[73] = newSig(params(typs[72]), params(typs[7]))
 	typs[74] = newSig(params(typs[1], typs[1]), params(typs[1]))
@@ -377,7 +378,7 @@ func runtimeTypes() []*types.Type {
 	typs[113] = newSig(params(typs[111]), nil)
 	typs[114] = newSig(params(typs[2]), params(typs[13]))
 	typs[115] = types.NewArray(typs[0], 3)
-	typs[116] = types.NewStruct([]*types.Field{types.NewField(src.NoXPos, Lookup("enabled"), typs[6]), types.NewField(src.NoXPos, Lookup("pad"), typs[115]), types.NewField(src.NoXPos, Lookup("cgo"), typs[6]), types.NewField(src.NoXPos, Lookup("alignme"), typs[24])})
+	typs[116] = types.NewStruct([]*types.Field{types.NewField(src.NoXPos, typs[6].Sym().Pkg.Lookup("enabled"), typs[6]), types.NewField(src.NoXPos, typs[6].Sym().Pkg.Lookup("pad"), typs[115]), types.NewField(src.NoXPos, typs[6].Sym().Pkg.Lookup("cgo"), typs[6]), types.NewField(src.NoXPos, typs[6].Sym().Pkg.Lookup("alignme"), typs[24])})
 	typs[117] = newSig(params(typs[1], typs[3], typs[3]), nil)
 	typs[118] = newSig(params(typs[1], typs[3]), nil)
 	typs[119] = newSig(params(typs[1], typs[3], typs[13], typs[3], typs[13]), params(typs[13]))
@@ -437,9 +438,9 @@ var coverageDecls = [...]struct {
 	{"initHook", funcTag, 1},
 }
 
-func coverageTypes() []*types.Type {
+func coverageTypes(target *ir.Package) []*types.Type {
 	var typs [2]*types.Type
-	typs[0] = types.Types[types.TBOOL]
+	typs[0] = target.Type(types.TBOOL)
 	typs[1] = newSig(params(typs[0]), nil)
 	return typs[:]
 }

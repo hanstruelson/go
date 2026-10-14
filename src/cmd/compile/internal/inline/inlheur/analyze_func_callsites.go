@@ -7,14 +7,14 @@ package inlheur
 import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/pgoir"
-	"cmd/compile/internal/typecheck"
 	"fmt"
 	"os"
 	"strings"
 )
 
 type callSiteAnalyzer struct {
-	fn *ir.Func
+	ctx *Context
+	fn  *ir.Func
 	*nameFinder
 }
 
@@ -28,8 +28,9 @@ type callSiteTableBuilder struct {
 	isInit   bool
 }
 
-func makeCallSiteAnalyzer(fn *ir.Func) *callSiteAnalyzer {
+func makeCallSiteAnalyzer(ctx *Context, fn *ir.Func) *callSiteAnalyzer {
 	return &callSiteAnalyzer{
+		ctx:        ctx,
 		fn:         fn,
 		nameFinder: newNameFinder(fn),
 	}
@@ -73,7 +74,7 @@ func (cstb *callSiteTableBuilder) flagsForNode(call *ir.CallExpr) CSPropBits {
 
 	if debugTrace&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= analyzing call at %s\n",
-			fmtFullPos(call.Pos()))
+			fmtFullPos(cstb.fn.Target, call.Pos()))
 	}
 
 	// Set a bit if this call is within a loop.
@@ -149,7 +150,7 @@ func (cstb *callSiteTableBuilder) propsForArg(arg ir.Node) ActualExprPropBits {
 	}
 	fname := cstb.funcName(arg)
 	if fname != nil {
-		if fn := fname.Func; fn != nil && typecheck.HaveInlineBody(fn) {
+		if fn := fname.Func; fn != nil && fn.HasInlineBody() {
 			return ActualExprIsInlinableFunc
 		}
 		return ActualExprIsFunc
@@ -184,6 +185,7 @@ func (cstb *callSiteTableBuilder) addCallSite(callee *ir.Func, call *ir.CallExpr
 	}
 	// FIXME: maybe bulk-allocate these?
 	cs := &CallSite{
+		Target:   cstb.fn.Target,
 		Call:     call,
 		Callee:   callee,
 		Assign:   cstb.containingAssignment(call),
@@ -193,7 +195,7 @@ func (cstb *callSiteTableBuilder) addCallSite(callee *ir.Func, call *ir.CallExpr
 	}
 	if _, ok := cstb.cstab[call]; ok {
 		fmt.Fprintf(os.Stderr, "*** cstab duplicate entry at: %s\n",
-			fmtFullPos(call.Pos()))
+			fmtFullPos(cstb.fn.Target, call.Pos()))
 		fmt.Fprintf(os.Stderr, "*** call: %+v\n", call)
 		panic("bad")
 	}
@@ -208,7 +210,7 @@ func (cstb *callSiteTableBuilder) addCallSite(callee *ir.Func, call *ir.CallExpr
 	cstb.cstab[call] = cs
 	if debugTrace&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= added callsite: caller=%v callee=%v n=%s\n",
-			cstb.fn, callee, fmtFullPos(call.Pos()))
+			cstb.fn, callee, fmtFullPos(cstb.fn.Target, call.Pos()))
 	}
 }
 
@@ -350,11 +352,11 @@ func (cstb *callSiteTableBuilder) containingAssignment(n ir.Node) ir.Node {
 // callerfn. The chief thing of interest here is to make sure that any
 // call nodes within 'ic' are added to the call site table for
 // 'callerfn' and scored appropriately.
-func UpdateCallsiteTable(callerfn *ir.Func, n *ir.CallExpr, ic *ir.InlinedCallExpr) {
-	enableDebugTraceIfEnv()
+func UpdateCallsiteTable(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, ic *ir.InlinedCallExpr) {
+	enableDebugTraceIfEnv(ctx.Target)
 	defer disableDebugTrace()
 
-	funcInlHeur, ok := fpmap[callerfn]
+	funcInlHeur, ok := ctx.fpmap[callerfn]
 	if !ok {
 		// This can happen for compiler-generated wrappers.
 		if debugTrace&debugTraceCalls != 0 {
@@ -365,7 +367,7 @@ func UpdateCallsiteTable(callerfn *ir.Func, n *ir.CallExpr, ic *ir.InlinedCallEx
 
 	if debugTrace&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= UpdateCallsiteTable(caller=%v, cs=%s)\n",
-			callerfn, fmtFullPos(n.Pos()))
+			callerfn, fmtFullPos(callerfn.Target, n.Pos()))
 	}
 
 	// Mark the call in question as inlined.
@@ -407,7 +409,7 @@ func UpdateCallsiteTable(callerfn *ir.Func, n *ir.CallExpr, ic *ir.InlinedCallEx
 	// results. Similarly we're passing nil to makeCallSiteAnalyzer,
 	// so as to run name finding without the use of static value &
 	// friends.
-	csa := makeCallSiteAnalyzer(nil)
+	csa := makeCallSiteAnalyzer(ctx, nil)
 	const doCallResults = false
 	csa.scoreCallsRegion(callerfn, ic.Body, icstab, doCallResults, ic)
 }

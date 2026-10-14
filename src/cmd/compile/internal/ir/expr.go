@@ -577,11 +577,11 @@ func (n *SelectorExpr) Implicit() bool     { return n.flags&miniExprImplicit != 
 func (n *SelectorExpr) SetImplicit(b bool) { n.flags.set(miniExprImplicit, b) }
 func (n *SelectorExpr) Offset() int64      { return n.Selection.Offset }
 
-func (n *SelectorExpr) FuncName() *Name {
+func (n *SelectorExpr) FuncName(target *Package) *Name {
 	if n.Op() != OMETHEXPR {
 		panic(n.no("FuncName"))
 	}
-	sym, _ := MethodSym(n.X.Type(), n.Selection)
+	sym, _ := MethodSym(target, n.X.Type(), n.Selection)
 	fn := NewNameAt(n.Selection.Pos, sym, n.Type())
 	fn.Class = PFUNC
 	if n.Selection.Nname != nil {
@@ -654,11 +654,11 @@ type StringHeaderExpr struct {
 	Len Node
 }
 
-func NewStringHeaderExpr(pos src.XPos, ptr, len Node) *StringHeaderExpr {
+func NewStringHeaderExpr(target *Package, pos src.XPos, ptr, len Node) *StringHeaderExpr {
 	n := &StringHeaderExpr{Ptr: ptr, Len: len}
 	n.pos = pos
 	n.op = OSTRINGHEADER
-	n.typ = types.Types[types.TSTRING]
+	n.typ = target.Type(types.TSTRING)
 	return n
 }
 
@@ -1042,10 +1042,14 @@ func StaticCalleeName(n Node) *Name {
 }
 
 // IsIntrinsicCall reports whether the compiler back end will treat the call as an intrinsic operation.
-var IsIntrinsicCall = func(*CallExpr) bool { return false }
+func (p *Package) IsIntrinsicCall(call *CallExpr) bool {
+	return p != nil && p.IntrinsicCall != nil && p.IntrinsicCall(call)
+}
 
 // IsIntrinsicSym reports whether the compiler back end will treat a call to this symbol as an intrinsic operation.
-var IsIntrinsicSym = func(*types.Sym) bool { return false }
+func (p *Package) IsIntrinsicSym(sym *types.Sym) bool {
+	return p != nil && p.IntrinsicSym != nil && p.IntrinsicSym(sym)
+}
 
 // SameSafeExpr checks whether it is safe to reuse one of l and r
 // instead of computing both. SameSafeExpr assumes that l and r are
@@ -1123,19 +1127,19 @@ func SameSafeExpr(l Node, r Node) bool {
 // function fn at a given level. See debugHelpFooter for defined
 // levels.
 func ShouldCheckPtr(fn *Func, level int) bool {
-	return base.Debug.Checkptr >= level && fn.Pragma&NoCheckPtr == 0
+	return fn.Target.Debug.Checkptr >= level && fn.Pragma&NoCheckPtr == 0
 }
 
 // ShouldAsanCheckPtr reports whether pointer checking should be enabled for
 // function fn when -asan is enabled.
 func ShouldAsanCheckPtr(fn *Func) bool {
-	return base.Flag.ASan && fn.Pragma&NoCheckPtr == 0
+	return fn.Target.Flags.ASan && fn.Pragma&NoCheckPtr == 0
 }
 
 // IsReflectHeaderDataField reports whether l is an expression p.Data
 // where p has type reflect.SliceHeader or reflect.StringHeader.
-func IsReflectHeaderDataField(l Node) bool {
-	if l.Type() != types.Types[types.TUINTPTR] {
+func IsReflectHeaderDataField(target *Package, l Node) bool {
+	if l.Type() != target.Type(types.TUINTPTR) {
 		return false
 	}
 
@@ -1175,24 +1179,24 @@ func RecvParamNames(ft *types.Type) []Node {
 
 // MethodSym returns the method function symbol for recv. The second result
 // reports whether the symbol is a shared promoted wrapper.
-func MethodSym(recv *types.Type, method *types.Field) (*types.Sym, bool) {
+func MethodSym(target *Package, recv *types.Type, method *types.Field) (*types.Sym, bool) {
 	if method.Embedded == 1 && recv.IsPtr() && method.Offset != types.BADWIDTH {
 		wrappee := method.Type.Recv().Type
-		return promotedWrapperSym(recv, wrappee, method.Sym, method.Offset), true
+		return promotedWrapperSym(target, recv, wrappee, method.Sym, method.Offset), true
 	}
-	return ReceiverMethodSym(recv, method.Sym), false
+	return ReceiverMethodSym(target, recv, method.Sym), false
 }
 
 // ReceiverMethodSym returns the receiver-named method function symbol.
-func ReceiverMethodSym(recv *types.Type, msym *types.Sym) *types.Sym {
-	sym := ReceiverMethodSymSuffix(recv, msym, "")
+func ReceiverMethodSym(target *Package, recv *types.Type, msym *types.Sym) *types.Sym {
+	sym := ReceiverMethodSymSuffix(target, recv, msym, "")
 	sym.SetFunc(true)
 	return sym
 }
 
 // promotedWrapperSym returns the symbol for a shared promoted method wrapper
 // that adjusts its pointer receiver by offset before calling msym on wrappee.
-func promotedWrapperSym(wrapper, wrappee *types.Type, msym *types.Sym, offset int64) *types.Sym {
+func promotedWrapperSym(target *Package, wrapper, wrappee *types.Type, msym *types.Sym, offset int64) *types.Sym {
 	if msym.IsBlank() {
 		base.Fatalf("blank method name")
 	}
@@ -1212,7 +1216,7 @@ func promotedWrapperSym(wrapper, wrappee *types.Type, msym *types.Sym, offset in
 		recvMode = "n"
 	}
 
-	wrappeeMethod := ReceiverMethodSym(wrappee, msym)
+	wrappeeMethod := ReceiverMethodSym(target, wrappee, msym)
 
 	var b bytes.Buffer
 	fmt.Fprintf(&b, ".embed.%d%s.%d.", derefs, recvMode, offset)
@@ -1228,7 +1232,7 @@ func promotedWrapperSym(wrapper, wrappee *types.Type, msym *types.Sym, offset in
 // ReceiverMethodSymSuffix is like ReceiverMethodSym, but allows attaching a
 // distinguisher suffix. To avoid collisions, the suffix must not start with a
 // letter, number, or period.
-func ReceiverMethodSymSuffix(recv *types.Type, msym *types.Sym, suffix string) *types.Sym {
+func ReceiverMethodSymSuffix(target *Package, recv *types.Type, msym *types.Sym, suffix string) *types.Sym {
 	if msym.IsBlank() {
 		base.Fatalf("blank method name")
 	}
@@ -1244,7 +1248,7 @@ func ReceiverMethodSymSuffix(recv *types.Type, msym *types.Sym, suffix string) *
 	// Find the package the receiver type appeared in. For
 	// anonymous receiver types (i.e., anonymous structs with
 	// embedded fields), use the "go" pseudo-package instead.
-	rpkg := Pkgs.Go
+	rpkg := target.GoPkg
 	if rsym != nil {
 		rpkg = rsym.Pkg
 	}
@@ -1277,7 +1281,7 @@ func ReceiverMethodSymSuffix(recv *types.Type, msym *types.Sym, suffix string) *
 // named in local symbol name, as well as the types.Sym of the receiver.
 //
 // TODO(prattmic): this does not attempt to handle method suffixes (wrappers).
-func LookupMethodSelector(pkg *types.Pkg, name string) (typ, meth *types.Sym, err error) {
+func LookupMethodSelector(pkg, localPkg *types.Pkg, name string) (typ, meth *types.Sym, err error) {
 	typeName, methName := splitType(name)
 	if typeName == "" {
 		return nil, nil, fmt.Errorf("%s doesn't contain type split", name)
@@ -1290,7 +1294,7 @@ func LookupMethodSelector(pkg *types.Pkg, name string) (typ, meth *types.Sym, er
 	}
 
 	typ = pkg.Lookup(typeName)
-	meth = pkg.Selector(methName)
+	meth = pkg.Selector(localPkg, methName)
 	return typ, meth, nil
 }
 

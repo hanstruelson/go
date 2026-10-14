@@ -36,6 +36,7 @@ func main() {
 	fmt.Fprintln(&b, "package typecheck")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, `import (`)
+	fmt.Fprintln(&b, `      "cmd/compile/internal/ir"`)
 	fmt.Fprintln(&b, `      "cmd/compile/internal/types"`)
 	fmt.Fprintln(&b, `      "cmd/internal/src"`)
 	fmt.Fprintln(&b, `)`)
@@ -124,7 +125,7 @@ func mkbuiltin(w io.Writer, name string) {
 	fmt.Fprintln(w, "}")
 
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "func %sTypes() []*types.Type {\n", name)
+	fmt.Fprintf(w, "func %sTypes(target *ir.Package) []*types.Type {\n", name)
 	fmt.Fprintf(w, "var typs [%d]*types.Type\n", len(interner.typs))
 	for i, typ := range interner.typs {
 		fmt.Fprintf(w, "typs[%d] = %s\n", i, typ)
@@ -164,16 +165,16 @@ func (i *typeInterner) mktype(t ast.Expr) string {
 	case *ast.Ident:
 		switch t.Name {
 		case "byte":
-			return "types.ByteType"
+			return "target.ByteType"
 		case "rune":
-			return "types.RuneType"
+			return "target.RuneType"
 		}
-		return fmt.Sprintf("types.Types[types.T%s]", strings.ToUpper(t.Name))
+		return fmt.Sprintf("target.Type(types.T%s)", strings.ToUpper(t.Name))
 	case *ast.SelectorExpr:
 		if t.X.(*ast.Ident).Name != "unsafe" || t.Sel.Name != "Pointer" {
 			log.Fatalf("unhandled type: %#v", t)
 		}
-		return "types.Types[types.TUNSAFEPTR]"
+		return "target.Type(types.TUNSAFEPTR)"
 
 	case *ast.ArrayType:
 		if t.Len == nil {
@@ -195,7 +196,7 @@ func (i *typeInterner) mktype(t ast.Expr) string {
 		if len(t.Methods.List) != 0 {
 			log.Fatal("non-empty interfaces unsupported")
 		}
-		return "types.Types[types.TINTER]"
+		return "target.Type(types.TINTER)"
 	case *ast.MapType:
 		return fmt.Sprintf("types.NewMap(%s, %s)", i.subtype(t.Key), i.subtype(t.Value))
 	case *ast.StarExpr:
@@ -222,7 +223,7 @@ func (i *typeInterner) fields(fl *ast.FieldList, keepNames bool) string {
 		} else {
 			for _, name := range f.Names {
 				if keepNames {
-					res = append(res, fmt.Sprintf("types.NewField(src.NoXPos, Lookup(%q), %s)", name.Name, typ))
+					res = append(res, fmt.Sprintf("types.NewField(src.NoXPos, typs[6].Sym().Pkg.Lookup(%q), %s)", name.Name, typ))
 				} else {
 					res = append(res, typ)
 				}

@@ -138,7 +138,7 @@ func (b *batch) walk(s walkState, roots []*location, walkgen uint32, enqueue fun
 	// we don't have to worry about infinite negative cycles since
 	// we bound intermediate dereference counts to 0.
 
-	diagnose := base.Flag.LowerM >= 2 || logopt.Enabled()
+	diagnose := b.target.Flags.LowerM >= 2 || logopt.Enabled()
 	var paths map[*location]*walkPath
 	if diagnose {
 		paths = make(map[*location]*walkPath)
@@ -186,7 +186,7 @@ func (b *batch) walk(s walkState, roots []*location, walkgen uint32, enqueue fun
 			// allocated.
 			if s.outlives(b, l) {
 				if !l.hasAttr(attrEscapes) && diagnose {
-					if base.Flag.LowerM >= 2 {
+					if b.target.Flags.LowerM >= 2 {
 						fmt.Printf("%s: %v escapes to heap in %v:\n", base.FmtPos(l.n.Pos()), l.n, ir.FuncName(l.curfn))
 					}
 					root := walkRoot(l, paths)
@@ -218,7 +218,7 @@ func (b *batch) walk(s walkState, roots []*location, walkgen uint32, enqueue fun
 			if s.outlives(b, l) {
 				if !l.hasAttr(attrEscapes) && diagnose {
 					root := walkRoot(l, paths)
-					if base.Flag.LowerM >= 2 {
+					if b.target.Flags.LowerM >= 2 {
 						fmt.Printf("%s: parameter %v leaks to %s for %v with derefs=%d:\n", base.FmtPos(l.n.Pos()), l.n, b.explainLoc(root), ir.FuncName(l.curfn), derefs)
 					}
 					explanation := b.explainPath(root, l, paths[l])
@@ -290,7 +290,7 @@ func (b *batch) explainPath(root, src *location, path *walkPath) []*logopt.Logge
 	for ; path != nil; path = path.next {
 		// Prevent infinite loop.
 		if visited[src] {
-			if base.Flag.LowerM >= 2 {
+			if b.target.Flags.LowerM >= 2 {
 				fmt.Printf("%s:   warning: truncated explanation due to assignment cycle; see golang.org/issue/35518\n", pos)
 			}
 			return explanation
@@ -318,7 +318,7 @@ func (b *batch) explainFlow(pos string, dst, srcloc *location, derefs int, notes
 	if derefs >= 0 {
 		ops = strings.Repeat("*", derefs)
 	}
-	print := base.Flag.LowerM >= 2
+	print := b.target.Flags.LowerM >= 2
 
 	flow := fmt.Sprintf("   flow: %s ← %s%v:", b.explainLoc(dst), ops, b.explainLoc(srcloc))
 	if print {

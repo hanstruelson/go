@@ -16,24 +16,6 @@ import (
 	"cmd/internal/hash"
 )
 
-// BuiltinPkg is a fake package that declares the universe block.
-var BuiltinPkg *Pkg
-
-// LocalPkg is the package being compiled.
-var LocalPkg *Pkg
-
-// UnsafePkg is package unsafe.
-var UnsafePkg *Pkg
-
-// BlankSym is the blank (_) symbol.
-var BlankSym *Sym
-
-// numImport tracks how often a package with a given name is imported.
-// It is used to provide a better error message (by using the package
-// path to disambiguate) if a package that appears multiple times with
-// the same name appears in an error message.
-var NumImport = make(map[string]int)
-
 // fmtMode represents the kind of printing being done.
 // The default is regular Go syntax (fmtGo).
 // fmtDebug is like fmtGo but for debugging dumps and prints the type kind too.
@@ -131,14 +113,10 @@ func pkgqual(pkg *Pkg, verb rune, mode fmtMode) string {
 	if verb != 'S' {
 		switch mode {
 		case fmtGo: // This is for the user
-			if pkg == BuiltinPkg || pkg == LocalPkg {
+			if pkg.Prefix == "go:builtin" || pkg.Local {
 				return ""
 			}
 
-			// If the name was used by multiple packages, display the full path,
-			if pkg.Name != "" && NumImport[pkg.Name] > 1 {
-				return strconv.Quote(pkg.Path)
-			}
 			return pkg.Name
 
 		case fmtDebug:

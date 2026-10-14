@@ -688,7 +688,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		for i := 0; i < len(args); i++ {
 			a := args[i]
 			// Offset by size of the saved LR slot.
-			addr := ssagen.SpillSlotAddr(a, arm64.REGSP, base.Ctxt.Arch.FixedFrameSize)
+			addr := ssagen.SpillSlotAddr(a, arm64.REGSP, s.Target().Ctxt.Arch.FixedFrameSize)
 			// Look for double-register operations if we can.
 			if i < len(args)-1 {
 				b := args[i+1]
@@ -1938,12 +1938,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
-		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+		p.To.Sym = s.Target().Symbols.GCWriteBarrier[v.AuxInt-1]
 	case ssaop.OpARM64LoweredMemEq:
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Memequal
+		p.To.Sym = s.Target().Symbols.Memequal
 
 	case ssaop.OpARM64LoweredPanicBoundsRR, ssaop.OpARM64LoweredPanicBoundsRC, ssaop.OpARM64LoweredPanicBoundsCR, ssaop.OpARM64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
@@ -2028,7 +2028,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.PanicBounds
+		p.To.Sym = s.Target().Symbols.PanicBounds
 
 	case ssaop.OpARM64LoweredNilCheck:
 		// Issue a load which will fault if arg is nil.
@@ -2041,7 +2041,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		if logopt.Enabled() {
 			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
-		if base.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Line==1 in generated wrappers
+		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Line==1 in generated wrappers
 			base.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpARM64Equal,
@@ -2086,7 +2086,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// caller's SP is FixedFrameSize below the address of the first arg
 		p := s.Prog(arm64.AMOVD)
 		p.From.Type = obj.TYPE_ADDR
-		p.From.Offset = -base.Ctxt.Arch.FixedFrameSize
+		p.From.Offset = -s.Target().Ctxt.Arch.FixedFrameSize
 		p.From.Name = obj.NAME_PARAM
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()

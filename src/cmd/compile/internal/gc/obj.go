@@ -12,7 +12,6 @@ import (
 	"cmd/compile/internal/pkginit"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/staticdata"
-	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/archive"
 	"cmd/internal/bio"
@@ -42,39 +41,41 @@ const (
 	modeLinkerObj
 )
 
-func dumpexport() {
-	if base.Flag.LinkObj == "" {
+func dumpexport(frontend *noder.Context) {
+	target := frontend.Target
+	if target.Flags.LinkObj == "" {
 		return
 	}
-	dumpobj1(base.Flag.LowerO, modeCompilerObj)
-	if base.Flag.ExportFD > 0 {
-		notifyExport()
+	dumpobj1(frontend, target.Flags.LowerO, modeCompilerObj)
+	if target.Flags.ExportFD > 0 {
+		notifyExport(target.Flags.ExportFD)
 	}
 }
 
-func notifyExport() {
-	f := os.NewFile(uintptr(base.Flag.ExportFD), "exportfd")
+func notifyExport(exportFD int) {
+	f := os.NewFile(uintptr(exportFD), "exportfd")
 	if _, err := f.Write([]byte{'\n'}); err != nil {
 		base.FlushErrors()
-		fmt.Printf("can't write to export fd %d: %v\n", base.Flag.ExportFD, err)
+		fmt.Printf("can't write to export fd %d: %v\n", exportFD, err)
 		base.ErrorExit()
 	}
 	if err := f.Close(); err != nil {
 		base.FlushErrors()
-		fmt.Printf("can't close export fd %d: %v\n", base.Flag.ExportFD, err)
+		fmt.Printf("can't close export fd %d: %v\n", exportFD, err)
 		base.ErrorExit()
 	}
 }
 
-func dumpobj() {
-	if base.Flag.LinkObj == "" {
-		dumpobj1(base.Flag.LowerO, modeCompilerObj|modeLinkerObj)
+func dumpobj(frontend *noder.Context) {
+	target := frontend.Target
+	if target.Flags.LinkObj == "" {
+		dumpobj1(frontend, target.Flags.LowerO, modeCompilerObj|modeLinkerObj)
 		return
 	}
-	dumpobj1(base.Flag.LinkObj, modeLinkerObj)
+	dumpobj1(frontend, target.Flags.LinkObj, modeLinkerObj)
 }
 
-func dumpobj1(outfile string, mode int) {
+func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 	bout, err := bio.Create(outfile)
 	if err != nil {
 		base.FlushErrors()
@@ -86,12 +87,12 @@ func dumpobj1(outfile string, mode int) {
 
 	if mode&modeCompilerObj != 0 {
 		start := startArchiveEntry(bout)
-		dumpCompilerObj(bout)
+		dumpCompilerObj(frontend, bout)
 		finishArchiveEntry(bout, start, "__.PKGDEF")
 	}
 	if mode&modeLinkerObj != 0 {
 		start := startArchiveEntry(bout)
-		dumpLinkerObj(bout)
+		dumpLinkerObj(frontend.Target, bout)
 		finishArchiveEntry(bout, start, "_go_.o")
 	}
 
@@ -102,12 +103,12 @@ func dumpobj1(outfile string, mode int) {
 	}
 }
 
-func printObjHeader(bout *bio.Writer) {
+func printObjHeader(target *ir.Package, bout *bio.Writer) {
 	bout.WriteString(objabi.HeaderString())
-	if base.Flag.BuildID != "" {
-		fmt.Fprintf(bout, "build id %q\n", base.Flag.BuildID)
+	if target.Flags.BuildID != "" {
+		fmt.Fprintf(bout, "build id %q\n", target.Flags.BuildID)
 	}
-	if types.LocalPkg.Name == "main" {
+	if target.LocalPkg.Name == "main" {
 		fmt.Fprintf(bout, "main\n")
 	}
 	fmt.Fprintf(bout, "\n") // header ends with blank line
@@ -134,34 +135,34 @@ func finishArchiveEntry(bout *bio.Writer, start int64, name string) {
 	bout.MustSeek(start+size+(size&1), 0)
 }
 
-func dumpCompilerObj(bout *bio.Writer) {
-	printObjHeader(bout)
-	noder.WriteExports(bout)
+func dumpCompilerObj(frontend *noder.Context, bout *bio.Writer) {
+	printObjHeader(frontend.Target, bout)
+	noder.WriteExports(frontend, bout)
 }
 
-func dumpdata() {
-	reflectdata.WriteGCSymbols()
-	reflectdata.WritePluginTable()
-	dumpembeds()
+func dumpdata(target *ir.Package) {
+	reflectdata.WriteGCSymbols(target)
+	reflectdata.WritePluginTable(target)
+	dumpembeds(target)
 
-	if reflectdata.ZeroSize > 0 {
+	if target.ZeroSize > 0 {
 		zero := base.PkgLinksym("go:map", "zero", obj.ABI0)
-		objw.Global(zero, int32(reflectdata.ZeroSize), obj.DUPOK|obj.RODATA)
+		objw.Global(target.Ctxt, zero, int32(target.ZeroSize), obj.DUPOK|obj.RODATA)
 		zero.Set(obj.AttrStatic, true)
 	}
 
-	staticdata.WriteFuncSyms()
-	addGCLocals()
+	staticdata.WriteFuncSyms(target)
+	addGCLocals(target)
 }
 
-func dumpLinkerObj(bout *bio.Writer) {
-	printObjHeader(bout)
+func dumpLinkerObj(target *ir.Package, bout *bio.Writer) {
+	printObjHeader(target, bout)
 
-	if len(typecheck.Target.CgoPragmas) != 0 {
+	if len(target.CgoPragmas) != 0 {
 		// write empty export section; must be before cgo section
 		fmt.Fprintf(bout, "\n$$\n\n$$\n\n")
 		fmt.Fprintf(bout, "\n$$  // cgo\n")
-		if err := json.NewEncoder(bout).Encode(typecheck.Target.CgoPragmas); err != nil {
+		if err := json.NewEncoder(bout).Encode(target.CgoPragmas); err != nil {
 			base.Fatalf("serializing pragcgobuf: %v", err)
 		}
 		fmt.Fprintf(bout, "\n$$\n\n")
@@ -169,34 +170,34 @@ func dumpLinkerObj(bout *bio.Writer) {
 
 	fmt.Fprintf(bout, "\n!\n")
 
-	obj.WriteObjFile(base.Ctxt, bout)
+	obj.WriteObjFile(target.Ctxt, bout)
 }
 
-func dumpGlobal(n *ir.Name) {
+func dumpGlobal(target *ir.Package, n *ir.Name) {
 	if n.Type() == nil {
 		base.Fatalf("external %v nil type\n", n)
 	}
 	if n.Class == ir.PFUNC {
 		return
 	}
-	if n.Sym().Pkg != types.LocalPkg {
+	if n.Sym().Pkg != target.LocalPkg {
 		return
 	}
 	types.CalcSize(n.Type())
-	ggloblnod(n)
+	ggloblnod(target, n)
 	if n.CoverageAuxVar() || n.Linksym().Static() {
 		return
 	}
-	base.Ctxt.DwarfGlobal(types.TypeSymName(n.Type()), n.Linksym())
+	target.Ctxt.DwarfGlobal(types.TypeSymName(n.Type()), n.Linksym())
 }
 
-func dumpGlobalConst(n *ir.Name) {
+func dumpGlobalConst(target *ir.Package, n *ir.Name) {
 	// only export typed constants
 	t := n.Type()
 	if t == nil {
 		return
 	}
-	if n.Sym().Pkg != types.LocalPkg {
+	if n.Sym().Pkg != target.LocalPkg {
 		return
 	}
 	// only export integer constants for now
@@ -206,59 +207,59 @@ func dumpGlobalConst(n *ir.Name) {
 	v := n.Val()
 	if t.IsUntyped() {
 		// Export untyped integers as int (if they fit).
-		t = types.Types[types.TINT]
+		t = target.Type(types.TINT)
 		if ir.ConstOverflow(v, t) {
 			return
 		}
 	} else {
 		// If the type of the constant is an instantiated generic, we need to emit
 		// that type so the linker knows about it. See issue 51245.
-		_ = reflectdata.TypeLinksym(t)
+		_ = reflectdata.TypeLinksym(target, t)
 	}
-	base.Ctxt.DwarfIntConst(n.Sym().Name, types.TypeSymName(t), ir.IntVal(t, v))
+	target.Ctxt.DwarfIntConst(n.Sym().Name, types.TypeSymName(t), ir.IntVal(t, v))
 }
 
 // addGCLocals adds gcargs, gclocals, gcregs, and stack object symbols to Ctxt.Data.
 //
 // This is done during the sequential phase after compilation, since
 // global symbols can't be declared during parallel compilation.
-func addGCLocals() {
-	for _, s := range base.Ctxt.Text {
+func addGCLocals(target *ir.Package) {
+	for _, s := range target.Ctxt.Text {
 		fn := s.Func()
 		if fn == nil {
 			continue
 		}
 		for _, gcsym := range []*obj.LSym{fn.GCArgs, fn.GCLocals} {
 			if gcsym != nil && !gcsym.OnList() {
-				objw.Global(gcsym, int32(len(gcsym.P)), obj.RODATA|obj.DUPOK)
+				objw.Global(target.Ctxt, gcsym, int32(len(gcsym.P)), obj.RODATA|obj.DUPOK)
 			}
 		}
 		if x := fn.StackObjects; x != nil {
-			objw.Global(x, int32(len(x.P)), obj.RODATA)
+			objw.Global(target.Ctxt, x, int32(len(x.P)), obj.RODATA)
 			x.Set(obj.AttrStatic, true)
 		}
 		if x := fn.OpenCodedDeferInfo; x != nil {
-			objw.Global(x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
+			objw.Global(target.Ctxt, x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
 		}
 		if x := fn.ArgInfo; x != nil {
-			objw.Global(x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
+			objw.Global(target.Ctxt, x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
 			x.Set(obj.AttrStatic, true)
 		}
 		if x := fn.ArgLiveInfo; x != nil {
-			objw.Global(x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
+			objw.Global(target.Ctxt, x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
 			x.Set(obj.AttrStatic, true)
 		}
 		if x := fn.WrapInfo; x != nil && !x.OnList() {
-			objw.Global(x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
+			objw.Global(target.Ctxt, x, int32(len(x.P)), obj.RODATA|obj.DUPOK)
 			x.Set(obj.AttrStatic, true)
 		}
 		for _, jt := range fn.JumpTables {
-			objw.Global(jt.Sym, int32(len(jt.Targets)*base.Ctxt.Arch.PtrSize), obj.RODATA)
+			objw.Global(target.Ctxt, jt.Sym, int32(len(jt.Targets)*target.Ctxt.Arch.PtrSize), obj.RODATA)
 		}
 	}
 }
 
-func ggloblnod(nam *ir.Name) {
+func ggloblnod(target *ir.Package, nam *ir.Name) {
 	s := nam.Linksym()
 
 	// main_inittask and runtime_inittask in package runtime (and in
@@ -266,12 +267,12 @@ func ggloblnod(nam *ir.Name) {
 	// linknamed variables pointing to the compiler's generated
 	// .inittask symbol. The real symbol was already written out in
 	// pkginit.Task, so we need to avoid writing them out a second time
-	// here, otherwise base.Ctxt.Globl will fail.
+	// here, otherwise target.Ctxt.Globl will fail.
 	if strings.HasSuffix(s.Name, "..inittask") && s.OnList() {
 		return
 	}
 
-	s.Gotype = reflectdata.TypeLinksym(nam.Type())
+	s.Gotype = reflectdata.TypeLinksym(target, nam.Type())
 	flags := 0
 	if nam.Readonly() {
 		flags = obj.RODATA
@@ -289,14 +290,14 @@ func ggloblnod(nam *ir.Name) {
 	}
 
 	// We've skipped linkname'd globals's instrument, so we can skip them here as well.
-	if base.Flag.ASan && linkname == "" && pkginit.InstrumentGlobalsMap[name] != nil {
+	if target.Flags.ASan && linkname == "" && target.InstrumentedGlobalsMap[name] != nil {
 		// Write the new size of instrumented global variables that have
 		// trailing redzones into object file.
 		rzSize := pkginit.GetRedzoneSizeForGlobal(size)
 		sizeWithRZ := rzSize + size
-		base.Ctxt.Globl(s, sizeWithRZ, flags)
+		target.Ctxt.Globl(s, sizeWithRZ, flags)
 	} else {
-		base.Ctxt.Globl(s, size, flags)
+		target.Ctxt.Globl(s, size, flags)
 	}
 	if nam.Libfuzzer8BitCounter() {
 		s.Type = objabi.SLIBFUZZER_8BIT_COUNTER
@@ -313,8 +314,8 @@ func ggloblnod(nam *ir.Name) {
 	}
 }
 
-func dumpembeds() {
-	for _, v := range typecheck.Target.Embeds {
-		staticdata.WriteEmbed(v)
+func dumpembeds(target *ir.Package) {
+	for _, v := range target.Embeds {
+		staticdata.WriteEmbed(target, v)
 	}
 }

@@ -15,8 +15,6 @@ import (
 	"cmd/compile/internal/midway"
 	"cmd/compile/internal/rangefunc"
 	"cmd/compile/internal/syntax"
-	"cmd/compile/internal/typecheck"
-	"cmd/compile/internal/types"
 	"cmd/compile/internal/types2"
 	"cmd/internal/src"
 )
@@ -26,7 +24,7 @@ var versionErrorRx = regexp.MustCompile(`requires go[0-9]+\.[0-9]+ or later`)
 // checkFiles configures and runs the types2 checker on the given
 // parsed source files and then returns the result.
 // The map result value indicates which closures are generated from the bodies of range function loops.
-func checkFiles(m posMap, noders []*noder) (*types2.Package, *types2.Info, map[*syntax.FuncLit]bool) {
+func checkFiles(compileCtx *Context, m posMap, noders []*noder) (*types2.Package, *types2.Info, map[*syntax.FuncLit]bool) {
 	if base.SyntaxErrors() != 0 {
 		base.ErrorExit()
 	}
@@ -53,17 +51,18 @@ recheck:
 	// typechecking
 	ctxt := types2.NewContext()
 	importer := gcimports{
-		ctxt:     ctxt,
-		packages: make(map[string]*types2.Package),
+		compileCtx: compileCtx,
+		ctxt:       ctxt,
+		packages:   make(map[string]*types2.Package),
 	}
 	conf := types2.Config{
 		Context:            ctxt,
-		GoVersion:          base.Flag.Lang,
+		GoVersion:          compileCtx.Target.Flags.Lang,
 		IgnoreBranchErrors: true, // parser already checked via syntax.CheckBranches mode
 		Importer:           &importer,
 		Sizes:              types2.SizesFor("gc", buildcfg.GOARCH),
 	}
-	if base.Flag.ErrorURL {
+	if compileCtx.Target.Flags.ErrorURL {
 		conf.ErrorURL = " [go.dev/e/%s]"
 	}
 	info := &types2.Info{
@@ -91,13 +90,13 @@ recheck:
 				msg = fmt.Sprintf("%s (file declares //go:build %s)", msg, fileVersion)
 			} else {
 				// Otherwise, hint at the -lang setting.
-				msg = fmt.Sprintf("%s (-lang was set to %s; check go.mod)", msg, base.Flag.Lang)
+				msg = fmt.Sprintf("%s (-lang was set to %s; check go.mod)", msg, compileCtx.Target.Flags.Lang)
 			}
 		}
 		base.ErrorfAt(m.makeXPos(terr.Pos), terr.Code, "%s", msg)
 	}
 
-	pkg, err := conf.Check(base.Ctxt.Pkgpath, files, info)
+	pkg, err := conf.Check(compileCtx.Target.Ctxt.Pkgpath, files, info)
 	base.ExitIfErrors()
 	if err != nil {
 		base.FatalfAt(src.NoXPos, "conf.Check error: %v", err)
@@ -177,31 +176,31 @@ recheck:
 	}
 	base.ExitIfErrors()
 
-	if len(base.Debug.AstDump) > 0 {
-		dumpSyntax(pkg, info, files, "checked")
+	if len(compileCtx.Target.Debug.AstDump) > 0 {
+		dumpSyntax(compileCtx, pkg, info, files, "checked")
 	}
 
 	if buildcfg.Experiment.SIMD && !didMidway {
 		didMidway = true
 		// Perform midway transformation on AST directly
-		if midway.RewriteWrapper(pkg, info, files) {
+		if midway.RewriteWrapper(compileCtx.Target, pkg, info, files) {
 			// midway made changes; type checking must be repeated.
-			if len(base.Debug.AstDump) > 0 {
+			if len(compileCtx.Target.Debug.AstDump) > 0 {
 				// TODO how should this interact with -W and textual dumps
-				dumpSyntax(pkg, info, files, "midway before recheck")
+				dumpSyntax(compileCtx, pkg, info, files, "midway before recheck")
 			}
 			// necessary to reset type checking
-			for _, p := range types.PkgMap() {
+			for _, p := range compileCtx.Target.Imports {
 				p.Direct = false
 			}
 			// necessary to reset type checking
-			typecheck.Target.Imports = nil
+			compileCtx.Target.Imports = nil
 			goto recheck
 		}
 	}
 
-	if len(base.Debug.AstDump) > 0 {
-		dumpSyntax(pkg, info, files, "midway after recheck")
+	if len(compileCtx.Target.Debug.AstDump) > 0 {
+		dumpSyntax(compileCtx, pkg, info, files, "midway after recheck")
 	}
 
 	// Rewrite range over function to explicit function calls
@@ -211,21 +210,21 @@ recheck:
 	// If we do the rewrite in the back end, like between typecheck and walk,
 	// then the new implicit closure will not have a unified IR inline body,
 	// and bodyReaderFor will fail.
-	rangeInfo := rangefunc.Rewrite(pkg, info, files)
+	rangeInfo := rangefunc.Rewrite(compileCtx.Target, pkg, info, files)
 
-	if len(base.Debug.AstDump) > 0 {
-		dumpSyntax(pkg, info, files, "rangefunc")
+	if len(compileCtx.Target.Debug.AstDump) > 0 {
+		dumpSyntax(compileCtx, pkg, info, files, "rangefunc")
 	}
 
 	return pkg, info, rangeInfo
 }
 
-func dumpSyntax(pkg *types2.Package, info *types2.Info, files []*syntax.File, phase string) {
+func dumpSyntax(ctx *Context, pkg *types2.Package, info *types2.Info, files []*syntax.File, phase string) {
 	for _, file := range files {
 		for _, decl := range file.DeclList {
 			if fn, ok := decl.(*syntax.FuncDecl); ok {
-				if MatchASTDump(fn) {
-					DumpNodeHTML(pkg, file, info, fn, phase, fn)
+				if MatchASTDump(ctx.Target, ctx.Target.Ctxt.Pkgpath, fn) {
+					DumpNodeHTML(ctx, pkg, file, info, fn, phase, fn)
 				}
 			}
 		}

@@ -7,7 +7,6 @@ package escape
 import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
-	"cmd/compile/internal/types"
 )
 
 func isSliceSelfAssign(dst, src ir.Node) bool {
@@ -170,7 +169,7 @@ func mayAffectMemory(n ir.Node) bool {
 
 // HeapAllocReason returns the reason the given Node must be heap
 // allocated, or the empty string if it doesn't.
-func HeapAllocReason(n ir.Node) string {
+func HeapAllocReason(target *ir.Package, n ir.Node) string {
 	if n == nil || n.Type() == nil {
 		return ""
 	}
@@ -183,24 +182,24 @@ func HeapAllocReason(n ir.Node) string {
 		}
 	}
 
-	if n.Type().Size() > ir.MaxStackVarSize {
+	if n.Type().Size() > target.StackVarSizeLimit() {
 		return "too large for stack"
 	}
-	if n.Type().Alignment() > int64(types.PtrSize) {
+	if n.Type().Alignment() > int64(target.PtrSize) {
 		return "too aligned for stack"
 	}
 
-	if (n.Op() == ir.ONEW || n.Op() == ir.OPTRLIT) && n.Type().Elem().Size() > ir.MaxImplicitStackVarSize {
+	if (n.Op() == ir.ONEW || n.Op() == ir.OPTRLIT) && n.Type().Elem().Size() > target.ImplicitStackVarSizeLimit() {
 		return "too large for stack"
 	}
-	if (n.Op() == ir.ONEW || n.Op() == ir.OPTRLIT) && n.Type().Elem().Alignment() > int64(types.PtrSize) {
+	if (n.Op() == ir.ONEW || n.Op() == ir.OPTRLIT) && n.Type().Elem().Alignment() > int64(target.PtrSize) {
 		return "too aligned for stack"
 	}
 
-	if n.Op() == ir.OCLOSURE && typecheck.ClosureType(n.(*ir.ClosureExpr)).Size() > ir.MaxImplicitStackVarSize {
+	if n.Op() == ir.OCLOSURE && typecheck.ClosureType(n.(*ir.ClosureExpr)).Size() > target.ImplicitStackVarSizeLimit() {
 		return "too large for stack"
 	}
-	if n.Op() == ir.OMETHVALUE && typecheck.MethodValueType(n.(*ir.SelectorExpr)).Size() > ir.MaxImplicitStackVarSize {
+	if n.Op() == ir.OMETHVALUE && typecheck.MethodValueType(target, n.(*ir.SelectorExpr)).Size() > target.ImplicitStackVarSizeLimit() {
 		return "too large for stack"
 	}
 
@@ -234,7 +233,7 @@ func HeapAllocReason(n ir.Node) string {
 			// Implementation is in ../walk/builtin.go:walkMakeSlice.
 			return ""
 		}
-		if ir.Int64Val(r) > ir.MaxImplicitStackVarSize/elem.Size() {
+		if ir.Int64Val(r) > target.ImplicitStackVarSizeLimit()/elem.Size() {
 			return "too large for stack"
 		}
 	}

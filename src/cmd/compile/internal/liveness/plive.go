@@ -299,7 +299,7 @@ func (lv *Liveness) valueEffects(v *ssa.Value) (int32, liveEffect) {
 		}
 	}
 
-	if n.Class == ir.PPARAM && !n.Addrtaken() && n.Type().Size() > int64(types.PtrSize) {
+	if n.Class == ir.PPARAM && !n.Addrtaken() && n.Type().Size() > int64(lv.fn.Target.PtrSize) {
 		// Only aggregate-typed arguments that are not address-taken can be
 		// partially live.
 		lv.partLiveArgs[n] = true
@@ -458,7 +458,7 @@ func (lv *Liveness) blockEffects(b *ssa.Block) *blockEffects {
 // argument is a slice of *Nodes.
 func (lv *Liveness) pointerMap(liveout bitvec.BitVec, vars []*ir.Name, args, locals bitvec.BitVec) {
 	var slotsSeen map[int64]*ir.Name
-	checkForDuplicateSlots := base.Debug.MergeLocals != 0
+	checkForDuplicateSlots := lv.fn.Target.Debug.MergeLocals != 0
 	if checkForDuplicateSlots {
 		slotsSeen = make(map[int64]*ir.Name)
 	}
@@ -474,7 +474,7 @@ func (lv *Liveness) pointerMap(liveout bitvec.BitVec, vars []*ir.Name, args, loc
 				if node.FrameOffset() < 0 {
 					lv.f.Fatalf("Node %v has frameoffset %d\n", node.Sym().Name, node.FrameOffset())
 				}
-				typebits.SetNoCheck(node.Type(), node.FrameOffset(), args)
+				typebits.SetNoCheck(lv.fn.Target.PtrSize, node.Type(), node.FrameOffset(), args)
 				break
 			}
 			fallthrough // PPARAMOUT in registers acts memory-allocates like an AUTO
@@ -485,7 +485,7 @@ func (lv *Liveness) pointerMap(liveout bitvec.BitVec, vars []*ir.Name, args, loc
 				}
 				slotsSeen[node.FrameOffset()] = node
 			}
-			typebits.Set(node.Type(), node.FrameOffset()+lv.stkptrsize, locals)
+			typebits.Set(lv.fn.Target.PtrSize, node.Type(), node.FrameOffset()+lv.stkptrsize, locals)
 		}
 	}
 }
@@ -502,7 +502,7 @@ func IsUnsafe(f *ssa.Func) bool {
 	// go:nosplit functions are similar. Since safe points used to
 	// be coupled with stack checks, go:nosplit often actually
 	// means "no safe points in this function".
-	return base.Flag.CompilingRuntime || f.NoSplit
+	return f.Frontend().Func().Target.Flags.CompilingRuntime || f.NoSplit
 }
 
 // markUnsafePoints finds unsafe points and computes lv.unsafePoints.
@@ -591,13 +591,13 @@ func (lv *Liveness) markUnsafePoints() {
 			for {
 				if v.MemoryArg() != nil {
 					// Single instruction to load (and maybe compare) the write barrier flag.
-					if sym, ok := v.Aux.(*obj.LSym); ok && sym == ir.Syms.WriteBarrier {
+					if sym, ok := v.Aux.(*obj.LSym); ok && sym == lv.fn.Target.Symbols.WriteBarrier {
 						load = v
 						break
 					}
 					// Some architectures have to materialize the address separate from
 					// the load.
-					if sym, ok := v.Args[0].Aux.(*obj.LSym); ok && sym == ir.Syms.WriteBarrier {
+					if sym, ok := v.Args[0].Aux.(*obj.LSym); ok && sym == lv.fn.Target.Symbols.WriteBarrier {
 						load = v
 						break
 					}
@@ -624,7 +624,7 @@ func (lv *Liveness) markUnsafePoints() {
 									}
 									phis[a] = false
 									progress = true
-								} else if sym, ok := a.Aux.(*obj.LSym); !ok || sym != ir.Syms.WriteBarrier {
+								} else if sym, ok := a.Aux.(*obj.LSym); !ok || sym != lv.fn.Target.Symbols.WriteBarrier {
 									v.Fatalf("load of write barrier flag not from correct global: %s", v.LongString())
 								}
 							}
@@ -690,7 +690,7 @@ func (lv *Liveness) hasStackMap(v *ssa.Value) bool {
 	// wbZero and wbCopy are write barriers and
 	// deeply non-preemptible. They are unsafe points and
 	// hence should not have liveness maps.
-	if sym, ok := v.Aux.(*ssa.AuxCall); ok && (sym.Fn == ir.Syms.WBZero || sym.Fn == ir.Syms.WBMove) {
+	if sym, ok := v.Aux.(*ssa.AuxCall); ok && (sym.Fn == lv.fn.Target.Symbols.WBZero || sym.Fn == lv.fn.Target.Symbols.WBMove) {
 		return false
 	}
 	return true
@@ -978,7 +978,7 @@ func (lv *Liveness) compact(b *ssa.Block) {
 func (lv *Liveness) enableClobber() {
 	// The clobberdead experiment inserts code to clobber pointer slots in all
 	// the dead variables (locals and args) at every synchronous safepoint.
-	if !base.Flag.ClobberDead {
+	if !lv.fn.Target.Flags.ClobberDead {
 		return
 	}
 	if lv.fn.Pragma&ir.CgoUnsafeArgs != 0 {
@@ -1111,7 +1111,7 @@ func clobberWalk(b *ssa.Block, v *ir.Name, offset int64, t *types.Type) {
 		// or, when isnilinter(t)==true:
 		// struct { Type *type; void *data; }
 		clobberPtr(b, v, offset)
-		clobberPtr(b, v, offset+int64(types.PtrSize))
+		clobberPtr(b, v, offset+int64(b.Func.Config.Target.PtrSize))
 
 	case types.TSLICE:
 		// struct { byte *array; int len; int cap; }
@@ -1139,7 +1139,7 @@ func clobberPtr(b *ssa.Block, v *ir.Name, offset int64) {
 }
 
 func (lv *Liveness) showlive(v *ssa.Value, live bitvec.BitVec) {
-	if base.Flag.Live == 0 || ir.FuncName(lv.fn) == "init" || strings.HasPrefix(ir.FuncName(lv.fn), ".") {
+	if lv.fn.Target.Flags.Live == 0 || ir.FuncName(lv.fn) == "init" || strings.HasPrefix(ir.FuncName(lv.fn), ".") {
 		return
 	}
 	if lv.fn.Wrapper() || lv.fn.Dupok() {
@@ -1395,13 +1395,13 @@ func (lv *Liveness) emit() (argsSym, liveSym *obj.LSym) {
 	// Temporary symbols for encoding bitmaps.
 	var argsSymTmp, liveSymTmp obj.LSym
 
-	args := bitvec.New(int32(maxArgs / int64(types.PtrSize)))
-	aoff := objw.Uint32(&argsSymTmp, 0, uint32(len(lv.stackMaps))) // number of bitmaps
-	aoff = objw.Uint32(&argsSymTmp, aoff, uint32(args.N))          // number of bits in each bitmap
+	args := bitvec.New(int32(maxArgs / int64(lv.fn.Target.PtrSize)))
+	aoff := objw.Uint32(lv.fn.Target.Ctxt, &argsSymTmp, 0, uint32(len(lv.stackMaps))) // number of bitmaps
+	aoff = objw.Uint32(lv.fn.Target.Ctxt, &argsSymTmp, aoff, uint32(args.N))          // number of bits in each bitmap
 
-	locals := bitvec.New(int32(maxLocals / int64(types.PtrSize)))
-	loff := objw.Uint32(&liveSymTmp, 0, uint32(len(lv.stackMaps))) // number of bitmaps
-	loff = objw.Uint32(&liveSymTmp, loff, uint32(locals.N))        // number of bits in each bitmap
+	locals := bitvec.New(int32(maxLocals / int64(lv.fn.Target.PtrSize)))
+	loff := objw.Uint32(lv.fn.Target.Ctxt, &liveSymTmp, 0, uint32(len(lv.stackMaps))) // number of bitmaps
+	loff = objw.Uint32(lv.fn.Target.Ctxt, &liveSymTmp, loff, uint32(locals.N))        // number of bits in each bitmap
 
 	// Check for overflow before serializing stackmaps
 	checkStackmapOverflow(args, len(lv.stackMaps), lv.fn.Pos())
@@ -1413,13 +1413,13 @@ func (lv *Liveness) emit() (argsSym, liveSym *obj.LSym) {
 
 		lv.pointerMap(live, lv.vars, args, locals)
 
-		aoff = objw.BitVec(&argsSymTmp, aoff, args)
-		loff = objw.BitVec(&liveSymTmp, loff, locals)
+		aoff = objw.BitVec(lv.fn.Target.Ctxt, &argsSymTmp, aoff, args)
+		loff = objw.BitVec(lv.fn.Target.Ctxt, &liveSymTmp, loff, locals)
 	}
 
 	// These symbols will be added to Ctxt.Data by addGCLocals
 	// after parallel compilation is done.
-	return base.Ctxt.GCLocalsSym(argsSymTmp.P), base.Ctxt.GCLocalsSym(liveSymTmp.P)
+	return lv.fn.Target.Ctxt.GCLocalsSym(argsSymTmp.P), lv.fn.Target.Ctxt.GCLocalsSym(liveSymTmp.P)
 }
 
 // Entry pointer for Compute analysis. Solves for the Compute of
@@ -1436,7 +1436,7 @@ func Compute(curfn *ir.Func, f *ssa.Func, stkptrsize int64, pp *objw.Progs, retL
 	lv.prologue()
 	lv.solve()
 	lv.epilogue()
-	if base.Flag.Live > 0 {
+	if curfn.Target.Flags.Live > 0 {
 		lv.showlive(nil, lv.stackMaps[0])
 		for _, b := range f.Blocks {
 			for _, val := range b.Values {
@@ -1446,7 +1446,7 @@ func Compute(curfn *ir.Func, f *ssa.Func, stkptrsize int64, pp *objw.Progs, retL
 			}
 		}
 	}
-	if base.Flag.Live >= 2 {
+	if curfn.Target.Flags.Live >= 2 {
 		lv.printDebug()
 	}
 
@@ -1511,12 +1511,12 @@ func (lv *Liveness) emitStackObjects() *obj.LSym {
 
 	// Populate the stack object data.
 	// Format must match runtime/stack.go:stackObjectRecord.
-	x := base.Ctxt.Lookup(lv.fn.LSym.Name + ".stkobj")
+	x := lv.fn.Target.Ctxt.Lookup(lv.fn.LSym.Name + ".stkobj")
 	x.Set(obj.AttrContentAddressable, true)
-	x.Align = int16(types.PtrSize) // see https://go.dev/issue/80668
+	x.Align = int16(lv.fn.Target.PtrSize) // see https://go.dev/issue/80668
 	lv.fn.LSym.Func().StackObjects = x
 	off := 0
-	off = objw.Uintptr(x, off, uint64(len(vars)))
+	off = objw.Uintptr(lv.fn.Target.Ctxt, x, off, uint64(len(vars)))
 	for _, v := range vars {
 		// Note: arguments and return values have non-negative Xoffset,
 		// in which case the offset is relative to argp.
@@ -1527,20 +1527,20 @@ func (lv *Liveness) emitStackObjects() *obj.LSym {
 		if frameOffset != int64(int32(frameOffset)) {
 			base.Fatalf("frame offset too big: %v %d", v, frameOffset)
 		}
-		off = objw.Uint32(x, off, uint32(frameOffset))
+		off = objw.Uint32(lv.fn.Target.Ctxt, x, off, uint32(frameOffset))
 
 		t := v.Type()
 		sz := t.Size()
 		if sz != int64(int32(sz)) {
 			base.Fatalf("stack object too big: %v of type %v, size %d", v, t, sz)
 		}
-		lsym, ptrBytes := reflectdata.GCSym(t, false)
-		off = objw.Uint32(x, off, uint32(sz))
-		off = objw.Uint32(x, off, uint32(ptrBytes))
-		off = objw.SymPtrOff(x, off, lsym)
+		lsym, ptrBytes := reflectdata.GCSym(lv.fn.Target, t, false)
+		off = objw.Uint32(lv.fn.Target.Ctxt, x, off, uint32(sz))
+		off = objw.Uint32(lv.fn.Target.Ctxt, x, off, uint32(ptrBytes))
+		off = objw.SymPtrOff(lv.fn.Target.Ctxt, x, off, lsym)
 	}
 
-	if base.Flag.Live != 0 {
+	if lv.fn.Target.Flags.Live != 0 {
 		for _, v := range vars {
 			base.WarnfAt(v.Pos(), "stack object %v %v", v, v.Type())
 		}
@@ -1596,11 +1596,11 @@ func WriteFuncMap(fn *ir.Func, abiInfo *abi.ABIParamResultInfo) {
 	if ir.FuncName(fn) == "_" {
 		return
 	}
-	nptr := int(abiInfo.ArgWidth() / int64(types.PtrSize))
+	nptr := int(abiInfo.ArgWidth() / int64(fn.Target.PtrSize))
 	bv := bitvec.New(int32(nptr))
 
 	for _, p := range abiInfo.InParams() {
-		typebits.SetNoCheck(p.Type, p.FrameOffset(abiInfo), bv)
+		typebits.SetNoCheck(fn.Target.PtrSize, p.Type, p.FrameOffset(abiInfo), bv)
 	}
 
 	nbitmap := 1
@@ -1611,22 +1611,22 @@ func WriteFuncMap(fn *ir.Func, abiInfo *abi.ABIParamResultInfo) {
 	// defensive check: function arguments can't realistically be large enough for overflow here
 	checkStackmapOverflow(bv, nbitmap, fn.Pos())
 
-	lsym := base.Ctxt.Lookup(fn.LSym.Name + ".args_stackmap")
+	lsym := fn.Target.Ctxt.Lookup(fn.LSym.Name + ".args_stackmap")
 	lsym.Set(obj.AttrLinkname, true) // allow args_stackmap referenced from assembly
-	off := objw.Uint32(lsym, 0, uint32(nbitmap))
-	off = objw.Uint32(lsym, off, uint32(bv.N))
-	off = objw.BitVec(lsym, off, bv)
+	off := objw.Uint32(fn.Target.Ctxt, lsym, 0, uint32(nbitmap))
+	off = objw.Uint32(fn.Target.Ctxt, lsym, off, uint32(bv.N))
+	off = objw.BitVec(fn.Target.Ctxt, lsym, off, bv)
 
 	if fn.Type().NumResults() > 0 {
 		for _, p := range abiInfo.OutParams() {
 			if len(p.Registers) == 0 {
-				typebits.SetNoCheck(p.Type, p.FrameOffset(abiInfo), bv)
+				typebits.SetNoCheck(fn.Target.PtrSize, p.Type, p.FrameOffset(abiInfo), bv)
 			}
 		}
-		off = objw.BitVec(lsym, off, bv)
+		off = objw.BitVec(fn.Target.Ctxt, lsym, off, bv)
 	}
 
-	objw.Global(lsym, int32(off), obj.RODATA|obj.LOCAL)
+	objw.Global(fn.Target.Ctxt, lsym, int32(off), obj.RODATA|obj.LOCAL)
 }
 
 // checkStackmapOverflow checks for potential overflow in runtime stackmap reading.

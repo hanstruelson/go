@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 	"cmd/internal/src"
@@ -136,7 +135,6 @@ func NewBlockStmt(pos src.XPos, list []Node) *BlockStmt {
 	n := &BlockStmt{}
 	n.pos = pos
 	if !pos.IsKnown() {
-		n.pos = base.Pos
 		if len(list) > 0 {
 			n.pos = list[0].Pos()
 		}

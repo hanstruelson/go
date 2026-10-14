@@ -6,7 +6,6 @@ package typecheck
 
 import (
 	"fmt"
-	"sync"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -14,12 +13,12 @@ import (
 	"cmd/internal/src"
 )
 
-// DeclFunc declares the parameters for fn and adds it to
-// Target.Funcs.
-func DeclFunc(fn *ir.Func) {
+// DeclFunc declares the parameters for fn and adds it to target.Funcs.
+func DeclFunc(target *ir.Package, fn *ir.Func) {
 	fn.DeclareParams(true)
+	fn.Target = target
 	fn.Nname.Defn = fn
-	Target.Funcs = append(Target.Funcs, fn)
+	target.Funcs = append(target.Funcs, fn)
 }
 
 // TempAt makes a new Node off the books.
@@ -41,8 +40,8 @@ func TempAt(pos src.XPos, curfn *ir.Func, typ *types.Type) *ir.Name {
 	types.CalcSize(typ)
 
 	sym := &types.Sym{
-		Name: autotmpname(len(curfn.Dcl)),
-		Pkg:  types.LocalPkg,
+		Name: autotmpname(curfn.Target, len(curfn.Dcl)),
+		Pkg:  curfn.Target.LocalPkg,
 	}
 	name := curfn.NewLocal(pos, sym, typ)
 	name.SetEsc(ir.EscNever)
@@ -52,37 +51,32 @@ func TempAt(pos src.XPos, curfn *ir.Func, typ *types.Type) *ir.Name {
 	return name
 }
 
-var (
-	autotmpnamesmu sync.Mutex
-	autotmpnames   []string
-)
-
 // autotmpname returns the name for an autotmp variable numbered n.
-func autotmpname(n int) string {
-	autotmpnamesmu.Lock()
-	defer autotmpnamesmu.Unlock()
-
-	// Grow autotmpnames, if needed.
-	if n >= len(autotmpnames) {
-		autotmpnames = append(autotmpnames, make([]string, n+1-len(autotmpnames))...)
-		autotmpnames = autotmpnames[:cap(autotmpnames)]
+func autotmpname(target *ir.Package, n int) string {
+	if target == nil {
+		return fmt.Sprintf(".autotmp_%d", n)
+	}
+	// Grow the target's temporary-name cache, if needed.
+	if n >= len(target.AutoTmpNames) {
+		target.AutoTmpNames = append(target.AutoTmpNames, make([]string, n+1-len(target.AutoTmpNames))...)
+		target.AutoTmpNames = target.AutoTmpNames[:cap(target.AutoTmpNames)]
 	}
 
-	s := autotmpnames[n]
+	s := target.AutoTmpNames[n]
 	if s == "" {
 		// Give each tmp a different name so that they can be registerized.
 		// Add a preceding . to avoid clashing with legal names.
 		prefix := ".autotmp_%d"
 
 		s = fmt.Sprintf(prefix, n)
-		autotmpnames[n] = s
+		target.AutoTmpNames[n] = s
 	}
 	return s
 }
 
 // f is method type, with receiver.
 // return function type, receiver as first argument (or not).
-func NewMethodType(sig *types.Type, recv *types.Type) *types.Type {
+func NewMethodType(pos src.XPos, sig *types.Type, recv *types.Type) *types.Type {
 	nrecvs := 0
 	if recv != nil {
 		nrecvs++
@@ -93,17 +87,17 @@ func NewMethodType(sig *types.Type, recv *types.Type) *types.Type {
 
 	params := make([]*types.Field, nrecvs+sig.NumParams())
 	if recv != nil {
-		params[0] = types.NewField(base.Pos, nil, recv)
+		params[0] = types.NewField(pos, nil, recv)
 	}
 	for i, param := range sig.Params() {
-		d := types.NewField(base.Pos, nil, param.Type)
+		d := types.NewField(pos, nil, param.Type)
 		d.SetIsDDD(param.IsDDD())
 		params[nrecvs+i] = d
 	}
 
 	results := make([]*types.Field, sig.NumResults())
 	for i, t := range sig.Results() {
-		results[i] = types.NewField(base.Pos, nil, t.Type)
+		results[i] = types.NewField(pos, nil, t.Type)
 	}
 
 	return types.NewSignature(nil, params, results)

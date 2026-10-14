@@ -43,7 +43,7 @@ func mkstruct(fieldtypes ...*types.Type) *types.Type {
 }
 
 func mkFuncType(rcvr *types.Type, ins []*types.Type, outs []*types.Type) *types.Type {
-	q := typecheck.Lookup("?")
+	q := typecheck.Lookup(testTarget, "?")
 	inf := []*types.Field{}
 	for _, it := range ins {
 		inf = append(inf, mkParamResultField(it, q, ir.PPARAM))

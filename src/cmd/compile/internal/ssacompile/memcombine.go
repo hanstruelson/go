@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssaop"
 	"cmd/compile/internal/types"
@@ -231,7 +232,7 @@ func valuePtrAlignment(v *ssa.Value, ptrAlignments []int8) int64 {
 	case ssaop.OpCopy, ssaop.OpNilCheck:
 		return ptrAlignment(v.Args[0], ptrAlignments)
 	case ssaop.OpAddr, ssaop.OpLocalAddr, ssaop.OpArg, ssaop.OpArgIntReg:
-		return typeAlignment(v.Type.Elem())
+		return typeAlignment(v.Block.Func.Config.PtrSize, v.Type.Elem())
 	case ssaop.OpPhi:
 		align := ptrAlignment(v.Args[0], ptrAlignments)
 		for _, arg := range v.Args[1:] {
@@ -247,7 +248,7 @@ func valuePtrAlignment(v *ssa.Value, ptrAlignments []int8) int64 {
 // typeAlignment returns a conservative alignment for t without calling
 // Type.Alignment, which may try to calculate type sizes while the compiler
 // back end is running concurrently.
-func typeAlignment(t *types.Type) int64 {
+func typeAlignment(ptrSize int64, t *types.Type) int64 {
 	switch t.Kind() {
 	case types.TBOOL, types.TINT8, types.TUINT8:
 		return 1
@@ -258,13 +259,13 @@ func typeAlignment(t *types.Type) int64 {
 	case types.TINT64, types.TUINT64, types.TFLOAT64, types.TCOMPLEX128:
 		return 8
 	case types.TINT, types.TUINT, types.TUINTPTR, types.TPTR, types.TUNSAFEPTR, types.TSTRING, types.TSLICE, types.TFUNC, types.TMAP, types.TCHAN:
-		return int64(types.PtrSize)
+		return ptrSize
 	case types.TARRAY:
-		return typeAlignment(t.Elem())
+		return typeAlignment(ptrSize, t.Elem())
 	case types.TSTRUCT:
 		align := int64(1)
 		for _, f := range t.Fields() {
-			fieldAlign := typeAlignment(f.Type)
+			fieldAlign := typeAlignment(ptrSize, f.Type)
 			if fieldAlign > align {
 				align = fieldAlign
 			}
@@ -452,7 +453,7 @@ func combineLoads(root *ssa.Value, n int64, ptrAlignments []int8) bool {
 	// This is the commit point.
 
 	// First, issue load at lowest address.
-	v = loadBlock.NewValue2(pos, ssaop.OpLoad, sizeType(n*size), r[0].load.Args[0], mem)
+	v = loadBlock.NewValue2(pos, ssaop.OpLoad, sizeType(root.Block.Func.Config.Target, n*size), r[0].load.Args[0], mem)
 
 	// Byte swap if needed,
 	if needSwap {
@@ -745,11 +746,11 @@ func combineStores(root *ssa.Value, ptrAlignments []int8) {
 		var cv *ssa.Value
 		switch aTotalSize {
 		case 2:
-			cv = root.Block.Func.ConstInt16(types.Types[types.TUINT16], int16(c))
+			cv = root.Block.Func.ConstInt16(root.Block.Func.Config.Target.Type(types.TUINT16), int16(c))
 		case 4:
-			cv = root.Block.Func.ConstInt32(types.Types[types.TUINT32], int32(c))
+			cv = root.Block.Func.ConstInt32(root.Block.Func.Config.Target.Type(types.TUINT32), int32(c))
 		case 8:
-			cv = root.Block.Func.ConstInt64(types.Types[types.TUINT64], c)
+			cv = root.Block.Func.ConstInt64(root.Block.Func.Config.Target.Type(types.TUINT64), c)
 		}
 
 		// Move all the stores to the root.
@@ -763,7 +764,7 @@ func combineStores(root *ssa.Value, ptrAlignments []int8) {
 				v.SetArg(2, mem)
 			} else {
 				ssa.Clobber(v)
-				v.Type = types.Types[types.TBOOL] // erase memory type
+				v.Type = root.Block.Func.Config.Target.Type(types.TBOOL) // erase memory type
 			}
 		}
 		return
@@ -816,11 +817,11 @@ func combineStores(root *ssa.Value, ptrAlignments []int8) {
 		}
 		switch aTotalSize {
 		case 2:
-			load.Type = types.Types[types.TUINT16]
+			load.Type = root.Block.Func.Config.Target.Type(types.TUINT16)
 		case 4:
-			load.Type = types.Types[types.TUINT32]
+			load.Type = root.Block.Func.Config.Target.Type(types.TUINT32)
 		case 8:
-			load.Type = types.Types[types.TUINT64]
+			load.Type = root.Block.Func.Config.Target.Type(types.TUINT64)
 		}
 
 		// Modify root to do the store.
@@ -834,7 +835,7 @@ func combineStores(root *ssa.Value, ptrAlignments []int8) {
 				v.SetArg(2, mem)
 			} else {
 				ssa.Clobber(v)
-				v.Type = types.Types[types.TBOOL] // erase memory type
+				v.Type = root.Block.Func.Config.Target.Type(types.TBOOL) // erase memory type
 			}
 		}
 		return
@@ -909,19 +910,19 @@ func combineStores(root *ssa.Value, ptrAlignments []int8) {
 			v.SetArg(2, mem)
 		} else {
 			ssa.Clobber(v)
-			v.Type = types.Types[types.TBOOL] // erase memory type
+			v.Type = root.Block.Func.Config.Target.Type(types.TBOOL) // erase memory type
 		}
 	}
 }
 
-func sizeType(size int64) *types.Type {
+func sizeType(target *ir.Package, size int64) *types.Type {
 	switch size {
 	case 8:
-		return types.Types[types.TUINT64]
+		return target.Type(types.TUINT64)
 	case 4:
-		return types.Types[types.TUINT32]
+		return target.Type(types.TUINT32)
 	case 2:
-		return types.Types[types.TUINT16]
+		return target.Type(types.TUINT16)
 	default:
 		base.Fatalf("bad size %d\n", size)
 		return nil
@@ -931,11 +932,11 @@ func sizeType(size int64) *types.Type {
 func truncate(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.Value {
 	switch from*10 + to {
 	case 82:
-		return b.NewValue1(pos, ssaop.OpTrunc64to16, types.Types[types.TUINT16], v)
+		return b.NewValue1(pos, ssaop.OpTrunc64to16, b.Func.Config.Target.Type(types.TUINT16), v)
 	case 84:
-		return b.NewValue1(pos, ssaop.OpTrunc64to32, types.Types[types.TUINT32], v)
+		return b.NewValue1(pos, ssaop.OpTrunc64to32, b.Func.Config.Target.Type(types.TUINT32), v)
 	case 42:
-		return b.NewValue1(pos, ssaop.OpTrunc32to16, types.Types[types.TUINT16], v)
+		return b.NewValue1(pos, ssaop.OpTrunc32to16, b.Func.Config.Target.Type(types.TUINT16), v)
 	default:
 		base.Fatalf("bad sizes %d %d\n", from, to)
 		return nil
@@ -944,11 +945,11 @@ func truncate(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.Val
 func zeroExtend(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.Value {
 	switch from*10 + to {
 	case 24:
-		return b.NewValue1(pos, ssaop.OpZeroExt16to32, types.Types[types.TUINT32], v)
+		return b.NewValue1(pos, ssaop.OpZeroExt16to32, b.Func.Config.Target.Type(types.TUINT32), v)
 	case 28:
-		return b.NewValue1(pos, ssaop.OpZeroExt16to64, types.Types[types.TUINT64], v)
+		return b.NewValue1(pos, ssaop.OpZeroExt16to64, b.Func.Config.Target.Type(types.TUINT64), v)
 	case 48:
-		return b.NewValue1(pos, ssaop.OpZeroExt32to64, types.Types[types.TUINT64], v)
+		return b.NewValue1(pos, ssaop.OpZeroExt32to64, b.Func.Config.Target.Type(types.TUINT64), v)
 	default:
 		base.Fatalf("bad sizes %d %d\n", from, to)
 		return nil
@@ -956,7 +957,7 @@ func zeroExtend(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.V
 }
 
 func leftShift(b *ssa.Block, pos src.XPos, v *ssa.Value, shift int64) *ssa.Value {
-	s := b.Func.ConstInt64(types.Types[types.TUINT64], shift)
+	s := b.Func.ConstInt64(b.Func.Config.Target.Type(types.TUINT64), shift)
 	size := v.Type.Size()
 	switch size {
 	case 8:
@@ -971,7 +972,7 @@ func leftShift(b *ssa.Block, pos src.XPos, v *ssa.Value, shift int64) *ssa.Value
 	}
 }
 func rightShift(b *ssa.Block, pos src.XPos, v *ssa.Value, shift int64) *ssa.Value {
-	s := b.Func.ConstInt64(types.Types[types.TUINT64], shift)
+	s := b.Func.ConstInt64(b.Func.Config.Target.Type(types.TUINT64), shift)
 	size := v.Type.Size()
 	switch size {
 	case 8:

@@ -16,13 +16,11 @@ func (e *escape) stmt(n ir.Node) {
 		return
 	}
 
-	lno := ir.SetPos(n)
-	defer func() {
-		base.Pos = lno
-	}()
+	lno := ir.SetPosFor(e.curfn.Target, n)
+	defer ir.SetPosValue(e.curfn.Target, lno)
 
-	if base.Flag.LowerM > 2 {
-		fmt.Printf("%v:[%d] %v stmt: %v\n", base.FmtPos(base.Pos), e.loopDepth, e.curfn, n)
+	if e.curfn.Target.Flags.LowerM > 2 {
+		fmt.Printf("%v:[%d] %v stmt: %v\n", base.FmtPos(e.curfn.Target.Pos), e.loopDepth, e.curfn, n)
 	}
 
 	e.stmts(n.Init())
@@ -55,12 +53,12 @@ func (e *escape) stmt(n ir.Node) {
 		}
 		switch e.labels[n.Label] {
 		case nonlooping:
-			if base.Flag.LowerM > 2 {
-				fmt.Printf("%v:%v non-looping label\n", base.FmtPos(base.Pos), n)
+			if e.curfn.Target.Flags.LowerM > 2 {
+				fmt.Printf("%v:%v non-looping label\n", base.FmtPos(e.curfn.Target.Pos), n)
 			}
 		case looping:
-			if base.Flag.LowerM > 2 {
-				fmt.Printf("%v: %v looping label\n", base.FmtPos(base.Pos), n)
+			if e.curfn.Target.Flags.LowerM > 2 {
+				fmt.Printf("%v: %v looping label\n", base.FmtPos(e.curfn.Target.Pos), n)
 			}
 			e.loopDepth++
 		default:

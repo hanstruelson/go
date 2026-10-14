@@ -49,7 +49,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 
 	if n.Op() == ir.OASOP {
 		// Rewrite x op= y into x = x op y.
-		n = ir.NewAssignStmt(base.Pos, left, typecheck.Expr(w.curfunc, ir.NewBinaryExpr(base.Pos, n.(*ir.AssignOpStmt).AsOp, left, right)))
+		n = ir.NewAssignStmt(w.curfunc.Target.Pos, left, typecheck.Expr(w.curfunc, ir.NewBinaryExpr(w.curfunc.Target.Pos, n.(*ir.AssignOpStmt).AsOp, left, right)))
 	} else {
 		n.(*ir.AssignStmt).X = left
 	}
@@ -64,7 +64,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 		return as
 	}
 
-	if !base.Flag.Cfg.Instrumenting && ir.IsZero(as.Y) {
+	if !w.curfunc.Target.Flags.Cfg.Instrumenting && ir.IsZero(as.Y) {
 		return as
 	}
 
@@ -80,7 +80,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 
 		n1 := typecheck.NodAddr(w.curfunc, as.X)
 		r := recv.X // the channel
-		return w.mkcall1(chanfn("chanrecv1", 2, r.Type()), nil, init, r, n1)
+		return w.mkcall1(chanfn(w.curfunc.Target, "chanrecv1", 2, r.Type()), nil, init, r, n1)
 
 	case ir.OAPPEND:
 		// x = append(...)
@@ -90,7 +90,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 		}
 		var r ir.Node
 		switch {
-		case isAppendOfMake(call):
+		case isAppendOfMake(w.curfunc.Target, call):
 			// x = append(y, make([]T, y)...)
 			r = w.extendSlice(call, init)
 		case call.IsDDD:
@@ -104,7 +104,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 			// Left in place for back end.
 			// Do not add a new write barrier.
 			// Set up address of type for back end.
-			r.Fun = reflectdata.AppendElemRType(w.curfunc, base.Pos, r)
+			r.Fun = reflectdata.AppendElemRType(w.curfunc, w.curfunc.Target.Pos, r)
 			return as
 		}
 		// Otherwise, lowered for race detector.
@@ -123,10 +123,10 @@ func (w *walkState) walkAssignDotType(n *ir.AssignListStmt, init *ir.Nodes) ir.N
 
 	if r, ok := n.Rhs[0].(*ir.TypeAssertExpr); ok && r.Op() == ir.ODOTTYPE2 && !r.Type().IsInterface() {
 		if w.shapeTypeAssertImpossible(r.X, r.Type()) {
-			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, ir.BlankNode, w.walkExpr(r.X, init))))
-			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, n.Lhs[0], ir.NewZero(base.Pos, r.Type()))))
-			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, n.Lhs[1], ir.NewBool(base.Pos, false))))
-			return ir.NewBlockStmt(base.Pos, nil)
+			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, w.curfunc.Target.BlankNode, w.walkExpr(r.X, init))))
+			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, n.Lhs[0], ir.NewZero(w.curfunc.Target.Pos, r.Type()))))
+			init.Append(typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, n.Lhs[1], ir.NewBool(w.curfunc.Target.Pos, false))))
+			return ir.NewBlockStmt(w.curfunc.Target.Pos, nil)
 		}
 	}
 
@@ -142,13 +142,13 @@ func (w *walkState) walkAssignFunc(init *ir.Nodes, n *ir.AssignListStmt) ir.Node
 	w.walkExprListSafe(n.Lhs, init)
 	r = w.walkExpr(r, init)
 
-	if ir.IsIntrinsicCall(r.(*ir.CallExpr)) {
+	if w.curfunc.Target.IsIntrinsicCall(r.(*ir.CallExpr)) {
 		n.Rhs = []ir.Node{r}
 		return n
 	}
 	init.Append(r)
 
-	ll := ascompatet(n.Lhs, r.Type())
+	ll := ascompatet(w.curfunc.Target, n.Lhs, r.Type())
 	return ir.NewBlockStmt(src.NoXPos, ll)
 }
 
@@ -168,7 +168,7 @@ func (w *walkState) walkAssignMapRead(init *ir.Nodes, n *ir.AssignListStmt) ir.N
 	r.X = w.walkExpr(r.X, init)
 	r.Index = w.walkExpr(r.Index, init)
 	t := r.X.Type()
-	fast := mapfast(t)
+	fast := mapfast(w.curfunc.Target, t)
 	key := mapKeyArg(w.curfunc, fast, r, r.Index, false)
 
 	// from:
@@ -180,12 +180,12 @@ func (w *walkState) walkAssignMapRead(init *ir.Nodes, n *ir.AssignListStmt) ir.N
 
 	var call *ir.CallExpr
 	if elemSize := t.Elem().Size(); elemSize <= abi.ZeroValSize {
-		fn := mapfn(mapaccess2[fast], t, false)
-		call = w.mkcall1(fn, fn.Type().ResultsTuple(), init, reflectdata.IndexMapRType(w.curfunc, base.Pos, r), r.X, key)
+		fn := mapfn(w.curfunc.Target, mapaccess2[fast], t, false)
+		call = w.mkcall1(fn, fn.Type().ResultsTuple(), init, reflectdata.IndexMapRType(w.curfunc, w.curfunc.Target.Pos, r), r.X, key)
 	} else {
-		fn := mapfn("mapaccess2_fat", t, true)
+		fn := mapfn(w.curfunc.Target, "mapaccess2_fat", t, true)
 		z := reflectdata.ZeroAddr(w.curfunc, elemSize)
-		call = w.mkcall1(fn, fn.Type().ResultsTuple(), init, reflectdata.IndexMapRType(w.curfunc, base.Pos, r), r.X, key, z)
+		call = w.mkcall1(fn, fn.Type().ResultsTuple(), init, reflectdata.IndexMapRType(w.curfunc, w.curfunc.Target.Pos, r), r.X, key, z)
 	}
 
 	// mapaccess2* returns a typed bool, but due to spec changes,
@@ -202,14 +202,14 @@ func (w *walkState) walkAssignMapRead(init *ir.Nodes, n *ir.AssignListStmt) ir.N
 		return w.walkExpr(typecheck.Stmt(w.curfunc, n), init)
 	}
 
-	var_ := typecheck.TempAt(base.Pos, w.curfunc, types.NewPtr(t.Elem()))
+	var_ := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewPtr(t.Elem()))
 	var_.SetTypecheck(1)
 	var_.MarkNonNil() // mapaccess always returns a non-nil pointer
 
 	n.Lhs[0] = var_
 	init.Append(w.walkExpr(n, init))
 
-	as := ir.NewAssignStmt(base.Pos, a, ir.NewStarExpr(base.Pos, var_))
+	as := ir.NewAssignStmt(w.curfunc.Target.Pos, a, ir.NewStarExpr(w.curfunc.Target.Pos, var_))
 	return w.walkExpr(typecheck.Stmt(w.curfunc, as), init)
 }
 
@@ -222,14 +222,14 @@ func (w *walkState) walkAssignRecv(init *ir.Nodes, n *ir.AssignListStmt) ir.Node
 	r.X = w.walkExpr(r.X, init)
 	var n1 ir.Node
 	if ir.IsBlank(n.Lhs[0]) {
-		n1 = typecheck.NodNil()
+		n1 = typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
 	} else {
 		n1 = typecheck.NodAddr(w.curfunc, n.Lhs[0])
 	}
-	fn := chanfn("chanrecv2", 2, r.X.Type())
+	fn := chanfn(w.curfunc.Target, "chanrecv2", 2, r.X.Type())
 	ok := n.Lhs[1]
-	call := w.mkcall1(fn, types.Types[types.TBOOL], init, r.X, n1)
-	return w.walkAssign(init, typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, ok, call)))
+	call := w.mkcall1(fn, w.curfunc.Target.Type(types.TBOOL), init, r.X, n1)
+	return w.walkAssign(init, typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, ok, call)))
 }
 
 // walkReturn walks an ORETURN node.
@@ -256,7 +256,7 @@ func (w *walkState) walkReturn(n *ir.ReturnStmt) ir.Node {
 // an expression list. called in
 //
 //	expr-list = func()
-func ascompatet(nl ir.Nodes, nr *types.Type) []ir.Node {
+func ascompatet(target *ir.Package, nl ir.Nodes, nr *types.Type) []ir.Node {
 	if len(nl) != nr.NumFields() {
 		base.Fatalf("ascompatet: assignment count mismatch: %d = %d", len(nl), nr.NumFields())
 	}
@@ -274,12 +274,12 @@ func ascompatet(nl ir.Nodes, nr *types.Type) []ir.Node {
 			base.FatalfAt(l.Pos(), "assigning %v to %+v", r.Type, l)
 		}
 
-		res := ir.NewResultExpr(base.Pos, nil, types.BADWIDTH)
+		res := ir.NewResultExpr(target.Pos, nil, types.BADWIDTH)
 		res.Index = int64(i)
 		res.SetType(r.Type)
 		res.SetTypecheck(1)
 
-		nn.Append(ir.NewAssignStmt(base.Pos, l, res))
+		nn.Append(ir.NewAssignStmt(target.Pos, l, res))
 	}
 	return nn
 }
@@ -383,7 +383,7 @@ func (w *walkState) ascompatee(op ir.Op, nl, nr []ir.Node) []ir.Node {
 		// Save expression on right side.
 		save(&r)
 
-		w.appendWalkStmt(&late, w.convas(ir.NewAssignStmt(base.Pos, lorig, r), &late))
+		w.appendWalkStmt(&late, w.convas(ir.NewAssignStmt(w.curfunc.Target.Pos, lorig, r), &late))
 
 		// Check for reasons why we may need to compute later expressions
 		// before this assignment happens.
@@ -494,38 +494,38 @@ func (w *walkState) appendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	var nodes ir.Nodes
 
 	// var s []T
-	s := typecheck.TempAt(base.Pos, w.curfunc, l1.Type())
-	nodes.Append(ir.NewAssignStmt(base.Pos, s, l1)) // s = l1
+	s := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, l1.Type())
+	nodes.Append(ir.NewAssignStmt(w.curfunc.Target.Pos, s, l1)) // s = l1
 
 	elemtype := s.Type().Elem()
 
 	// Decompose slice.
-	oldPtr := ir.NewUnaryExpr(base.Pos, ir.OSPTR, s)
-	oldLen := ir.NewUnaryExpr(base.Pos, ir.OLEN, s)
-	oldCap := ir.NewUnaryExpr(base.Pos, ir.OCAP, s)
+	oldPtr := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, s)
+	oldLen := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, s)
+	oldCap := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCAP, s)
 
 	// Number of elements we are adding
-	num := ir.NewUnaryExpr(base.Pos, ir.OLEN, l2)
+	num := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, l2)
 
 	// newLen := oldLen + num
-	newLen := typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TINT])
-	nodes.Append(ir.NewAssignStmt(base.Pos, newLen, ir.NewBinaryExpr(base.Pos, ir.OADD, oldLen, num)))
+	newLen := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+	nodes.Append(ir.NewAssignStmt(w.curfunc.Target.Pos, newLen, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OADD, oldLen, num)))
 
 	// if uint(newLen) <= uint(oldCap)
-	nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
-	nuint := typecheck.Conv(w.curfunc, newLen, types.Types[types.TUINT])
-	scapuint := typecheck.Conv(w.curfunc, oldCap, types.Types[types.TUINT])
-	nif.Cond = ir.NewBinaryExpr(base.Pos, ir.OLE, nuint, scapuint)
+	nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+	nuint := typecheck.Conv(w.curfunc, newLen, w.curfunc.Target.Type(types.TUINT))
+	scapuint := typecheck.Conv(w.curfunc, oldCap, w.curfunc.Target.Type(types.TUINT))
+	nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLE, nuint, scapuint)
 	nif.Likely = true
 
 	// then { s = s[:newLen] }
-	slice := ir.NewSliceExpr(base.Pos, ir.OSLICE, s, nil, newLen, nil)
+	slice := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, s, nil, newLen, nil)
 	slice.SetBounded(true)
-	nif.Body = []ir.Node{ir.NewAssignStmt(base.Pos, s, slice)}
+	nif.Body = []ir.Node{ir.NewAssignStmt(w.curfunc.Target.Pos, s, slice)}
 
 	// else { s = growslice(oldPtr, newLen, oldCap, num, T) }
 	call := w.walkGrowslice(s, nif.PtrInit(), oldPtr, newLen, oldCap, num)
-	nif.Else = []ir.Node{ir.NewAssignStmt(base.Pos, s, call)}
+	nif.Else = []ir.Node{ir.NewAssignStmt(w.curfunc.Target.Pos, s, call)}
 
 	nodes.Append(nif)
 
@@ -535,48 +535,48 @@ func (w *walkState) appendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	// a spill/restore of oldLen.
 	// Note: this doesn't work optimally currently because
 	// the compiler optimizer undoes this arithmetic.
-	idx := ir.NewBinaryExpr(base.Pos, ir.OSUB, newLen, ir.NewUnaryExpr(base.Pos, ir.OLEN, l2))
+	idx := ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OSUB, newLen, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, l2))
 
 	var ncopy ir.Node
 	if elemtype.HasPointers() {
 		// copy(s[idx:], l2)
-		slice := ir.NewSliceExpr(base.Pos, ir.OSLICE, s, idx, nil, nil)
+		slice := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, s, idx, nil, nil)
 		slice.SetType(s.Type())
 		slice.SetBounded(true)
 
 		w.curfunc.SetWBPos(n.Pos())
 
 		// instantiate typedslicecopy(typ *type, dstPtr *any, dstLen int, srcPtr *any, srcLen int) int
-		fn := typecheck.LookupRuntime("typedslicecopy", l1.Type().Elem(), l2.Type().Elem())
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "typedslicecopy", l1.Type().Elem(), l2.Type().Elem())
 		ptr1, len1 := w.backingArrayPtrLen(w.cheapExpr(slice, &nodes))
 		ptr2, len2 := w.backingArrayPtrLen(l2)
-		ncopy = w.mkcall1(fn, types.Types[types.TINT], &nodes, reflectdata.AppendElemRType(w.curfunc, base.Pos, n), ptr1, len1, ptr2, len2)
-	} else if base.Flag.Cfg.Instrumenting && !base.Flag.CompilingRuntime {
+		ncopy = w.mkcall1(fn, w.curfunc.Target.Type(types.TINT), &nodes, reflectdata.AppendElemRType(w.curfunc, w.curfunc.Target.Pos, n), ptr1, len1, ptr2, len2)
+	} else if w.curfunc.Target.Flags.Cfg.Instrumenting && !w.curfunc.Target.Flags.CompilingRuntime {
 		// rely on runtime to instrument:
 		//  copy(s[idx:], l2)
 		// l2 can be a slice or string.
-		slice := ir.NewSliceExpr(base.Pos, ir.OSLICE, s, idx, nil, nil)
+		slice := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, s, idx, nil, nil)
 		slice.SetType(s.Type())
 		slice.SetBounded(true)
 
 		ptr1, len1 := w.backingArrayPtrLen(w.cheapExpr(slice, &nodes))
 		ptr2, len2 := w.backingArrayPtrLen(l2)
 
-		fn := typecheck.LookupRuntime("slicecopy", ptr1.Type().Elem(), ptr2.Type().Elem())
-		ncopy = w.mkcall1(fn, types.Types[types.TINT], &nodes, ptr1, len1, ptr2, len2, ir.NewInt(base.Pos, elemtype.Size()))
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "slicecopy", ptr1.Type().Elem(), ptr2.Type().Elem())
+		ncopy = w.mkcall1(fn, w.curfunc.Target.Type(types.TINT), &nodes, ptr1, len1, ptr2, len2, ir.NewInt(w.curfunc.Target.Pos, elemtype.Size()))
 	} else {
 		// memmove(&s[idx], &l2[0], len(l2)*sizeof(T))
-		ix := ir.NewIndexExpr(base.Pos, s, idx)
+		ix := ir.NewIndexExpr(w.curfunc.Target.Pos, s, idx)
 		ix.SetBounded(true)
 		addr := typecheck.NodAddr(w.curfunc, ix)
 
-		sptr := ir.NewUnaryExpr(base.Pos, ir.OSPTR, l2)
+		sptr := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, l2)
 
-		nwid := w.cheapExpr(typecheck.Conv(w.curfunc, ir.NewUnaryExpr(base.Pos, ir.OLEN, l2), types.Types[types.TUINTPTR]), &nodes)
-		nwid = ir.NewBinaryExpr(base.Pos, ir.OMUL, nwid, ir.NewInt(base.Pos, elemtype.Size()))
+		nwid := w.cheapExpr(typecheck.Conv(w.curfunc, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, l2), w.curfunc.Target.Type(types.TUINTPTR)), &nodes)
+		nwid = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OMUL, nwid, ir.NewInt(w.curfunc.Target.Pos, elemtype.Size()))
 
 		// instantiate func memmove(to *any, frm *any, length uintptr)
-		fn := typecheck.LookupRuntime("memmove", elemtype, elemtype)
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "memmove", elemtype, elemtype)
 		ncopy = w.mkcall1(fn, nil, &nodes, addr, sptr, nwid)
 	}
 	ln := append(nodes, ncopy)
@@ -589,8 +589,8 @@ func (w *walkState) appendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 
 // isAppendOfMake reports whether n is of the form append(x, make([]T, y)...).
 // isAppendOfMake assumes n has already been typechecked.
-func isAppendOfMake(n ir.Node) bool {
-	if base.Flag.N != 0 || base.Flag.Cfg.Instrumenting {
+func isAppendOfMake(target *ir.Package, n ir.Node) bool {
+	if target.Flags.N != 0 || target.Flags.Cfg.Instrumenting {
 		return false
 	}
 
@@ -618,7 +618,7 @@ func isAppendOfMake(n ir.Node) bool {
 
 	// The care of overflow of the len argument to make will be handled by an explicit check of int(len) < 0 during runtime.
 	y := mk.Len
-	if !ir.IsConst(y, constant.Int) && y.Type().Size() > types.Types[types.TUINT].Size() {
+	if !ir.IsConst(y, constant.Int) && y.Type().Size() > target.Type(types.TUINT).Size() {
 		return false
 	}
 
@@ -660,7 +660,7 @@ func (w *walkState) extendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	// isAppendOfMake made sure all possible positive values of l2 fit into a uint.
 	// The case of l2 overflow when converting from e.g. uint to int is handled by an explicit
 	// check of l2 < 0 at runtime which is generated below.
-	l2 := typecheck.Conv(w.curfunc, n.Args[1].(*ir.MakeExpr).Len, types.Types[types.TINT])
+	l2 := typecheck.Conv(w.curfunc, n.Args[1].(*ir.MakeExpr).Len, w.curfunc.Target.Type(types.TINT))
 	l2 = typecheck.Expr(w.curfunc, l2)
 	n.Args[1] = l2 // walkAppendArgs expects l2 in n.List.Second().
 
@@ -672,7 +672,7 @@ func (w *walkState) extendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	var nodes []ir.Node
 
 	// if l2 >= 0 (likely happens), do nothing
-	nifneg := ir.NewIfStmt(base.Pos, ir.NewBinaryExpr(base.Pos, ir.OGE, l2, ir.NewInt(base.Pos, 0)), nil, nil)
+	nifneg := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGE, l2, ir.NewInt(w.curfunc.Target.Pos, 0)), nil, nil)
 	nifneg.Likely = true
 
 	// else panicmakeslicelen()
@@ -680,39 +680,39 @@ func (w *walkState) extendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	nodes = append(nodes, nifneg)
 
 	// s := l1
-	s := typecheck.TempAt(base.Pos, w.curfunc, l1.Type())
-	nodes = append(nodes, ir.NewAssignStmt(base.Pos, s, l1))
+	s := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, l1.Type())
+	nodes = append(nodes, ir.NewAssignStmt(w.curfunc.Target.Pos, s, l1))
 
 	// if l2 != 0 {
 	// Avoid work if we're not appending anything. But more importantly,
 	// avoid allowing hp to be a past-the-end pointer when clearing. See issue 67255.
-	nifnz := ir.NewIfStmt(base.Pos, ir.NewBinaryExpr(base.Pos, ir.ONE, l2, ir.NewInt(base.Pos, 0)), nil, nil)
+	nifnz := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.ONE, l2, ir.NewInt(w.curfunc.Target.Pos, 0)), nil, nil)
 	nifnz.Likely = true
 	nodes = append(nodes, nifnz)
 
 	elemtype := s.Type().Elem()
 
 	// n := s.len + l2
-	nn := typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TINT])
-	nifnz.Body = append(nifnz.Body, ir.NewAssignStmt(base.Pos, nn, ir.NewBinaryExpr(base.Pos, ir.OADD, ir.NewUnaryExpr(base.Pos, ir.OLEN, s), l2)))
+	nn := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+	nifnz.Body = append(nifnz.Body, ir.NewAssignStmt(w.curfunc.Target.Pos, nn, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OADD, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, s), l2)))
 
 	// if uint(n) <= uint(s.cap)
-	nuint := typecheck.Conv(w.curfunc, nn, types.Types[types.TUINT])
-	capuint := typecheck.Conv(w.curfunc, ir.NewUnaryExpr(base.Pos, ir.OCAP, s), types.Types[types.TUINT])
-	nif := ir.NewIfStmt(base.Pos, ir.NewBinaryExpr(base.Pos, ir.OLE, nuint, capuint), nil, nil)
+	nuint := typecheck.Conv(w.curfunc, nn, w.curfunc.Target.Type(types.TUINT))
+	capuint := typecheck.Conv(w.curfunc, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCAP, s), w.curfunc.Target.Type(types.TUINT))
+	nif := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLE, nuint, capuint), nil, nil)
 	nif.Likely = true
 
 	// then { s = s[:n] }
-	nt := ir.NewSliceExpr(base.Pos, ir.OSLICE, s, nil, nn, nil)
+	nt := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, s, nil, nn, nil)
 	nt.SetBounded(true)
-	nif.Body = []ir.Node{ir.NewAssignStmt(base.Pos, s, nt)}
+	nif.Body = []ir.Node{ir.NewAssignStmt(w.curfunc.Target.Pos, s, nt)}
 
 	// else { s = growslice(s.ptr, n, s.cap, l2, T) }
 	nif.Else = []ir.Node{
-		ir.NewAssignStmt(base.Pos, s, w.walkGrowslice(s, nif.PtrInit(),
-			ir.NewUnaryExpr(base.Pos, ir.OSPTR, s),
+		ir.NewAssignStmt(w.curfunc.Target.Pos, s, w.walkGrowslice(s, nif.PtrInit(),
+			ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, s),
 			nn,
-			ir.NewUnaryExpr(base.Pos, ir.OCAP, s),
+			ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCAP, s),
 			l2)),
 	}
 
@@ -720,12 +720,12 @@ func (w *walkState) extendSlice(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 
 	// hp := &s[s.len - l2]
 	// TODO: &s[s.len] - hn?
-	ix := ir.NewIndexExpr(base.Pos, s, ir.NewBinaryExpr(base.Pos, ir.OSUB, ir.NewUnaryExpr(base.Pos, ir.OLEN, s), l2))
+	ix := ir.NewIndexExpr(w.curfunc.Target.Pos, s, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OSUB, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, s), l2))
 	ix.SetBounded(true)
-	hp := typecheck.ConvNop(w.curfunc, typecheck.NodAddr(w.curfunc, ix), types.Types[types.TUNSAFEPTR])
+	hp := typecheck.ConvNop(w.curfunc, typecheck.NodAddr(w.curfunc, ix), w.curfunc.Target.Type(types.TUNSAFEPTR))
 
 	// hn := l2 * sizeof(elem(s))
-	hn := typecheck.Conv(w.curfunc, ir.NewBinaryExpr(base.Pos, ir.OMUL, l2, ir.NewInt(base.Pos, elemtype.Size())), types.Types[types.TUINTPTR])
+	hn := typecheck.Conv(w.curfunc, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OMUL, l2, ir.NewInt(w.curfunc.Target.Pos, elemtype.Size())), w.curfunc.Target.Type(types.TUINTPTR))
 
 	clrname := "memclrNoHeapPointers"
 	hasPointers := elemtype.HasPointers()

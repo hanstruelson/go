@@ -30,17 +30,15 @@ var basicTypes = [...]struct {
 }
 
 var typedefs = [...]struct {
-	name     string
-	etype    Kind
-	sameas32 Kind
-	sameas64 Kind
+	name  string
+	etype Kind
 }{
-	{"int", TINT, TINT32, TINT64},
-	{"uint", TUINT, TUINT32, TUINT64},
-	{"uintptr", TUINTPTR, TUINT32, TUINT64},
+	{"int", TINT},
+	{"uint", TUINT},
+	{"uintptr", TUINTPTR},
 }
 
-func InitTypes(defTypeName func(sym *Sym, typ *Type) Object) {
+func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
 	if PtrSize == 0 {
 		base.Fatalf("InitTypes called before PtrSize was set")
 	}
@@ -52,10 +50,6 @@ func InitTypes(defTypeName func(sym *Sym, typ *Type) Object) {
 
 	// string is same as slice wo the cap
 	StringSize = RoundUp(SliceLenOffset+int64(PtrSize), int64(PtrSize))
-
-	for et := Kind(0); et < NTYPE; et++ {
-		SimType[et] = et
-	}
 
 	Types[TANY] = newType(TANY) // note: an old placeholder type, NOT the new builtin 'any' alias for interface{}
 	Types[TINTER] = NewInterface(nil)
@@ -72,17 +66,11 @@ func InitTypes(defTypeName func(sym *Sym, typ *Type) Object) {
 	}
 
 	for _, s := range &basicTypes {
-		Types[s.etype] = defBasic(s.etype, BuiltinPkg, s.name)
+		Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
 	}
 
 	for _, s := range &typedefs {
-		sameas := s.sameas32
-		if PtrSize == 8 {
-			sameas = s.sameas64
-		}
-		SimType[s.etype] = sameas
-
-		Types[s.etype] = defBasic(s.etype, BuiltinPkg, s.name)
+		Types[s.etype] = defBasic(s.etype, builtinPkg, s.name)
 	}
 
 	// We create separate byte and rune types for better error messages
@@ -93,57 +81,39 @@ func InitTypes(defTypeName func(sym *Sym, typ *Type) Object) {
 	// NOTE(rsc): No, the error message quality is important.
 	// (Alternatively, we could introduce an OTALIAS node representing
 	// type aliases, albeit at the cost of having to deal with it everywhere).
-	ByteType = defBasic(TUINT8, BuiltinPkg, "byte")
-	RuneType = defBasic(TINT32, BuiltinPkg, "rune")
+	ByteType = defBasic(TUINT8, builtinPkg, "byte")
+	RuneType = defBasic(TINT32, builtinPkg, "rune")
 
 	// error type
 	DeferCheckSize()
-	ErrorType = defBasic(TFORW, BuiltinPkg, "error")
-	ErrorType.SetUnderlying(makeErrorInterface())
+	ErrorType = defBasic(TFORW, builtinPkg, "error")
+	ErrorType.SetUnderlying(makeErrorInterface(builtinPkg))
 	ResumeCheckSize()
 
 	// comparable type (interface)
 	DeferCheckSize()
-	ComparableType = defBasic(TFORW, BuiltinPkg, "comparable")
+	ComparableType = defBasic(TFORW, builtinPkg, "comparable")
 	ComparableType.SetUnderlying(makeComparableInterface())
 	ResumeCheckSize()
 
 	// any type (interface)
 	DeferCheckSize()
-	AnyType = defBasic(TFORW, BuiltinPkg, "any")
+	AnyType = defBasic(TFORW, builtinPkg, "any")
 	AnyType.SetUnderlying(NewInterface(nil))
 	ResumeCheckSize()
 
-	Types[TUNSAFEPTR] = defBasic(TUNSAFEPTR, UnsafePkg, "Pointer")
+	Types[TUNSAFEPTR] = defBasic(TUNSAFEPTR, unsafePkg, "Pointer")
 
 	Types[TBLANK] = newType(TBLANK)
 	Types[TNIL] = newType(TNIL)
 
-	// simple aliases
-	SimType[TMAP] = TPTR
-	SimType[TCHAN] = TPTR
-	SimType[TFUNC] = TPTR
-	SimType[TUNSAFEPTR] = TPTR
-
-	for et := TINT8; et <= TUINT64; et++ {
-		IsInt[et] = true
-	}
-	IsInt[TINT] = true
-	IsInt[TUINT] = true
-	IsInt[TUINTPTR] = true
-
-	IsFloat[TFLOAT32] = true
-	IsFloat[TFLOAT64] = true
-
-	IsComplex[TCOMPLEX64] = true
-	IsComplex[TCOMPLEX128] = true
 }
 
-func makeErrorInterface() *Type {
+func makeErrorInterface(builtinPkg *Pkg) *Type {
 	sig := NewSignature(FakeRecv(), nil, []*Field{
 		NewField(src.NoXPos, nil, Types[TSTRING]),
 	})
-	method := NewField(src.NoXPos, LocalPkg.Lookup("Error"), sig)
+	method := NewField(src.NoXPos, builtinPkg.Lookup("Error"), sig)
 	return NewInterface([]*Field{method})
 }
 

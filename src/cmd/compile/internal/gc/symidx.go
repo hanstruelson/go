@@ -8,11 +8,9 @@ import (
 	"maps"
 	"slices"
 
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/ssagen"
-	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/goobj"
 	"cmd/internal/obj"
@@ -20,9 +18,9 @@ import (
 
 // preassignSymIdxs assigns a SymIdx to the symbols that will appear in export
 // data. This allows the export data to be emitted before the backend runs and NumberSyms is called.
-func preassignSymIdxs(symABIs *ssagen.SymABIs) {
+func preassignSymIdxs(target *ir.Package, symABIs *ssagen.SymABIs) {
 	// The visit is used to populate usedTypes, which is then used to filter additional
-	// symbols from types.LocalPkg.Syms that are not top level, but that need to be
+	// symbols from target.LocalPkg.Syms that are not top level, but that need to be
 	// exported. For example, this includes a used type (meaning that it won't be removed by deadlocals)
 	// that's defined locally inside a top level function.
 	usedTypes := make(map[*types.Type]bool)
@@ -58,18 +56,18 @@ func preassignSymIdxs(symABIs *ssagen.SymABIs) {
 		}
 	}
 
-	for _, n := range typecheck.Target.Externs {
-		if n.Op() == ir.ONAME && nameShouldBeIndexed(n) {
-			base.Ctxt.NumberSymEarly(n.Linksym())
+	for _, n := range target.Externs {
+		if n.Op() == ir.ONAME && nameShouldBeIndexed(target, n) {
+			target.Ctxt.NumberSymEarly(n.Linksym())
 		}
 		if n.Op() == ir.OTYPE {
 			visit(n.Type())
 		}
 	}
 
-	for _, fn := range typecheck.Target.Funcs {
+	for _, fn := range target.Funcs {
 		if funcShouldBeIndexed(fn, symABIs) {
-			base.Ctxt.NumberSymEarly(fn.Nname.Linksym())
+			target.Ctxt.NumberSymEarly(fn.Nname.Linksym())
 		}
 		for _, dcl := range fn.Dcl {
 			if dcl.Op() == ir.ONAME && dcl.Used() {
@@ -83,15 +81,15 @@ func preassignSymIdxs(symABIs *ssagen.SymABIs) {
 		}
 	}
 
-	reflectdata.ForEachRuntimeType(visit)
+	reflectdata.ForEachRuntimeType(target, visit)
 
-	// Number any other types from types.LocalPkg.Syms that are reachable from the
+	// Number any other types from target.LocalPkg.Syms that are reachable from the
 	// top level declarations or from types we know we will generate runtime data for.
-	for _, name := range slices.Sorted(maps.Keys(types.LocalPkg.Syms)) {
-		if n, ok := types.LocalPkg.Syms[name].Def.(*ir.Name); ok && usedTypes[n.Type()] {
-			if n.Op() == ir.OTYPE && !n.Alias() && typeShouldBeIndexed(n.Type()) {
-				base.Ctxt.NumberSymEarly(reflectdata.TypeLinksym(n.Type()))
-				base.Ctxt.NumberSymEarly(reflectdata.TypeLinksym(n.Type().PtrTo()))
+	for _, name := range slices.Sorted(maps.Keys(target.LocalPkg.Syms)) {
+		if n, ok := target.LocalPkg.Syms[name].Def.(*ir.Name); ok && usedTypes[n.Type()] {
+			if n.Op() == ir.OTYPE && !n.Alias() && typeShouldBeIndexed(target, n.Type()) {
+				target.Ctxt.NumberSymEarly(reflectdata.TypeLinksym(target, n.Type()))
+				target.Ctxt.NumberSymEarly(reflectdata.TypeLinksym(target, n.Type().PtrTo()))
 			}
 		}
 	}
@@ -101,8 +99,8 @@ func preassignSymIdxs(symABIs *ssagen.SymABIs) {
 //   - We should not have already preassigned an index for the symbol (nothing to do)
 //   - It should not be content addressable (we don't necessarily know their content yet)
 //   - It should belong to the current package.
-func lsymShouldBeIndexed(lsym *obj.LSym) bool {
-	return lsym.PkgIdx == goobj.PkgIdxInvalid && !lsym.Indexed() && !lsym.ContentAddressable() && !base.Ctxt.IsNonPkgSym(lsym)
+func lsymShouldBeIndexed(target *ir.Package, lsym *obj.LSym) bool {
+	return lsym.PkgIdx == goobj.PkgIdxInvalid && !lsym.Indexed() && !lsym.ContentAddressable() && !target.Ctxt.IsNonPkgSym(lsym)
 }
 
 // nameShouldBeIndexed checks the conditions where names should be preassigned an index for export data:
@@ -111,23 +109,23 @@ func lsymShouldBeIndexed(lsym *obj.LSym) bool {
 //   - They don't have a linkname (see IsNonPkgSym).
 //
 // TODO(matloob): Can we drop the linkname condition? Is it already checked by IsNonPkgSym?
-func nameShouldBeIndexed(name *ir.Name) bool {
-	return lsymShouldBeIndexed(name.Linksym()) &&
-		name.Class == ir.PEXTERN && name.Sym().Pkg == types.LocalPkg && name.Sym().Linkname == ""
+func nameShouldBeIndexed(target *ir.Package, name *ir.Name) bool {
+	return lsymShouldBeIndexed(target, name.Linksym()) &&
+		name.Class == ir.PEXTERN && name.Sym().Pkg == target.LocalPkg && name.Sym().Linkname == ""
 }
 
 // typeShouldBeIndexed checks the conditions where types should be preassigned an index for export data:
 //   - They belong to the current package
 //   - They are not DUPOK.
-func typeShouldBeIndexed(typ *types.Type) bool {
-	return typ.Sym() != nil && typ.Sym().Pkg == types.LocalPkg && !reflectdata.TypeCanBeDupok(typ) &&
-		lsymShouldBeIndexed(types.TypeSym(typ).Linksym())
+func typeShouldBeIndexed(target *ir.Package, typ *types.Type) bool {
+	return typ.Sym() != nil && typ.Sym().Pkg == target.LocalPkg && !reflectdata.TypeCanBeDupok(typ) &&
+		lsymShouldBeIndexed(target, reflectdata.TypeSym(target, typ).Linksym())
 }
 
 // TODO(matloob): better document when functions should be preassigned an index for export data.
 func funcShouldBeIndexed(fn *ir.Func, symABIs *ssagen.SymABIs) bool {
 	name := fn.Nname
-	if fn.ABI != obj.ABIInternal || fn.Dupok() || fn.IsClosure() || ir.IsBlank(name) || name.Sym().Linkname != "" || !lsymShouldBeIndexed(name.Linksym()) {
+	if fn.ABI != obj.ABIInternal || fn.Dupok() || fn.IsClosure() || ir.IsBlank(name) || name.Sym().Linkname != "" || !lsymShouldBeIndexed(fn.Target, name.Linksym()) {
 		return false
 	}
 	return len(fn.Body) != 0 || fn.WasmImport != nil || needsIntrinsicBody(fn, symABIs)

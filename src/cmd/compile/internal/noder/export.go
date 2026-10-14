@@ -10,11 +10,10 @@ import (
 	"internal/goexperiment"
 	"io"
 
-	"cmd/compile/internal/base"
 	"cmd/internal/bio"
 )
 
-func WriteExports(out *bio.Writer) {
+func WriteExports(ctx *Context, out *bio.Writer) {
 	var data bytes.Buffer
 
 	if goexperiment.GoListExportNewFormat {
@@ -22,14 +21,14 @@ func WriteExports(out *bio.Writer) {
 	} else {
 		data.WriteByte('u')
 	}
-	writeUnifiedExport(&data)
+	writeUnifiedExport(ctx, &data)
 
 	// The linker also looks for the $$ marker - use char after $$ to distinguish format.
 	out.WriteString("\n$$B\n") // indicate binary export format
 	io.Copy(out, &data)
 	out.WriteString("\n$$\n")
 
-	if base.Debug.Export != 0 {
-		fmt.Printf("BenchmarkExportSize:%s 1 %d bytes\n", base.Ctxt.Pkgpath, data.Len())
+	if ctx.Target.Debug.Export != 0 {
+		fmt.Printf("BenchmarkExportSize:%s 1 %d bytes\n", ctx.Target.Ctxt.Pkgpath, data.Len())
 	}
 }

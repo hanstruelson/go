@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"cmd/compile/internal/abi"
 	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -22,22 +23,37 @@ import (
 // AMD64 registers available:
 // - integer: RAX, RBX, RCX, RDI, RSI, R8, R9, r10, R11
 // - floating point: X0 - X14
-var configAMD64 = abi.NewABIConfig(9, 15, 0, 1)
+var configAMD64 *abi.ABIConfig
+var testTarget *ir.Package
 
 func TestMain(m *testing.M) {
-	ssagen.Arch.LinkArch = &x86.Linkamd64
-	ssagen.Arch.REGSP = x86.REGSP
-	ssagen.Arch.MAXWIDTH = 1 << 50
-	types.MaxWidth = ssagen.Arch.MAXWIDTH
-	base.Ctxt = obj.Linknew(ssagen.Arch.LinkArch)
+	arch := &ssagen.ArchInfo{
+		LinkArch: &x86.Linkamd64,
+		REGSP:    x86.REGSP,
+		MAXWIDTH: 1 << 50,
+	}
+	types.MaxWidth = arch.MAXWIDTH
+	base.Ctxt = obj.Linknew(arch.LinkArch)
 	base.Ctxt.DiagFunc = base.Diagf
 	base.Ctxt.DiagFlush = base.FlushErrors
 	base.Ctxt.Bso = bufio.NewWriter(os.Stdout)
-	types.LocalPkg = types.NewPkg("p", "local")
-	types.LocalPkg.Prefix = "p"
-	types.PtrSize = ssagen.Arch.LinkArch.PtrSize
-	types.RegSize = ssagen.Arch.LinkArch.RegSize
-	typecheck.InitUniverse()
+	testTarget = &ir.Package{
+		ArchInfo:   arch,
+		Ctxt:       base.Ctxt,
+		PtrSize:    arch.LinkArch.PtrSize,
+		RegSize:    arch.LinkArch.RegSize,
+		MaxWidth:   arch.MAXWIDTH,
+		LocalPkg:   types.NewPkgInstance("p", "local"),
+		BuiltinPkg: types.NewPkgInstance("go.builtin", ""),
+		UnsafePkg:  types.NewPkgInstance("unsafe", "unsafe"),
+	}
+	testTarget.LocalPkg.Local = true
+	testTarget.LocalPkg.Prefix = "p"
+	testTarget.BuiltinPkg.Prefix = "go:builtin"
+	types.PtrSize = arch.LinkArch.PtrSize
+	types.RegSize = arch.LinkArch.RegSize
+	typecheck.InitUniverse(testTarget)
+	configAMD64 = abi.NewABIConfig(testTarget, 9, 15, 0, 1)
 	os.Exit(m.Run())
 }
 
@@ -312,7 +328,7 @@ func TestABIUtilsInterfaces(t *testing.T) {
 	pei := types.NewPtr(ei)         // *interface{}
 	fldt := mkFuncType(types.FakeRecvType(), []*types.Type{},
 		[]*types.Type{types.Types[types.TSTRING]})
-	field := types.NewField(src.NoXPos, typecheck.Lookup("F"), fldt)
+	field := types.NewField(src.NoXPos, typecheck.Lookup(testTarget, "F"), fldt)
 	nei := types.NewInterface([]*types.Field{field})
 	i16 := types.Types[types.TINT16]
 	tb := types.Types[types.TBOOL]

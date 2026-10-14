@@ -44,8 +44,8 @@ var sharedProgArray = new([10000]obj.Prog) // *T instead of T to work around iss
 // worker indicates which of the backend workers will use the Progs.
 func NewProgs(fn *ir.Func, worker int) *Progs {
 	pp := new(Progs)
-	if base.Ctxt.CanReuseProgs() {
-		sz := len(sharedProgArray) / base.Flag.LowerC
+	if fn.Target.Ctxt.CanReuseProgs() {
+		sz := len(sharedProgArray) / fn.Target.Flags.LowerC
 		pp.Cache = sharedProgArray[sz*worker : sz*(worker+1)]
 	}
 	pp.CurFunc = fn
@@ -102,19 +102,19 @@ func (pp *Progs) NewProg() *obj.Prog {
 	} else {
 		p = new(obj.Prog)
 	}
-	p.Ctxt = base.Ctxt
+	p.Ctxt = pp.CurFunc.Target.Ctxt
 	return p
 }
 
 // Flush converts from pp to machine code.
 func (pp *Progs) Flush() {
 	plist := &obj.Plist{Firstpc: pp.Text, Curfn: pp.CurFunc}
-	obj.Flushplist(base.Ctxt, plist, pp.NewProg)
+	obj.Flushplist(pp.CurFunc.Target.Ctxt, plist, pp.NewProg)
 }
 
 // Free clears pp and any associated resources.
 func (pp *Progs) Free() {
-	if base.Ctxt.CanReuseProgs() {
+	if pp.CurFunc.Target.Ctxt.CanReuseProgs() {
 		// Clear progs to enable GC and avoid abuse.
 		clear(pp.Cache[:pp.CacheIndex])
 	}
@@ -149,7 +149,7 @@ func (pp *Progs) Prog(as obj.As) *obj.Prog {
 	pp.Clear(pp.Next)
 	p.Link = pp.Next
 
-	if !pp.Pos.IsKnown() && base.Flag.K != 0 {
+	if !pp.Pos.IsKnown() && pp.CurFunc.Target.Flags.K != 0 {
 		base.Warn("prog: unknown position (line 0)")
 	}
 

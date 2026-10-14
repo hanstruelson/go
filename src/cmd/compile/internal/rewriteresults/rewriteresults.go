@@ -7,7 +7,6 @@
 package rewriteresults
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/types"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 
 // Funcs applies the rewriteresults pass to fns.
 func Funcs(fns []*ir.Func) {
-	if base.Flag.N != 0 || base.Debug.RewriteResults == 0 {
+	if len(fns) == 0 || fns[0].Target.Flags.N != 0 || fns[0].Target.Debug.RewriteResults == 0 {
 		return
 	}
 
@@ -124,7 +123,7 @@ func rewrite(fn *ir.Func) {
 		out.SetEsc(local.Esc())
 	}
 
-	if base.Debug.RewriteResults > 1 {
+	if fn.Target.Debug.RewriteResults > 1 {
 		for local, out := range candidates {
 			fmt.Fprintf(os.Stderr, "rewriteresults: %v: %v => %v\n", ir.FuncName(fn), local, out)
 		}

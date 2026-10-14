@@ -13,7 +13,7 @@ import (
 )
 
 func (w *walkState) walkSelect(sel *ir.SelectStmt) {
-	lno := ir.SetPos(sel)
+	lno := ir.SetPosFor(w.curfunc.Target, sel)
 	if sel.Walked() {
 		base.Fatalf("double walkSelect")
 	}
@@ -27,12 +27,12 @@ func (w *walkState) walkSelect(sel *ir.SelectStmt) {
 	sel.Compiled = init
 	w.walkStmtList(sel.Compiled)
 
-	base.Pos = lno
+	ir.SetPosValue(w.curfunc.Target, lno)
 }
 
 func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	ncas := len(cases)
-	sellineno := base.Pos
+	sellineno := w.curfunc.Target.Pos
 
 	// optimization: zero-case select
 	if ncas == 0 {
@@ -42,7 +42,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	// optimization: one-case select: single op.
 	if ncas == 1 {
 		cas := cases[0]
-		ir.SetPos(cas)
+		ir.SetPosFor(w.curfunc.Target, cas)
 		l := cas.Init()
 		if cas.Comm != nil { // not default:
 			n := cas.Comm
@@ -67,7 +67,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		}
 
 		l = append(l, cas.Body...)
-		l = append(l, ir.NewBranchStmt(base.Pos, ir.OBREAK, nil))
+		l = append(l, ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil))
 		return l
 	}
 
@@ -75,7 +75,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	// this rewrite is used by both the general code and the next optimization.
 	var dflt *ir.CommClause
 	for _, cas := range cases {
-		ir.SetPos(cas)
+		ir.SetPosFor(w.curfunc.Target, cas)
 		n := cas.Comm
 		if n == nil {
 			dflt = cas
@@ -104,8 +104,8 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		}
 
 		n := cas.Comm
-		ir.SetPos(n)
-		r := ir.NewIfStmt(base.Pos, nil, nil, nil)
+		ir.SetPosFor(w.curfunc.Target, n)
+		r := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
 		r.SetInit(cas.Init())
 		var cond ir.Node
 		switch n.Op() {
@@ -116,7 +116,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			// if selectnbsend(c, v) { body } else { default body }
 			n := n.(*ir.SendStmt)
 			ch := n.Chan
-			cond = w.mkcall1(chanfn("selectnbsend", 2, ch.Type()), types.Types[types.TBOOL], r.PtrInit(), ch, n.Value)
+			cond = w.mkcall1(chanfn(w.curfunc.Target, "selectnbsend", 2, ch.Type()), w.curfunc.Target.Type(types.TBOOL), r.PtrInit(), ch, n.Value)
 
 		case ir.OSELRECV2:
 			n := n.(*ir.AssignListStmt)
@@ -124,10 +124,10 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			ch := recv.X
 			elem := n.Lhs[0]
 			if ir.IsBlank(elem) {
-				elem = typecheck.NodNil()
+				elem = typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
 			}
-			cond = typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TBOOL])
-			fn := chanfn("selectnbrecv", 2, ch.Type())
+			cond = typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TBOOL))
+			fn := chanfn(w.curfunc.Target, "selectnbrecv", 2, ch.Type())
 			call := w.mkcall1(fn, fn.Type().ResultsTuple(), r.PtrInit(), elem, ch)
 			as := ir.NewAssignListStmt(r.Pos(), ir.OAS2, []ir.Node{cond, n.Lhs[1]}, []ir.Node{call})
 			r.PtrInit().Append(typecheck.Stmt(w.curfunc, as))
@@ -136,7 +136,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		r.Cond = typecheck.Expr(w.curfunc, cond)
 		r.Body = cas.Body
 		r.Else = append(dflt.Init(), dflt.Body...)
-		return []ir.Node{r, ir.NewBranchStmt(base.Pos, ir.OBREAK, nil)}
+		return []ir.Node{r, ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil)}
 	}
 
 	if dflt != nil {
@@ -148,24 +148,24 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	var init []ir.Node
 
 	// generate sel-struct
-	base.Pos = sellineno
-	selv := typecheck.TempAt(base.Pos, w.curfunc, types.NewArray(scasetype(), int64(ncas)))
-	init = append(init, typecheck.Stmt(w.curfunc, ir.NewAssignStmt(base.Pos, selv, nil)))
+	ir.SetPosValue(w.curfunc.Target, sellineno)
+	selv := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewArray(scasetype(w.curfunc.Target), int64(ncas)))
+	init = append(init, typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, selv, nil)))
 
 	// No initialization for order; runtime.selectgo is responsible for that.
-	order := typecheck.TempAt(base.Pos, w.curfunc, types.NewArray(types.Types[types.TUINT16], 2*int64(ncas)))
+	order := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewArray(w.curfunc.Target.Type(types.TUINT16), 2*int64(ncas)))
 
 	var pc0, pcs ir.Node
-	if base.Flag.Race {
-		pcs = typecheck.TempAt(base.Pos, w.curfunc, types.NewArray(types.Types[types.TUINTPTR], int64(ncas)))
-		pc0 = typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, ir.NewIndexExpr(base.Pos, pcs, ir.NewInt(base.Pos, 0))))
+	if w.curfunc.Target.Flags.Race {
+		pcs = typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewArray(w.curfunc.Target.Type(types.TUINTPTR), int64(ncas)))
+		pc0 = typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, ir.NewIndexExpr(w.curfunc.Target.Pos, pcs, ir.NewInt(w.curfunc.Target.Pos, 0))))
 	} else {
-		pc0 = typecheck.NodNil()
+		pc0 = typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
 	}
 
 	// register cases
 	for _, cas := range cases {
-		ir.SetPos(cas)
+		ir.SetPosFor(w.curfunc.Target, cas)
 
 		init = append(init, ir.TakeInit(cas)...)
 
@@ -197,21 +197,21 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		casorder[i] = cas
 
 		setField := func(f string, val ir.Node) {
-			r := ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, ir.NewIndexExpr(base.Pos, selv, ir.NewInt(base.Pos, int64(i))), typecheck.Lookup(f)), val)
+			r := ir.NewAssignStmt(w.curfunc.Target.Pos, ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, ir.NewIndexExpr(w.curfunc.Target.Pos, selv, ir.NewInt(w.curfunc.Target.Pos, int64(i))), typecheck.Lookup(w.curfunc.Target, f)), val)
 			init = append(init, typecheck.Stmt(w.curfunc, r))
 		}
 
-		c = typecheck.ConvNop(w.curfunc, c, types.Types[types.TUNSAFEPTR])
+		c = typecheck.ConvNop(w.curfunc, c, w.curfunc.Target.Type(types.TUNSAFEPTR))
 		setField("c", c)
 		if !ir.IsBlank(elem) {
-			elem = typecheck.ConvNop(w.curfunc, elem, types.Types[types.TUNSAFEPTR])
+			elem = typecheck.ConvNop(w.curfunc, elem, w.curfunc.Target.Type(types.TUNSAFEPTR))
 			setField("elem", elem)
 		}
 
 		// TODO(mdempsky): There should be a cleaner way to
 		// handle this.
-		if base.Flag.Race {
-			r := w.mkcallstmt("selectsetpc", typecheck.NodAddr(w.curfunc, ir.NewIndexExpr(base.Pos, pcs, ir.NewInt(base.Pos, int64(i)))))
+		if w.curfunc.Target.Flags.Race {
+			r := w.mkcallstmt("selectsetpc", typecheck.NodAddr(w.curfunc, ir.NewIndexExpr(w.curfunc.Target.Pos, pcs, ir.NewInt(w.curfunc.Target.Pos, int64(i)))))
 			init = append(init, r)
 		}
 	}
@@ -220,14 +220,14 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 	}
 
 	// run the select
-	base.Pos = sellineno
-	chosen := typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TINT])
-	recvOK := typecheck.TempAt(base.Pos, w.curfunc, types.Types[types.TBOOL])
-	r := ir.NewAssignListStmt(base.Pos, ir.OAS2, nil, nil)
+	ir.SetPosValue(w.curfunc.Target, sellineno)
+	chosen := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+	recvOK := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TBOOL))
+	r := ir.NewAssignListStmt(w.curfunc.Target.Pos, ir.OAS2, nil, nil)
 	r.Lhs = []ir.Node{chosen, recvOK}
-	fn := typecheck.LookupRuntime("selectgo")
+	fn := typecheck.LookupRuntime(w.curfunc.Target, "selectgo")
 	var fnInit ir.Nodes
-	r.Rhs = []ir.Node{w.mkcall1(fn, fn.Type().ResultsTuple(), &fnInit, bytePtrToIndex(w.curfunc, selv, 0), bytePtrToIndex(w.curfunc, order, 0), pc0, ir.NewInt(base.Pos, int64(nsends)), ir.NewInt(base.Pos, int64(nrecvs)), ir.NewBool(base.Pos, dflt == nil))}
+	r.Rhs = []ir.Node{w.mkcall1(fn, fn.Type().ResultsTuple(), &fnInit, bytePtrToIndex(w.curfunc, selv, 0), bytePtrToIndex(w.curfunc, order, 0), pc0, ir.NewInt(w.curfunc.Target.Pos, int64(nsends)), ir.NewInt(w.curfunc.Target.Pos, int64(nrecvs)), ir.NewBool(w.curfunc.Target.Pos, dflt == nil))}
 	init = append(init, fnInit...)
 	init = append(init, typecheck.Stmt(w.curfunc, r))
 
@@ -240,37 +240,37 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		if n := cas.Comm; n != nil && n.Op() == ir.OSELRECV2 {
 			n := n.(*ir.AssignListStmt)
 			if !ir.IsBlank(n.Lhs[1]) {
-				x := ir.NewAssignStmt(base.Pos, n.Lhs[1], recvOK)
+				x := ir.NewAssignStmt(w.curfunc.Target.Pos, n.Lhs[1], recvOK)
 				list.Append(typecheck.Stmt(w.curfunc, x))
 			}
 		}
 
 		list.Append(cas.Body.Take()...)
-		list.Append(ir.NewBranchStmt(base.Pos, ir.OBREAK, nil))
+		list.Append(ir.NewBranchStmt(w.curfunc.Target.Pos, ir.OBREAK, nil))
 
 		var r ir.Node
 		if cond != nil {
 			cond = typecheck.Expr(w.curfunc, cond)
-			cond = typecheck.DefaultLit(cond, nil)
-			r = ir.NewIfStmt(base.Pos, cond, list, nil)
+			cond = typecheck.DefaultLitFor(w.curfunc.Target, cond, nil)
+			r = ir.NewIfStmt(w.curfunc.Target.Pos, cond, list, nil)
 		} else {
-			r = ir.NewBlockStmt(base.Pos, list)
+			r = ir.NewBlockStmt(w.curfunc.Target.Pos, list)
 		}
 
 		init = append(init, r)
 	}
 
 	if dflt != nil {
-		ir.SetPos(dflt)
-		dispatch(ir.NewBinaryExpr(base.Pos, ir.OLT, chosen, ir.NewInt(base.Pos, 0)), dflt)
+		ir.SetPosFor(w.curfunc.Target, dflt)
+		dispatch(ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLT, chosen, ir.NewInt(w.curfunc.Target.Pos, 0)), dflt)
 	}
 	for i, cas := range casorder {
-		ir.SetPos(cas)
+		ir.SetPosFor(w.curfunc.Target, cas)
 		if i == len(casorder)-1 {
 			dispatch(nil, cas)
 			break
 		}
-		dispatch(ir.NewBinaryExpr(base.Pos, ir.OEQ, chosen, ir.NewInt(base.Pos, int64(i))), cas)
+		dispatch(ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OEQ, chosen, ir.NewInt(w.curfunc.Target.Pos, int64(i))), cas)
 	}
 
 	return init
@@ -278,25 +278,23 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 
 // bytePtrToIndex returns a Node representing "(*byte)(&n[i])".
 func bytePtrToIndex(curfunc *ir.Func, n ir.Node, i int64) ir.Node {
-	s := typecheck.NodAddr(curfunc, ir.NewIndexExpr(base.Pos, n, ir.NewInt(base.Pos, i)))
-	t := types.NewPtr(types.Types[types.TUINT8])
+	s := typecheck.NodAddr(curfunc, ir.NewIndexExpr(curfunc.Target.Pos, n, ir.NewInt(curfunc.Target.Pos, i)))
+	t := types.NewPtr(curfunc.Target.Type(types.TUINT8))
 	return typecheck.ConvNop(curfunc, s, t)
 }
 
-var scase *types.Type
-
 // Keep in sync with src/runtime/select.go.
-func scasetype() *types.Type {
-	if scase == nil {
-		n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.Runtime.Lookup("scase"))
-		scase = types.NewNamed(n)
-		n.SetType(scase)
+func scasetype(target *ir.Package) *types.Type {
+	if target.ScaseType == nil {
+		n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.RuntimePkg.Lookup("scase"))
+		target.ScaseType = types.NewNamed(n)
+		n.SetType(target.ScaseType)
 		n.SetTypecheck(1)
 
-		scase.SetUnderlying(types.NewStruct([]*types.Field{
-			types.NewField(base.Pos, typecheck.Lookup("c"), types.Types[types.TUNSAFEPTR]),
-			types.NewField(base.Pos, typecheck.Lookup("elem"), types.Types[types.TUNSAFEPTR]),
+		target.ScaseType.SetUnderlying(types.NewStruct([]*types.Field{
+			types.NewField(target.Pos, target.LocalPkg.Lookup("c"), target.Type(types.TUNSAFEPTR)),
+			types.NewField(target.Pos, target.LocalPkg.Lookup("elem"), target.Type(types.TUNSAFEPTR)),
 		}))
 	}
-	return scase
+	return target.ScaseType
 }

@@ -17,7 +17,7 @@ import (
 )
 
 // MapGroupType makes the map slot group type given the type of the map.
-func MapGroupType(t *types.Type) *types.Type {
+func MapGroupType(target *ir.Package, t *types.Type) *types.Type {
 	if t.MapType().Group != nil {
 		return t.MapType().Group
 	}
@@ -54,7 +54,7 @@ func MapGroupType(t *types.Type) *types.Type {
 		elemArr.SetNoalg(true)
 
 		fields = []*types.Field{
-			makefield("ctrl", types.Types[types.TUINT64]),
+			makefield("ctrl", target.Type(types.TUINT64)),
 			makefield("keys", keyArr),
 			makefield("elems", elemArr),
 		}
@@ -78,7 +78,7 @@ func MapGroupType(t *types.Type) *types.Type {
 		slotArr.SetNoalg(true)
 
 		fields = []*types.Field{
-			makefield("ctrl", types.Types[types.TUINT64]),
+			makefield("ctrl", target.Type(types.TUINT64)),
 			makefield("slots", slotArr),
 		}
 	}
@@ -110,13 +110,11 @@ func MapGroupType(t *types.Type) *types.Type {
 	return group
 }
 
-var cachedMapTableType *types.Type
-
 // mapTableType returns a type interchangeable with internal/runtime/maps.table.
 // Make sure this stays in sync with internal/runtime/maps/table.go.
-func mapTableType() *types.Type {
-	if cachedMapTableType != nil {
-		return cachedMapTableType
+func mapTableType(target *ir.Package) *types.Type {
+	if target.MapTableType != nil {
+		return target.MapTableType
 	}
 
 	// type table struct {
@@ -134,16 +132,16 @@ func mapTableType() *types.Type {
 	// }
 	// must match internal/runtime/maps/table.go:table.
 	fields := []*types.Field{
-		makefield("used", types.Types[types.TUINT16]),
-		makefield("capacity", types.Types[types.TUINT16]),
-		makefield("growthLeft", types.Types[types.TUINT16]),
-		makefield("localDepth", types.Types[types.TUINT8]),
-		makefield("index", types.Types[types.TINT]),
-		makefield("groups_data", types.Types[types.TUNSAFEPTR]),
-		makefield("groups_lengthMask", types.Types[types.TUINT64]),
+		makefield("used", target.Type(types.TUINT16)),
+		makefield("capacity", target.Type(types.TUINT16)),
+		makefield("growthLeft", target.Type(types.TUINT16)),
+		makefield("localDepth", target.Type(types.TUINT8)),
+		makefield("index", target.Type(types.TINT)),
+		makefield("groups_data", target.Type(types.TUNSAFEPTR)),
+		makefield("groups_lengthMask", target.Type(types.TUINT64)),
 	}
 
-	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.InternalMaps.Lookup("table"))
+	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.InternalMapsPkg.Lookup("table"))
 	table := types.NewNamed(n)
 	n.SetType(table)
 	n.SetTypecheck(1)
@@ -153,21 +151,19 @@ func mapTableType() *types.Type {
 
 	// The size of table should be 32 bytes on 64 bit
 	// and 24 bytes on 32 bit platforms.
-	if size := int64(3*2 + 2*1 /* one extra for padding */ + 1*8 + 2*types.PtrSize); table.Size() != size {
+	if size := int64(3*2 + 2*1 /* one extra for padding */ + 1*8 + 2*target.PtrSize); table.Size() != size {
 		base.Fatalf("internal/runtime/maps.table size not correct: got %d, want %d", table.Size(), size)
 	}
 
-	cachedMapTableType = table
+	target.MapTableType = table
 	return table
 }
 
-var cachedMapType *types.Type
-
 // MapType returns a type interchangeable with internal/runtime/maps.Map.
 // Make sure this stays in sync with internal/runtime/maps/map.go.
-func MapType() *types.Type {
-	if cachedMapType != nil {
-		return cachedMapType
+func MapType(target *ir.Package) *types.Type {
+	if target.MapType != nil {
+		return target.MapType
 	}
 
 	// type Map struct {
@@ -188,18 +184,18 @@ func MapType() *types.Type {
 	// }
 	// must match internal/runtime/maps/map.go:Map.
 	fields := []*types.Field{
-		makefield("used", types.Types[types.TUINT64]),
-		makefield("seed", types.Types[types.TUINTPTR]),
-		makefield("dirPtr", types.Types[types.TUNSAFEPTR]),
-		makefield("dirLen", types.Types[types.TINT]),
-		makefield("globalDepth", types.Types[types.TUINT8]),
-		makefield("globalShift", types.Types[types.TUINT8]),
-		makefield("writing", types.Types[types.TUINT8]),
-		makefield("tombstonePossible", types.Types[types.TBOOL]),
-		makefield("clearSeq", types.Types[types.TUINT64]),
+		makefield("used", target.Type(types.TUINT64)),
+		makefield("seed", target.Type(types.TUINTPTR)),
+		makefield("dirPtr", target.Type(types.TUNSAFEPTR)),
+		makefield("dirLen", target.Type(types.TINT)),
+		makefield("globalDepth", target.Type(types.TUINT8)),
+		makefield("globalShift", target.Type(types.TUINT8)),
+		makefield("writing", target.Type(types.TUINT8)),
+		makefield("tombstonePossible", target.Type(types.TBOOL)),
+		makefield("clearSeq", target.Type(types.TUINT64)),
 	}
 
-	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.InternalMaps.Lookup("Map"))
+	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.InternalMapsPkg.Lookup("Map"))
 	m := types.NewNamed(n)
 	n.SetType(m)
 	n.SetTypecheck(1)
@@ -209,21 +205,19 @@ func MapType() *types.Type {
 
 	// The size of Map should be 48 bytes on 64 bit
 	// and 32 bytes on 32 bit platforms.
-	if size := int64(2*8 + 4*types.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
+	if size := int64(2*8 + 4*target.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
 		base.Fatalf("internal/runtime/maps.Map size not correct: got %d, want %d", m.Size(), size)
 	}
 
-	cachedMapType = m
+	target.MapType = m
 	return m
 }
 
-var cachedMapIterType *types.Type
-
 // MapIterType returns a type interchangeable with internal/runtime/maps.Iter.
 // Make sure this stays in sync with internal/runtime/maps/table.go.
-func MapIterType() *types.Type {
-	if cachedMapIterType != nil {
-		return cachedMapIterType
+func MapIterType(target *ir.Package) *types.Type {
+	if target.MapIterType != nil {
+		return target.MapIterType
 	}
 
 	// type Iter struct {
@@ -250,22 +244,22 @@ func MapIterType() *types.Type {
 	// }
 	// must match internal/runtime/maps/table.go:Iter.
 	fields := []*types.Field{
-		makefield("key", types.Types[types.TUNSAFEPTR]),  // Used in range.go for TMAP.
-		makefield("elem", types.Types[types.TUNSAFEPTR]), // Used in range.go for TMAP.
-		makefield("typ", types.Types[types.TUNSAFEPTR]),
-		makefield("m", types.NewPtr(MapType())),
-		makefield("groupSlotOffset", types.Types[types.TUINT64]),
-		makefield("dirOffset", types.Types[types.TUINT64]),
-		makefield("clearSeq", types.Types[types.TUINT64]),
-		makefield("globalDepth", types.Types[types.TUINT8]),
-		makefield("dirIdx", types.Types[types.TINT]),
-		makefield("tab", types.NewPtr(mapTableType())),
-		makefield("group", types.Types[types.TUNSAFEPTR]),
-		makefield("entryIdx", types.Types[types.TUINT64]),
+		makefield("key", target.Type(types.TUNSAFEPTR)),  // Used in range.go for TMAP.
+		makefield("elem", target.Type(types.TUNSAFEPTR)), // Used in range.go for TMAP.
+		makefield("typ", target.Type(types.TUNSAFEPTR)),
+		makefield("m", types.NewPtr(MapType(target))),
+		makefield("groupSlotOffset", target.Type(types.TUINT64)),
+		makefield("dirOffset", target.Type(types.TUINT64)),
+		makefield("clearSeq", target.Type(types.TUINT64)),
+		makefield("globalDepth", target.Type(types.TUINT8)),
+		makefield("dirIdx", target.Type(types.TINT)),
+		makefield("tab", types.NewPtr(mapTableType(target))),
+		makefield("group", target.Type(types.TUNSAFEPTR)),
+		makefield("entryIdx", target.Type(types.TUINT64)),
 	}
 
 	// build iterator struct holding the above fields
-	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.InternalMaps.Lookup("Iter"))
+	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.InternalMapsPkg.Lookup("Iter"))
 	iter := types.NewNamed(n)
 	n.SetType(iter)
 	n.SetTypecheck(1)
@@ -275,21 +269,21 @@ func MapIterType() *types.Type {
 
 	// The size of Iter should be 96 bytes on 64 bit
 	// and 64 bytes on 32 bit platforms.
-	if size := 8*types.PtrSize /* one extra for globalDepth + padding */ + 4*8; iter.Size() != int64(size) {
+	if size := 8*target.PtrSize /* one extra for globalDepth + padding */ + 4*8; iter.Size() != int64(size) {
 		base.Fatalf("internal/runtime/maps.Iter size not correct: got %d, want %d", iter.Size(), size)
 	}
 
-	cachedMapIterType = iter
+	target.MapIterType = iter
 	return iter
 }
 
-func writeMapType(t *types.Type, lsym *obj.LSym, c rttype.Cursor) {
+func writeMapType(target *ir.Package, t *types.Type, lsym *obj.LSym, c rttype.Cursor) {
 	// internal/abi.MapType
-	gtyp := MapGroupType(t)
-	s1 := writeType(t.Key())
-	s2 := writeType(t.Elem())
-	s3 := writeType(gtyp)
-	hasher := genhash(t.Key())
+	gtyp := MapGroupType(target, t)
+	s1 := writeType(target, t.Key())
+	s2 := writeType(target, t.Elem())
+	s3 := writeType(target, gtyp)
+	hasher := genhash(target, t.Key())
 
 	var keysOff int64
 	var keyStride int64
@@ -347,6 +341,6 @@ func writeMapType(t *types.Type, lsym *obj.LSym, c rttype.Cursor) {
 		// type live in the binary. This is important to make sure that
 		// a named map and that same map cast to its underlying type via
 		// reflection, use the same hash function. See issue 37716.
-		lsym.AddRel(base.Ctxt, obj.Reloc{Type: objabi.R_KEEP, Sym: writeType(u)})
+		lsym.AddRel(target.Ctxt, obj.Reloc{Type: objabi.R_KEEP, Sym: writeType(target, u)})
 	}
 }

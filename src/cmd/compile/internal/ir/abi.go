@@ -65,14 +65,14 @@ func setupTextLSym(f *Func, flag int) {
 	// WRAPPER functions (runtime.callNN). Its ABI wrapper needs WRAPPER
 	// flag as well.
 	fnname := f.Sym().Name
-	if base.Ctxt.Pkgpath == "runtime" && fnname == "reflectcall" {
+	if f.Target.Ctxt.Pkgpath == "runtime" && fnname == "reflectcall" {
 		flag |= obj.WRAPPER
-	} else if base.Ctxt.Pkgpath == "reflect" {
+	} else if f.Target.Ctxt.Pkgpath == "reflect" {
 		switch fnname {
 		case "callReflect", "callMethod":
 			flag |= obj.WRAPPER
 		}
 	}
 
-	base.Ctxt.InitTextSym(f.LSym, flag, f.Pos())
+	f.Target.Ctxt.InitTextSym(f.LSym, flag, f.Pos())
 }

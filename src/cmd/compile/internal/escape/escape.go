@@ -91,6 +91,7 @@ import (
 // A batch holds escape analysis state that's shared across an entire
 // batch of functions being analyzed at once.
 type batch struct {
+	target          *ir.Package
 	allLocs         []*location
 	closures        []closure
 	reassignOracles map[*ir.Func]*ir.ReassignOracle
@@ -143,7 +144,11 @@ func Funcs(all []*ir.Func) {
 // Batch performs escape analysis on a minimal batch of
 // functions.
 func Batch(fns []*ir.Func, reassignOracles map[*ir.Func]*ir.ReassignOracle) {
+	if len(fns) == 0 {
+		return
+	}
 	var b batch
+	b.target = fns[0].Target
 	b.heapLoc.attrs = attrEscapes | attrPersists | attrMutates | attrCalls
 	b.mutatorLoc.attrs = attrMutates
 	b.calleeLoc.attrs = attrCalls
@@ -151,7 +156,7 @@ func Batch(fns []*ir.Func, reassignOracles map[*ir.Func]*ir.ReassignOracle) {
 
 	// Construct data-flow graph from syntax trees.
 	for _, fn := range fns {
-		if base.Flag.W > 1 {
+		if b.target.Flags.W > 1 {
 			s := fmt.Sprintf("\nbefore escape %v", fn)
 			ir.Dump(s, fn)
 		}
@@ -179,7 +184,7 @@ func Batch(fns []*ir.Func, reassignOracles map[*ir.Func]*ir.ReassignOracle) {
 
 		// Check if the node must be heap allocated for certain reasons
 		// such as OMAKESLICE for a large slice.
-		if why := HeapAllocReason(loc.n); why != "" {
+		if why := HeapAllocReason(loc.curfn.Target, loc.n); why != "" {
 			b.flow(b.heapHole().addr(loc.n, why), loc)
 		}
 	}
@@ -202,7 +207,7 @@ func (b *batch) initFunc(fn *ir.Func) {
 		base.Fatalf("unexpected node: %v", fn)
 	}
 	fn.SetEsc(escFuncPlanned)
-	if base.Flag.LowerM > 3 {
+	if fn.Target.Flags.LowerM > 3 {
 		ir.Dump("escAnalyze", fn)
 	}
 
@@ -285,7 +290,7 @@ func (b *batch) flowClosure(k hole, clo *ir.ClosureExpr) {
 		n := cv.Canonical()
 		loc := b.oldLoc(cv)
 
-		if base.Flag.LowerM > 1 {
+		if b.target.Flags.LowerM > 1 {
 			how := "ref"
 			if n.Byval() {
 				how = "value"
@@ -347,7 +352,7 @@ func (b *batch) rewriteClosureVarsWithLiterals(clofn *ir.Func) {
 			continue
 		}
 		declPos := cv.Canonical().Pos()
-		if !base.LiteralAllocHash.MatchPos(declPos, nil) {
+		if !b.target.LiteralAllocHash.MatchPosWithLink(b.target.Ctxt, declPos, nil) {
 			// De-selected by literal alloc optimizations debug hash.
 			continue
 		}
@@ -380,7 +385,7 @@ func (b *batch) rewriteClosureVarsWithLiterals(clofn *ir.Func) {
 		}
 		repl[cv] = name
 
-		if base.Debug.EscapeDebug >= 3 {
+		if b.target.Debug.EscapeDebug >= 3 {
 			base.WarnfAt(pos, "rewriting closure variable %v (%v) to %v", cv, cv.Type(), lit)
 		}
 	}
@@ -463,14 +468,14 @@ func (b *batch) finish(fns []*ir.Func) {
 
 		if loc.hasAttr(attrEscapes) {
 			if n.Op() == ir.ONAME {
-				if base.Flag.CompilingRuntime {
+				if b.target.Flags.CompilingRuntime {
 					base.ErrorfAt(n.Pos(), 0, "%v escapes to heap, not allowed in runtime", n)
 				}
-				if base.Flag.LowerM != 0 {
+				if b.target.Flags.LowerM != 0 {
 					base.WarnfAt(n.Pos(), "moved to heap: %v", n)
 				}
 			} else {
-				if base.Flag.LowerM != 0 && !goDeferWrapper {
+				if b.target.Flags.LowerM != 0 && !goDeferWrapper {
 					if n.Op() == ir.OAPPEND {
 						base.WarnfAt(n.Pos(), "append escapes to heap")
 					} else {
@@ -484,7 +489,7 @@ func (b *batch) finish(fns []*ir.Func) {
 			}
 			n.SetEsc(ir.EscHeap)
 		} else {
-			if base.Flag.LowerM != 0 && n.Op() != ir.ONAME && !goDeferWrapper {
+			if b.target.Flags.LowerM != 0 && n.Op() != ir.ONAME && !goDeferWrapper {
 				if n.Op() == ir.OAPPEND {
 					base.WarnfAt(n.Pos(), "append does not escape")
 				} else {
@@ -509,9 +514,9 @@ func (b *batch) finish(fns []*ir.Func) {
 
 		// If the result of a string->[]byte conversion is never mutated,
 		// then it can simply reuse the string's memory directly.
-		if base.Debug.ZeroCopy != 0 {
+		if b.target.Debug.ZeroCopy != 0 {
 			if n, ok := n.(*ir.ConvExpr); ok && n.Op() == ir.OSTR2BYTES && !loc.hasAttr(attrMutates) {
-				if base.Flag.LowerM >= 1 {
+				if b.target.Flags.LowerM >= 1 {
 					base.WarnfAt(n.Pos(), "zero-copy string->[]byte conversion")
 				}
 				n.SetOp(ir.OSTR2BYTESTMP)
@@ -576,7 +581,7 @@ func (b *batch) paramTag(fn *ir.Func, narg int, f *types.Field) string {
 	// Only report diagnostics for user code;
 	// not for wrappers generated around them.
 	// TODO(mdempsky): Generalize this.
-	diagnose := base.Flag.LowerM != 0 && !(fn.Wrapper() || fn.Dupok())
+	diagnose := fn.Target.Flags.LowerM != 0 && !(fn.Wrapper() || fn.Dupok())
 
 	if len(fn.Body) == 0 {
 		// Assume that uintptr arguments must be held live across the call.
@@ -675,7 +680,7 @@ func (b *batch) reportLeaks(pos src.XPos, name string, esc leaks, sig *types.Typ
 		}
 	}
 
-	if base.Debug.EscapeMutationsCalls <= 0 {
+	if b.target.Debug.EscapeMutationsCalls <= 0 {
 		if !warned {
 			base.WarnfAt(pos, "%v does not escape", name)
 		}
@@ -743,7 +748,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 					base.Fatalf("unexpected BasicLit Kind")
 				}
 				if constant.Compare(lit.Val(), token.GEQ, constant.MakeInt64(0)) {
-					if !base.LiteralAllocHash.MatchPos(n.Pos(), nil) {
+					if !fn.Target.LiteralAllocHash.MatchPosWithLink(fn.Target.Ctxt, n.Pos(), nil) {
 						// De-selected by literal alloc optimizations debug hash.
 						return
 					}
@@ -757,7 +762,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 					x := x.(*ir.CompLitExpr)
 					// Preserve any side effects of the original expression, then update the value.
 					assignTemp(n.Pos(), *r, n.PtrInit())
-					*r = ir.NewBasicLit(n.Pos(), types.Types[types.TINT], constant.MakeInt64(x.Len))
+					*r = ir.NewBasicLit(n.Pos(), fn.Target.Type(types.TINT), constant.MakeInt64(x.Len))
 				}
 			}
 		}
@@ -774,11 +779,11 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 			}
 			v := ro.StaticValue(conv.X)
 			if v != nil && v.Op() == ir.OLITERAL && ir.ValidTypeForConst(conv.X.Type(), v.Val()) {
-				if !base.LiteralAllocHash.MatchPos(n.Pos(), nil) {
+				if !fn.Target.LiteralAllocHash.MatchPosWithLink(fn.Target.Ctxt, n.Pos(), nil) {
 					// De-selected by literal alloc optimizations debug hash.
 					return
 				}
-				if base.Debug.EscapeDebug >= 3 {
+				if fn.Target.Debug.EscapeDebug >= 3 {
 					base.WarnfAt(n.Pos(), "rewriting OCONVIFACE value from %v (%v) to %v (%v)", conv.X, conv.X.Type(), v, v.Type())
 				}
 				// Preserve any side effects of the original expression, then replace it.

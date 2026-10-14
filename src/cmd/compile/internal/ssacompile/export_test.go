@@ -58,8 +58,8 @@ type Conf struct {
 
 func (c *Conf) Frontend() ssa.Frontend {
 	if c.fe == nil {
-		pkg := types.NewPkg("my/import/path", "path")
-		fn := ir.NewFunc(src.NoXPos, src.NoXPos, pkg.Lookup("function"), types.NewSignature(nil, nil, nil))
+		pkg := types.NewPkgInstance("my/import/path", "path")
+		fn := ir.NewFunc(nil, src.NoXPos, src.NoXPos, pkg.Lookup("function"), types.NewSignature(nil, nil, nil))
 		fn.DeclareParams(true)
 		fn.LSym = &obj.LSym{Name: "my/import/path.function"}
 
@@ -119,6 +119,8 @@ func init() {
 	types.MaxWidth = 1 << 50
 
 	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
-	typecheck.InitUniverse()
-	testTypes.SetTypPtrs()
+	target := &ir.Package{LocalPkg: types.NewPkgInstance("ssacompile/test", "test")}
+	target.LocalPkg.Local = true
+	typecheck.InitUniverse(target)
+	testTypes.SetTypPtrs(target)
 }

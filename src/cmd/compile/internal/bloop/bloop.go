@@ -101,7 +101,7 @@ func isIgnoredCall(n *ir.CallExpr) bool {
 		return false
 	}
 	sym := name.Sym()
-	return sym.Pkg == ir.Pkgs.Runtime &&
+	return sym.Pkg.Path == "go.runtime" &&
 		(sym.Name == "panicrangestate" || sym.Name == "KeepAlive")
 }
 
@@ -121,7 +121,7 @@ func getAddressableNameFromNode(n ir.Node) (name *ir.Name, ignored bool) {
 }
 
 // getKeepAliveNodes analyzes an IR node and returns a list of nodes that must be kept alive.
-func getKeepAliveNodes(pos src.XPos, n ir.Node) ir.Nodes {
+func getKeepAliveNodes(target *ir.Package, pos src.XPos, n ir.Node) ir.Nodes {
 	name, ignored := getAddressableNameFromNode(n)
 	if ignored {
 		return nil
@@ -130,11 +130,11 @@ func getKeepAliveNodes(pos src.XPos, n ir.Node) ir.Nodes {
 		debugName(name, pos)
 		return ir.Nodes{name}
 	} else if deref, ok := n.(*ir.StarExpr); ok && deref != nil {
-		if base.Flag.LowerM > 1 {
+		if target.Flags.LowerM > 1 {
 			base.WarnfAt(pos, "dereference will be kept alive")
 		}
 		return ir.Nodes{deref}
-	} else if base.Flag.LowerM > 1 {
+	} else if target.Flags.LowerM > 1 {
 		base.WarnfAt(pos, "expr is unknown to bloop pass")
 	}
 	return nil
@@ -158,8 +158,8 @@ func keepAliveAt(curfunc *ir.Func, ns ir.Nodes, curNode ir.Node) ir.Node {
 		if !ir.IsAddressable(n) {
 			base.FatalfAt(n.Pos(), "keepAliveAt: node %v is not addressable", n)
 		}
-		arg := ir.NewConvExpr(pos, ir.OCONV, types.Types[types.TUNSAFEPTR], typecheck.NodAddr(curfunc, n))
-		callExpr := typecheck.Call(curfunc, pos, typecheck.LookupRuntime("KeepAlive"), ir.Nodes{arg}, false).(*ir.CallExpr)
+		arg := ir.NewConvExpr(pos, ir.OCONV, curfunc.Target.Type(types.TUNSAFEPTR), typecheck.NodAddr(curfunc, n))
+		callExpr := typecheck.Call(curfunc, pos, typecheck.LookupRuntime(curfunc.Target, "KeepAlive"), ir.Nodes{arg}, false).(*ir.CallExpr)
 		callExpr.IsCompilerVarLive = true
 		callExpr.NoInline = true
 		calls = append(calls, callExpr)
@@ -169,7 +169,7 @@ func keepAliveAt(curfunc *ir.Func, ns ir.Nodes, curNode ir.Node) ir.Node {
 }
 
 func debugName(name *ir.Name, pos src.XPos) {
-	if base.Flag.LowerM > 1 {
+	if name.Curfn.Target.Flags.LowerM > 1 {
 		if name.Linksym() != nil {
 			base.WarnfAt(pos, "%s will be kept alive", name.Linksym().Name)
 		} else {
@@ -188,7 +188,7 @@ func preserveCallResults(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 		ns = append(ns, tmp)
 	}
 
-	if base.Flag.LowerM > 1 {
+	if curFn.Target.Flags.LowerM > 1 {
 		plural := ""
 		if call.Fun.Type().NumResults() > 1 {
 			plural = "s"
@@ -217,7 +217,7 @@ func preserveCallArgs(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 		assign.PtrInit().Append(typecheck.Stmt(curFn, ir.NewDecl(assign.Pos(), ir.ODCL, tmp)))
 		argTmps = append(argTmps, typecheck.AssignExpr(curFn, assign))
 		names = append(names, tmp)
-		if base.Flag.LowerM > 1 {
+		if curFn.Target.Flags.LowerM > 1 {
 			base.WarnfAt(call.Pos(), "function arg will be kept alive")
 		}
 		return tmp
@@ -277,7 +277,7 @@ func preserveStmt(curFn *ir.Func, stmt ir.Node) ir.Node {
 			stmt = typecheck.AssignExpr(curFn, n)
 			n = stmt.(*ir.AssignStmt)
 		}
-		return keepAliveAt(curFn, getKeepAliveNodes(n.Pos(), n.X), n)
+		return keepAliveAt(curFn, getKeepAliveNodes(curFn.Target, n.Pos(), n.X), n)
 	case *ir.AssignListStmt:
 		var ns ir.Nodes
 		hasBlank := false
@@ -303,7 +303,7 @@ func preserveStmt(curFn *ir.Func, stmt ir.Node) ir.Node {
 				n.PtrInit().Append(typecheck.Stmt(curFn, ir.NewDecl(n.Pos(), ir.ODCL, tmp)))
 				hasBlank = true
 			}
-			ns = append(ns, getKeepAliveNodes(n.Pos(), n.Lhs[i])...)
+			ns = append(ns, getKeepAliveNodes(curFn.Target, n.Pos(), n.Lhs[i])...)
 		}
 		if hasBlank {
 			// blank nodes are rewritten to temps, we need to typecheck the node again.
@@ -313,7 +313,7 @@ func preserveStmt(curFn *ir.Func, stmt ir.Node) ir.Node {
 		}
 		return keepAliveAt(curFn, ns, n)
 	case *ir.AssignOpStmt:
-		return keepAliveAt(curFn, getKeepAliveNodes(n.Pos(), n.X), n)
+		return keepAliveAt(curFn, getKeepAliveNodes(curFn.Target, n.Pos(), n.X), n)
 	case *ir.CallExpr:
 		if isIgnoredCall(n) {
 			// KeepAlive is self-preserving, panicRangeState is for rangefunc bookkeeping.

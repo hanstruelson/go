@@ -7,6 +7,7 @@
 package inlheur
 
 import (
+	"cmd/compile/internal/ir"
 	"os"
 	"strconv"
 )
@@ -17,13 +18,13 @@ func enableDebugTrace(x int) {
 	debugTrace = x
 }
 
-func enableDebugTraceIfEnv() {
+func enableDebugTraceIfEnv(target *ir.Package) {
 	v := os.Getenv("DEBUG_TRACE_INLHEUR")
 	if v == "" {
 		return
 	}
 	if v[0] == '*' {
-		if !UnitTesting() {
+		if !UnitTesting(target) {
 			return
 		}
 		v = v[1:]

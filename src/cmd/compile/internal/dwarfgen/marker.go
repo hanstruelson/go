@@ -7,6 +7,7 @@ package dwarfgen
 import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/internal/obj"
 	"cmd/internal/src"
 )
 
@@ -18,7 +19,7 @@ type ScopeMarker struct {
 }
 
 // checkPos validates the given position and returns the current scope.
-func (m *ScopeMarker) checkPos(pos src.XPos) ir.ScopeID {
+func (m *ScopeMarker) checkPos(ctxt *obj.Link, pos src.XPos) ir.ScopeID {
 	if !pos.IsKnown() {
 		base.Fatalf("unknown scope position, pos=%v", pos)
 	}
@@ -28,15 +29,15 @@ func (m *ScopeMarker) checkPos(pos src.XPos) ir.ScopeID {
 	}
 
 	last := &m.marks[len(m.marks)-1]
-	if xposBefore(pos, last.Pos) {
+	if xposBefore(ctxt, pos, last.Pos) {
 		base.FatalfAt(pos, "non-monotonic scope positions\n\t%v: previous scope position", base.FmtPos(last.Pos))
 	}
 	return last.Scope
 }
 
 // Push records a transition to a new child scope of the current scope.
-func (m *ScopeMarker) Push(pos src.XPos) {
-	current := m.checkPos(pos)
+func (m *ScopeMarker) Push(ctxt *obj.Link, pos src.XPos) {
+	current := m.checkPos(ctxt, pos)
 
 	m.parents = append(m.parents, current)
 	child := ir.ScopeID(len(m.parents))
@@ -45,8 +46,8 @@ func (m *ScopeMarker) Push(pos src.XPos) {
 }
 
 // Pop records a transition back to the current scope's parent.
-func (m *ScopeMarker) Pop(pos src.XPos) {
-	current := m.checkPos(pos)
+func (m *ScopeMarker) Pop(ctxt *obj.Link, pos src.XPos) {
+	current := m.checkPos(ctxt, pos)
 
 	parent := m.parents[current-1]
 

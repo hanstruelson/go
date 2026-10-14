@@ -256,11 +256,6 @@ func CalcSize(t *Type) {
 	// defer CheckSize calls until after we're done
 	DeferCheckSize()
 
-	lno := base.Pos
-	if pos := t.Pos(); pos.IsKnown() {
-		base.Pos = pos
-	}
-
 	t.width = -2
 	t.align = 0  // 0 means use t.Width, below
 	t.alg = AMEM // default
@@ -274,11 +269,8 @@ func CalcSize(t *Type) {
 	case TFUNC, TCHAN, TMAP, TSTRING:
 		break
 
-	// SimType == 0 during bootstrap
 	default:
-		if SimType[t.Kind()] != 0 {
-			et = SimType[t.Kind()]
-		}
+		et = simTypeForLayout(t.Kind(), PtrSize)
 	}
 
 	var w int64
@@ -372,7 +364,7 @@ func CalcSize(t *Type) {
 		// chanargs is handled.
 		CalcSize(t1.Elem())
 		if t1.Elem().width >= 1<<16 {
-			base.Errorf("channel element type too large (>64kB)")
+			base.ErrorfAt(t1.Elem().Pos(), 0, "channel element type too large (>64kB)")
 		}
 		w = 1 // anything will do
 
@@ -382,10 +374,10 @@ func CalcSize(t *Type) {
 		CheckSize(t.Elem())
 		CheckSize(t.Key())
 		if t.Elem().width >= 1<<31 {
-			base.Errorf("map element type too large")
+			base.ErrorfAt(t.Elem().Pos(), 0, "map element type too large")
 		}
 		if t.Key().width >= 1<<31 {
-			base.Errorf("map key type too large")
+			base.ErrorfAt(t.Key().Pos(), 0, "map key type too large")
 		}
 		t.setAlg(ANOEQ)
 		t.ptrBytes = int64(PtrSize)
@@ -458,7 +450,7 @@ func CalcSize(t *Type) {
 	}
 
 	if PtrSize == 4 && w != int64(int32(w)) {
-		base.Errorf("type %v too large", t)
+		base.ErrorfAt(t.Pos(), 0, "type %v too large", t)
 	}
 
 	t.width = w
@@ -468,8 +460,6 @@ func CalcSize(t *Type) {
 		}
 		t.align = uint8(w)
 	}
-
-	base.Pos = lno
 
 	ResumeCheckSize()
 }
@@ -630,7 +620,7 @@ func CalcArraySize(t *Type) {
 	if elem.width != 0 {
 		cap := (uint64(MaxWidth) - 1) / uint64(elem.width)
 		if uint64(n) > cap {
-			base.Errorf("type %L larger than address space", t)
+			base.ErrorfAt(t.Pos(), 0, "type %L larger than address space", t)
 		}
 	}
 

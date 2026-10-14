@@ -13,16 +13,16 @@ import (
 // NOTE: The bitmap for a specific type t could be cached in t after
 // the first run and then simply copied into bv at the correct offset
 // on future calls with the same type t.
-func Set(t *types.Type, off int64, bv bitvec.BitVec) {
-	set(t, off, bv, false)
+func Set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec) {
+	set(ptrSize, t, off, bv, false)
 }
 
 // SetNoCheck is like Set, but do not check for alignment.
-func SetNoCheck(t *types.Type, off int64, bv bitvec.BitVec) {
-	set(t, off, bv, true)
+func SetNoCheck(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec) {
+	set(ptrSize, t, off, bv, true)
 }
 
-func set(t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
+func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 	if !skip && uint8(t.Alignment()) > 0 && off&int64(uint8(t.Alignment())-1) != 0 {
 		base.Fatalf("typebits.Set: invalid initial alignment: type %v has alignment %d, but offset is %v", t, uint8(t.Alignment()), off)
 	}
@@ -34,23 +34,23 @@ func set(t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 
 	switch t.Kind() {
 	case types.TPTR, types.TUNSAFEPTR, types.TFUNC, types.TCHAN, types.TMAP:
-		if off&int64(types.PtrSize-1) != 0 {
+		if off&int64(ptrSize-1) != 0 {
 			base.Fatalf("typebits.Set: invalid alignment, %v", t)
 		}
-		bv.Set(int32(off / int64(types.PtrSize))) // pointer
+		bv.Set(int32(off / int64(ptrSize))) // pointer
 
 	case types.TSTRING:
 		// struct { byte *str; intgo len; }
-		if off&int64(types.PtrSize-1) != 0 {
+		if off&int64(ptrSize-1) != 0 {
 			base.Fatalf("typebits.Set: invalid alignment, %v", t)
 		}
-		bv.Set(int32(off / int64(types.PtrSize))) //pointer in first slot
+		bv.Set(int32(off / int64(ptrSize))) //pointer in first slot
 
 	case types.TINTER:
 		// struct { Itab *tab;	void *data; }
 		// or, when isnilinter(t)==true:
 		// struct { Type *type; void *data; }
-		if off&int64(types.PtrSize-1) != 0 {
+		if off&int64(ptrSize-1) != 0 {
 			base.Fatalf("typebits.Set: invalid alignment, %v", t)
 		}
 		// The first word of an interface is a pointer, but we don't
@@ -65,14 +65,14 @@ func set(t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 		//      the underlying type so it won't be GCd.
 		// If we ever have a moving GC, we need to change this for 2b (as
 		// well as scan itabs to update their itab._type fields).
-		bv.Set(int32(off/int64(types.PtrSize) + 1)) // pointer in second slot
+		bv.Set(int32(off/int64(ptrSize) + 1)) // pointer in second slot
 
 	case types.TSLICE:
 		// struct { byte *array; uintgo len; uintgo cap; }
-		if off&int64(types.PtrSize-1) != 0 {
+		if off&int64(ptrSize-1) != 0 {
 			base.Fatalf("typebits.Set: invalid TARRAY alignment, %v", t)
 		}
-		bv.Set(int32(off / int64(types.PtrSize))) // pointer in first slot (BitsPointer)
+		bv.Set(int32(off / int64(ptrSize))) // pointer in first slot (BitsPointer)
 
 	case types.TARRAY:
 		elt := t.Elem()
@@ -81,13 +81,13 @@ func set(t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 			break
 		}
 		for i := int64(0); i < t.NumElem(); i++ {
-			set(elt, off, bv, skip)
+			set(ptrSize, elt, off, bv, skip)
 			off += elt.Size()
 		}
 
 	case types.TSTRUCT:
 		for _, f := range t.Fields() {
-			set(f.Type, off+f.Offset, bv, skip)
+			set(ptrSize, f.Type, off+f.Offset, bv, skip)
 		}
 
 	default:

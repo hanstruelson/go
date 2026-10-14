@@ -49,7 +49,7 @@ func (w *walkState) autoLabel(prefix string) *types.Sym {
 	}
 	n := w.curfunc.Label
 	w.curfunc.Label++
-	return typecheck.LookupNum(prefix, int(n))
+	return typecheck.LookupNum(w.curfunc.Target, prefix, int(n))
 }
 
 func Walk(fn *ir.Func) {
@@ -64,13 +64,13 @@ func Walk(fn *ir.Func) {
 		return
 	}
 
-	if base.Flag.W != 0 {
+	if fn.Target.Flags.W != 0 {
 		s := fmt.Sprintf("\nbefore walk %v", walkstate.curfunc.Sym())
 		ir.DumpList(s, walkstate.curfunc.Body)
 	}
 
 	walkstate.walkStmtList(walkstate.curfunc.Body)
-	if base.Flag.W != 0 {
+	if fn.Target.Flags.W != 0 {
 		s := fmt.Sprintf("after walk %v", walkstate.curfunc.Sym())
 		ir.DumpList(s, walkstate.curfunc.Body)
 	}
@@ -89,7 +89,7 @@ func (w *walkState) walkRecv(n *ir.UnaryExpr) ir.Node {
 	init := ir.TakeInit(n)
 
 	n.X = w.walkExpr(n.X, &init)
-	call := w.walkExpr(w.mkcall1(chanfn("chanrecv1", 2, n.X.Type()), nil, &init, n.X, typecheck.NodNil()), &init)
+	call := w.walkExpr(w.mkcall1(chanfn(w.curfunc.Target, "chanrecv1", 2, n.X.Type()), nil, &init, n.X, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)), &init)
 	return ir.InitExpr(init, call)
 }
 
@@ -110,7 +110,7 @@ func (w *walkState) convas(n *ir.AssignStmt, init *ir.Nodes) *ir.AssignStmt {
 	}
 
 	if ir.IsBlank(n.X) {
-		n.Y = typecheck.DefaultLit(n.Y, nil)
+		n.Y = typecheck.DefaultLitFor(w.curfunc.Target, n.Y, nil)
 		return n
 	}
 
@@ -136,17 +136,17 @@ func (w *walkState) vmkcall(fn ir.Node, t *types.Type, init *ir.Nodes, va []ir.N
 		base.Fatalf("vmkcall %v needs %v args got %v", fn, n, len(va))
 	}
 
-	call := typecheck.Call(w.curfunc, base.Pos, fn, va, false).(*ir.CallExpr)
+	call := typecheck.Call(w.curfunc, w.curfunc.Target.Pos, fn, va, false).(*ir.CallExpr)
 	call.SetType(t)
 	return w.walkExpr(call, init).(*ir.CallExpr)
 }
 
 func (w *walkState) mkcall(name string, t *types.Type, init *ir.Nodes, args ...ir.Node) *ir.CallExpr {
-	return w.vmkcall(typecheck.LookupRuntime(name), t, init, args)
+	return w.vmkcall(typecheck.LookupRuntime(w.curfunc.Target, name), t, init, args)
 }
 
 func (w *walkState) mkcallstmt(name string, args ...ir.Node) ir.Node {
-	return w.mkcallstmt1(typecheck.LookupRuntime(name), args...)
+	return w.mkcallstmt1(typecheck.LookupRuntime(w.curfunc.Target, name), args...)
 }
 
 func (w *walkState) mkcall1(fn ir.Node, t *types.Type, init *ir.Nodes, args ...ir.Node) *ir.CallExpr {
@@ -163,38 +163,38 @@ func (w *walkState) mkcallstmt1(fn ir.Node, args ...ir.Node) ir.Node {
 	return ir.NewBlockStmt(n.Pos(), init)
 }
 
-func chanfn(name string, n int, t *types.Type) ir.Node {
+func chanfn(target *ir.Package, name string, n int, t *types.Type) ir.Node {
 	if !t.IsChan() {
 		base.Fatalf("chanfn %v", t)
 	}
 	switch n {
 	case 1:
-		return typecheck.LookupRuntime(name, t.Elem())
+		return typecheck.LookupRuntime(target, name, t.Elem())
 	case 2:
-		return typecheck.LookupRuntime(name, t.Elem(), t.Elem())
+		return typecheck.LookupRuntime(target, name, t.Elem(), t.Elem())
 	}
 	base.Fatalf("chanfn %d", n)
 	return nil
 }
 
-func mapfn(name string, t *types.Type, isfat bool) ir.Node {
+func mapfn(target *ir.Package, name string, t *types.Type, isfat bool) ir.Node {
 	if !t.IsMap() {
 		base.Fatalf("mapfn %v", t)
 	}
-	if mapfast(t) == mapslow || isfat {
-		return typecheck.LookupRuntime(name, t.Key(), t.Elem(), t.Key(), t.Elem())
+	if mapfast(target, t) == mapslow || isfat {
+		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key(), t.Elem())
 	}
-	return typecheck.LookupRuntime(name, t.Key(), t.Elem(), t.Elem())
+	return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Elem())
 }
 
-func mapfndel(name string, t *types.Type) ir.Node {
+func mapfndel(target *ir.Package, name string, t *types.Type) ir.Node {
 	if !t.IsMap() {
 		base.Fatalf("mapfn %v", t)
 	}
-	if mapfast(t) == mapslow {
-		return typecheck.LookupRuntime(name, t.Key(), t.Elem(), t.Key())
+	if mapfast(target, t) == mapslow {
+		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key())
 	}
-	return typecheck.LookupRuntime(name, t.Key(), t.Elem())
+	return typecheck.LookupRuntime(target, name, t.Key(), t.Elem())
 }
 
 const (
@@ -218,16 +218,16 @@ var mapaccess2 = mkmapnames("mapaccess2", "")
 var mapassign = mkmapnames("mapassign", "ptr")
 var mapdelete = mkmapnames("mapdelete", "")
 
-func mapfast(t *types.Type) int {
+func mapfast(target *ir.Package, t *types.Type) int {
 	if t.Elem().Size() > abi.MapMaxElemBytes {
 		return mapslow
 	}
-	switch algType(t.Key()) {
+	switch algType(target, t.Key()) {
 	case types.AMEM32:
 		if !t.Key().HasPointers() {
 			return mapfast32
 		}
-		if types.PtrSize == 4 {
+		if target.PtrSize == 4 {
 			return mapfast32ptr
 		}
 		base.Fatalf("small pointer %v", t.Key())
@@ -235,7 +235,7 @@ func mapfast(t *types.Type) int {
 		if !t.Key().HasPointers() {
 			return mapfast64
 		}
-		if types.PtrSize == 8 {
+		if target.PtrSize == 8 {
 			return mapfast64ptr
 		}
 		// Two-word object, at least one of which is a pointer.
@@ -248,10 +248,10 @@ func mapfast(t *types.Type) int {
 
 // algType returns the fixed-width AMEMxx variants instead of the general
 // AMEM kind when possible.
-func algType(t *types.Type) types.AlgKind {
+func algType(target *ir.Package, t *types.Type) types.AlgKind {
 	a := types.AlgType(t)
 	if a == types.AMEM {
-		if t.Alignment() < int64(base.Ctxt.Arch.Alignment) && t.Alignment() < t.Size() {
+		if t.Alignment() < int64(target.Ctxt.Arch.Alignment) && t.Alignment() < t.Size() {
 			// For example, we can't treat [2]int16 as an int32 if int32s require
 			// 4-byte alignment. See issue 46283.
 			return a
@@ -315,15 +315,15 @@ func (w *walkState) backingArrayPtrLen(n ir.Node) (ptr, length ir.Node) {
 	if c != n || len(init) != 0 {
 		base.Fatalf("backingArrayPtrLen not cheap: %v", n)
 	}
-	ptr = ir.NewUnaryExpr(base.Pos, ir.OSPTR, n)
+	ptr = ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, n)
 	if n.Type().IsString() {
-		ptr.SetType(types.Types[types.TUINT8].PtrTo())
+		ptr.SetType(w.curfunc.Target.Type(types.TUINT8).PtrTo())
 	} else {
 		ptr.SetType(n.Type().Elem().PtrTo())
 	}
 	ptr.SetTypecheck(1)
-	length = ir.NewUnaryExpr(base.Pos, ir.OLEN, n)
-	length.SetType(types.Types[types.TINT])
+	length = ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, n)
+	length.SetType(w.curfunc.Target.Type(types.TINT))
 	length.SetTypecheck(1)
 	return ptr, length
 }
@@ -331,7 +331,7 @@ func (w *walkState) backingArrayPtrLen(n ir.Node) (ptr, length ir.Node) {
 // mayCall reports whether evaluating expression n may require
 // function calls, which could clobber function call arguments/results
 // currently on the stack.
-func mayCall(n ir.Node) bool {
+func mayCall(target *ir.Package, n ir.Node) bool {
 	// This is intended to avoid putting constants
 	// into temporaries with the race detector (or other
 	// instrumentation) which interferes with simple
@@ -342,7 +342,7 @@ func mayCall(n ir.Node) bool {
 	}
 
 	// When instrumenting, any expression might require function calls.
-	if base.Flag.Cfg.Instrumenting {
+	if target.Flags.Cfg.Instrumenting {
 		return true
 	}
 
@@ -374,7 +374,7 @@ func mayCall(n ir.Node) bool {
 		case ir.ODIV:
 			n := n.(*ir.BinaryExpr)
 			if types.IsFloat[n.X.Type().Kind()] {
-				return ssagen.Arch.SoftFloat
+				return ssagen.ArchInfoFor(target).SoftFloat
 			}
 			return true
 
@@ -389,13 +389,13 @@ func mayCall(n ir.Node) bool {
 		// When using soft-float, these ops might be rewritten to function calls
 		// so we ensure they are evaluated first.
 		case ir.OADD, ir.OSUB, ir.OMUL, ir.ONEG:
-			return ssagen.Arch.SoftFloat && isSoftFloat(n.Type())
+			return ssagen.ArchInfoFor(target).SoftFloat && isSoftFloat(n.Type())
 		case ir.OLT, ir.OEQ, ir.ONE, ir.OLE, ir.OGE, ir.OGT:
 			n := n.(*ir.BinaryExpr)
-			return ssagen.Arch.SoftFloat && isSoftFloat(n.X.Type())
+			return ssagen.ArchInfoFor(target).SoftFloat && isSoftFloat(n.X.Type())
 		case ir.OCONV:
 			n := n.(*ir.ConvExpr)
-			return ssagen.Arch.SoftFloat && (isSoftFloat(n.Type()) || isSoftFloat(n.X.Type()))
+			return ssagen.ArchInfoFor(target).SoftFloat && (isSoftFloat(n.Type()) || isSoftFloat(n.X.Type()))
 
 		case ir.OMIN, ir.OMAX:
 			// string or float requires runtime call, see (*ssagen.state).minmax method.
@@ -417,15 +417,13 @@ func mayCall(n ir.Node) bool {
 }
 
 // itabType loads the _type field from a runtime.itab struct.
-func itabType(itab ir.Node) ir.Node {
-	if itabTypeField == nil {
+func itabType(target *ir.Package, itab ir.Node) ir.Node {
+	if target.ItabTypeField == nil {
 		// internal/abi.ITab's Type field
-		itabTypeField = runtimeField("Type", rttype.ITab.OffsetOf("Type"), types.NewPtr(types.Types[types.TUINT8]))
+		target.ItabTypeField = runtimeField(target, "Type", rttype.For(target).ITab.OffsetOf("Type"), types.NewPtr(target.Type(types.TUINT8)))
 	}
-	return boundedDotPtr(base.Pos, itab, itabTypeField)
+	return boundedDotPtr(target.Pos, itab, target.ItabTypeField)
 }
-
-var itabTypeField *types.Field
 
 // boundedDotPtr returns a selector expression representing ptr.field
 // and omits nil-pointer checks for ptr.
@@ -438,8 +436,8 @@ func boundedDotPtr(pos src.XPos, ptr ir.Node, field *types.Field) *ir.SelectorEx
 	return sel
 }
 
-func runtimeField(name string, offset int64, typ *types.Type) *types.Field {
-	f := types.NewField(src.NoXPos, ir.Pkgs.Runtime.Lookup(name), typ)
+func runtimeField(target *ir.Package, name string, offset int64, typ *types.Type) *types.Field {
+	f := types.NewField(src.NoXPos, target.RuntimePkg.Lookup(name), typ)
 	f.Offset = offset
 	return f
 }

@@ -11,7 +11,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/bitvec"
@@ -32,19 +31,6 @@ type ptabEntry struct {
 	t *types.Type
 }
 
-// runtime interface and reflection data structures
-var (
-	// protects signatset and signatslice
-	signatmu sync.Mutex
-	// Tracking which types need runtime type descriptor
-	signatset = make(map[*types.Type]struct{})
-	// Queue of types wait to be generated runtime type descriptor
-	signatslice []typeAndStr
-
-	gcsymmu  sync.Mutex // protects gcsymset and gcsymslice
-	gcsymset = make(map[*types.Type]struct{})
-)
-
 type typeSig struct {
 	name  *types.Sym
 	isym  *obj.LSym
@@ -53,13 +39,13 @@ type typeSig struct {
 	mtype *types.Type
 }
 
-func commonSize() int { return int(rttype.Type.Size()) } // Sizeof(runtime._type{})
+func commonSize(target *ir.Package) int { return int(rttype.For(target).Type.Size()) } // Sizeof(runtime._type{})
 
-func uncommonSize(t *types.Type) int { // Sizeof(runtime.uncommontype{})
+func uncommonSize(target *ir.Package, t *types.Type) int { // Sizeof(runtime.uncommontype{})
 	if t.TFlag()&abi.TFlagUncommon == 0 {
 		return 0
 	}
-	return int(rttype.UncommonType.Size())
+	return int(rttype.For(target).UncommonType.Size())
 }
 
 func makefield(name string, t *types.Type) *types.Field {
@@ -69,7 +55,7 @@ func makefield(name string, t *types.Type) *types.Field {
 
 // methods returns the methods of the non-interface type t, sorted by name.
 // Generates stub functions as needed.
-func methods(t *types.Type) []*typeSig {
+func methods(target *ir.Package, t *types.Type) []*typeSig {
 	if t.HasShape() {
 		// Shape types have no methods.
 		return nil
@@ -113,10 +99,10 @@ func methods(t *types.Type) []*typeSig {
 
 		sig := &typeSig{
 			name:  f.Sym,
-			isym:  methodWrapper(t, f, true),
-			tsym:  methodWrapper(t, f, false),
-			type_: typecheck.NewMethodType(f.Type, t),
-			mtype: typecheck.NewMethodType(f.Type, nil),
+			isym:  methodWrapper(target, t, f, true),
+			tsym:  methodWrapper(target, t, f, false),
+			type_: typecheck.NewMethodType(target.AutoPos, f.Type, t),
+			mtype: typecheck.NewMethodType(target.AutoPos, f.Type, nil),
 		}
 		if f.Nointerface() {
 			// In the case of a nointerface method on an instantiated
@@ -130,7 +116,7 @@ func methods(t *types.Type) []*typeSig {
 }
 
 // imethods returns the methods of the interface type t, sorted by name.
-func imethods(t *types.Type) []*typeSig {
+func imethods(target *ir.Package, t *types.Type) []*typeSig {
 	var methods []*typeSig
 	for _, f := range t.AllMethods() {
 		if f.Type.Kind() != types.TFUNC || f.Sym == nil {
@@ -149,7 +135,7 @@ func imethods(t *types.Type) []*typeSig {
 		sig := &typeSig{
 			name:  f.Sym,
 			mtype: f.Type,
-			type_: typecheck.NewMethodType(f.Type, nil),
+			type_: typecheck.NewMethodType(target.AutoPos, f.Type, nil),
 		}
 		methods = append(methods, sig)
 
@@ -157,69 +143,69 @@ func imethods(t *types.Type) []*typeSig {
 		// IfaceType.Method is not in the reflect data.
 		// Generate the method body, so that compiled
 		// code can refer to it.
-		methodWrapper(t, f, false)
+		methodWrapper(target, t, f, false)
 	}
 
 	return methods
 }
 
-func dimportpath(p *types.Pkg) {
+func dimportpath(target *ir.Package, p *types.Pkg) {
 	if p.Pathsym != nil {
 		return
 	}
 
-	if p == types.LocalPkg && base.Ctxt.Pkgpath == "" {
+	if p == target.LocalPkg && target.Ctxt.Pkgpath == "" {
 		panic("missing pkgpath")
 	}
 
 	// If we are compiling the runtime package, there are two runtime packages around
-	// -- localpkg and Pkgs.Runtime. We don't want to produce import path symbols for
+	// -- the local package and target.RuntimePkg. We don't want to produce import path symbols for
 	// both of them, so just produce one for localpkg.
-	if base.Ctxt.Pkgpath == "runtime" && p == ir.Pkgs.Runtime {
+	if target.Ctxt.Pkgpath == "runtime" && p == target.RuntimePkg {
 		return
 	}
 
-	s := base.Ctxt.Lookup("type:.importpath." + p.Prefix + ".")
-	ot := dnameData(s, 0, p.Path, "", nil, false, false)
-	objw.Global(s, int32(ot), obj.DUPOK|obj.RODATA)
+	s := target.Ctxt.Lookup("type:.importpath." + p.Prefix + ".")
+	ot := dnameData(target, s, 0, p.Path, "", nil, false, false)
+	objw.Global(target.Ctxt, s, int32(ot), obj.DUPOK|obj.RODATA)
 	s.Set(obj.AttrContentAddressable, true)
 	s.Align = 1
 	p.Pathsym = s
 }
 
-func dgopkgpath(c rttype.Cursor, pkg *types.Pkg) {
+func dgopkgpath(target *ir.Package, c rttype.Cursor, pkg *types.Pkg) {
 	c = c.Field("Bytes")
 	if pkg == nil {
 		c.WritePtr(nil)
 		return
 	}
 
-	dimportpath(pkg)
+	dimportpath(target, pkg)
 	c.WritePtr(pkg.Pathsym)
 }
 
 // dgopkgpathOff writes an offset relocation to the pkg path symbol to c.
-func dgopkgpathOff(c rttype.Cursor, pkg *types.Pkg) {
+func dgopkgpathOff(target *ir.Package, c rttype.Cursor, pkg *types.Pkg) {
 	if pkg == nil {
 		c.WriteInt32(0)
 		return
 	}
 
-	dimportpath(pkg)
+	dimportpath(target, pkg)
 	c.WriteSymPtrOff(pkg.Pathsym, false)
 }
 
 // dnameField dumps a reflect.name for a struct field.
-func dnameField(c rttype.Cursor, spkg *types.Pkg, ft *types.Field) {
+func dnameField(target *ir.Package, c rttype.Cursor, spkg *types.Pkg, ft *types.Field) {
 	if !types.IsExported(ft.Sym.Name) && ft.Sym.Pkg != spkg {
 		base.Fatalf("package mismatch for %v", ft.Sym)
 	}
-	nsym := dname(ft.Sym.Name, ft.Note, nil, types.IsExported(ft.Sym.Name), ft.Embedded != 0)
+	nsym := dname(target, ft.Sym.Name, ft.Note, nil, types.IsExported(ft.Sym.Name), ft.Embedded != 0)
 	c.Field("Bytes").WritePtr(nsym)
 }
 
 // dnameData writes the contents of a reflect.name into s at offset ot.
-func dnameData(s *obj.LSym, ot int, name, tag string, pkg *types.Pkg, exported, embedded bool) int {
+func dnameData(target *ir.Package, s *obj.LSym, ot int, name, tag string, pkg *types.Pkg, exported, embedded bool) int {
 	if len(name) >= 1<<29 {
 		base.Fatalf("name too long: %d %s...", len(name), name[:1024])
 	}
@@ -257,21 +243,19 @@ func dnameData(s *obj.LSym, ot int, name, tag string, pkg *types.Pkg, exported, 
 		copy(tb[tagLenLen:], tag)
 	}
 
-	ot = int(s.WriteBytes(base.Ctxt, int64(ot), b))
+	ot = int(s.WriteBytes(target.Ctxt, int64(ot), b))
 
 	if pkg != nil {
-		c := rttype.NewCursor(s, int64(ot), types.Types[types.TUINT32])
-		dgopkgpathOff(c, pkg)
+		c := rttype.NewCursor(target.Ctxt, s, int64(ot), target.Type(types.TUINT32))
+		dgopkgpathOff(target, c, pkg)
 		ot += 4
 	}
 
 	return ot
 }
 
-var dnameCount int
-
 // dname creates a reflect.name for a struct field or method.
-func dname(name, tag string, pkg *types.Pkg, exported, embedded bool) *obj.LSym {
+func dname(target *ir.Package, name, tag string, pkg *types.Pkg, exported, embedded bool) *obj.LSym {
 	// Write out data as "type:." to signal two things to the
 	// linker, first that when dynamically linking, the symbol
 	// should be moved to a relro section, and second that the
@@ -295,18 +279,18 @@ func dname(name, tag string, pkg *types.Pkg, exported, embedded bool) *obj.LSym 
 	} else {
 		// TODO(mdempsky): We should be able to share these too (except
 		// maybe when dynamic linking).
-		sname = fmt.Sprintf("%s%s.%d", sname, types.LocalPkg.Prefix, dnameCount)
-		dnameCount++
+		sname = fmt.Sprintf("%s%s.%d", sname, target.LocalPkg.Prefix, target.DnameGen)
+		target.DnameGen++
 	}
 	if embedded {
 		sname += ".embedded"
 	}
-	s := base.Ctxt.Lookup(sname)
+	s := target.Ctxt.Lookup(sname)
 	if len(s.P) > 0 {
 		return s
 	}
-	ot := dnameData(s, 0, name, tag, pkg, exported, embedded)
-	objw.Global(s, int32(ot), obj.DUPOK|obj.RODATA)
+	ot := dnameData(target, s, 0, name, tag, pkg, exported, embedded)
+	objw.Global(target.Ctxt, s, int32(ot), obj.DUPOK|obj.RODATA)
 	s.Set(obj.AttrContentAddressable, true)
 	s.Align = 1
 	return s
@@ -315,24 +299,24 @@ func dname(name, tag string, pkg *types.Pkg, exported, embedded bool) *obj.LSym 
 // dextratype dumps the fields of a runtime.uncommontype.
 // dataAdd is the offset in bytes after the header where the
 // backing array of the []method field should be written.
-func dextratype(lsym *obj.LSym, off int64, t *types.Type, dataAdd int) {
-	m := methods(t)
+func dextratype(target *ir.Package, lsym *obj.LSym, off int64, t *types.Type, dataAdd int) {
+	m := methods(target, t)
 	if t.Sym() == nil && len(m) == 0 {
 		base.Fatalf("extra requested of type with no extra info %v", t)
 	}
-	noff := types.RoundUp(off, int64(types.PtrSize))
+	noff := types.RoundUp(off, int64(target.PtrSize))
 	if noff != off {
 		base.Fatalf("unexpected alignment in dextratype for %v", t)
 	}
 
 	for _, a := range m {
-		writeType(a.type_)
+		writeType(target, a.type_)
 	}
 
-	c := rttype.NewCursor(lsym, off, rttype.UncommonType)
-	dgopkgpathOff(c.Field("PkgPath"), typePkg(t))
+	c := rttype.NewCursor(target.Ctxt, lsym, off, rttype.For(target).UncommonType)
+	dgopkgpathOff(target, c.Field("PkgPath"), typePkg(t))
 
-	dataAdd += uncommonSize(t)
+	dataAdd += uncommonSize(target, t)
 	mcount := len(m)
 	if mcount != int(uint16(mcount)) {
 		base.Fatalf("too many methods on %v: %d", t, mcount)
@@ -348,18 +332,18 @@ func dextratype(lsym *obj.LSym, off int64, t *types.Type, dataAdd int) {
 	// Note: there is an unused uint32 field here.
 
 	// Write the backing array for the []method field.
-	array := rttype.NewArrayCursor(lsym, off+int64(dataAdd), rttype.Method, mcount)
+	array := rttype.NewArrayCursor(target.Ctxt, lsym, off+int64(dataAdd), rttype.For(target).Method, mcount)
 	for i, a := range m {
 		exported := types.IsExported(a.name.Name)
 		var pkg *types.Pkg
 		if !exported && a.name.Pkg != typePkg(t) {
 			pkg = a.name.Pkg
 		}
-		nsym := dname(a.name.Name, "", pkg, exported, false)
+		nsym := dname(target, a.name.Name, "", pkg, exported, false)
 
 		e := array.Elem(i)
 		e.Field("Name").WriteSymPtrOff(nsym, false)
-		dmethodptrOff(e.Field("Mtyp"), writeType(a.mtype))
+		dmethodptrOff(e.Field("Mtyp"), writeType(target, a.mtype))
 		dmethodptrOff(e.Field("Ifn"), a.isym)
 		dmethodptrOff(e.Field("Tfn"), a.tsym)
 	}
@@ -375,7 +359,7 @@ func typePkg(t *types.Type) *types.Pkg {
 			}
 		}
 	}
-	if tsym != nil && tsym.Pkg != types.BuiltinPkg {
+	if tsym != nil && tsym.Pkg != nil && tsym.Pkg.Prefix != "go:builtin" {
 		return tsym.Pkg
 	}
 	return nil
@@ -419,29 +403,26 @@ func ABIKindOfType(t *types.Type) abi.Kind {
 	return kinds[t.Kind()]
 }
 
-var (
-	memhashvarlen  *obj.LSym
-	memequalvarlen *obj.LSym
-)
-
 // dcommontype dumps the contents of a reflect.rtype (runtime._type) to c.
-func dcommontype(c rttype.Cursor, t *types.Type) {
+func dcommontype(target *ir.Package, c rttype.Cursor, t *types.Type) {
 	types.CalcSize(t)
-	eqfunc := geneq(t)
+	eqfunc := geneq(target, t)
 
 	sptrWeak := true
 	var sptr *obj.LSym
 	if !t.IsPtr() || t.IsPtrElem() {
 		tptr := types.NewPtr(t)
-		if t.Sym() != nil || methods(tptr) != nil {
+		if t.Sym() != nil || methods(target, tptr) != nil {
 			sptrWeak = false
 		}
-		sptr = writeType(tptr)
+		sptr = writeType(target, tptr)
 	}
 
-	gcsym, onDemand, ptrdata := dgcsym(t, true, true)
+	gcsym, onDemand, ptrdata := dgcsym(target, t, true, true)
 	if !onDemand {
-		delete(gcsymset, t)
+		target.RuntimeTypeMu.Lock()
+		delete(target.GCSymTypes, t)
+		target.RuntimeTypeMu.Unlock()
 	}
 
 	// ../../../../reflect/type.go:/^type.rtype
@@ -500,7 +481,7 @@ func dcommontype(c rttype.Cursor, t *types.Type) {
 	c.Field("Equal").WritePtr(eqfunc)
 	c.Field("GCData").WritePtr(gcsym)
 
-	nsym := dname(p, "", nil, exported, false)
+	nsym := dname(target, p, "", nil, exported, false)
 	c.Field("Str").WriteSymPtrOff(nsym, false)
 	c.Field("PtrToThis").WriteSymPtrOff(sptr, sptrWeak)
 }
@@ -511,62 +492,67 @@ func TrackSym(t *types.Type, f *types.Field) *obj.LSym {
 	return base.PkgLinksym("go:track", t.LinkString()+"."+f.Sym.Name, obj.ABI0)
 }
 
-func TypeSymPrefix(prefix string, t *types.Type) *types.Sym {
+func TypeSymPrefix(target *ir.Package, prefix string, t *types.Type) *types.Sym {
 	p := prefix + "." + t.LinkString()
-	s := types.TypeSymLookup(p)
+	s := typeSymLookup(target, p)
 
 	// This function is for looking up type-related generated functions
 	// (e.g. eq and hash). Make sure they are indeed generated.
-	signatmu.Lock()
-	NeedRuntimeType(t)
-	signatmu.Unlock()
+	NeedRuntimeType(target, t)
 
 	//print("algsym: %s -> %+S\n", p, s);
 
 	return s
 }
 
-func TypeSym(t *types.Type) *types.Sym {
+func TypeSym(target *ir.Package, t *types.Type) *types.Sym {
 	if t == nil || (t.IsPtr() && t.Elem() == nil) || t.IsUntyped() {
 		base.Fatalf("TypeSym %v", t)
 	}
 	if t.Kind() == types.TFUNC && t.Recv() != nil {
 		base.Fatalf("misuse of method type: %v", t)
 	}
-	s := types.TypeSym(t)
-	signatmu.Lock()
-	NeedRuntimeType(t)
-	signatmu.Unlock()
+	s := typeSymLookup(target, types.TypeSymName(t))
+	NeedRuntimeType(target, t)
 	return s
 }
 
-func TypeLinksymPrefix(prefix string, t *types.Type) *obj.LSym {
-	return TypeSymPrefix(prefix, t).Linksym()
+func TypeLinksymPrefix(target *ir.Package, prefix string, t *types.Type) *obj.LSym {
+	return TypeSymPrefix(target, prefix, t).Linksym()
 }
 
-func TypeLinksymLookup(name string) *obj.LSym {
-	return types.TypeSymLookup(name).Linksym()
+func TypeLinksymLookup(target *ir.Package, name string) *obj.LSym {
+	return typeSymLookup(target, name).Linksym()
 }
 
-func TypeLinksym(t *types.Type) *obj.LSym {
-	lsym := TypeSym(t).Linksym()
-	setTypeInfo(lsym, t)
+func typeSymLookup(target *ir.Package, name string) *types.Sym {
+	target.TypeSymMu.Lock()
+	defer target.TypeSymMu.Unlock()
+	if target.TypeSymPkg == nil {
+		target.TypeSymPkg = target.Pkg("type", "type")
+	}
+	return target.TypeSymPkg.Lookup(name)
+}
+
+func TypeLinksym(target *ir.Package, t *types.Type) *obj.LSym {
+	lsym := TypeSym(target, t).Linksym()
+	setTypeInfo(target, lsym, t)
 	return lsym
 }
 
-func setTypeInfo(lsym *obj.LSym, t *types.Type) {
-	signatmu.Lock()
+func setTypeInfo(target *ir.Package, lsym *obj.LSym, t *types.Type) {
+	target.RuntimeTypeMu.Lock()
 	if lsym.Extra == nil {
 		ti := lsym.NewTypeInfo()
 		ti.Type = t
 	}
-	signatmu.Unlock()
+	target.RuntimeTypeMu.Unlock()
 }
 
 // TypePtrAt returns an expression that evaluates to the
 // *runtime._type value for t.
 func TypePtrAt(curfunc *ir.Func, pos src.XPos, t *types.Type) *ir.AddrExpr {
-	return typecheck.LinksymAddr(curfunc, pos, TypeLinksym(t), types.Types[types.TUINT8])
+	return typecheck.LinksymAddr(curfunc, pos, TypeLinksym(curfunc.Target, t), curfunc.Target.Type(types.TUINT8))
 }
 
 // ITabLsym returns the LSym representing the itab for concrete type typ implementing
@@ -576,22 +562,22 @@ func TypePtrAt(curfunc *ir.Func, pos src.XPos, t *types.Type) *ir.AddrExpr {
 // destination type of a type assert or a type in a type switch is parameterized, so
 // it may sometimes, but not always, be a type that can't implement the specified
 // interface.
-func ITabLsym(typ, iface *types.Type) *obj.LSym {
-	return itabLsym(typ, iface, true)
+func ITabLsym(target *ir.Package, typ, iface *types.Type) *obj.LSym {
+	return itabLsym(target, typ, iface, true)
 }
 
-func itabLsym(typ, iface *types.Type, allowNonImplement bool) *obj.LSym {
-	s, existed := ir.Pkgs.Itab.LookupOK(typ.LinkString() + "," + iface.LinkString())
+func itabLsym(target *ir.Package, typ, iface *types.Type, allowNonImplement bool) *obj.LSym {
+	s, existed := target.ItabPkg.LookupOK(typ.LinkString() + "," + iface.LinkString())
 	lsym := s.Linksym()
-	signatmu.Lock()
+	target.RuntimeTypeMu.Lock()
 	if lsym.Extra == nil {
 		ii := lsym.NewItabInfo()
 		ii.Type = typ
 	}
-	signatmu.Unlock()
+	target.RuntimeTypeMu.Unlock()
 
 	if !existed {
-		writeITab(lsym, typ, iface, allowNonImplement)
+		writeITab(target, lsym, typ, iface, allowNonImplement)
 	}
 	return lsym
 }
@@ -600,8 +586,8 @@ func itabLsym(typ, iface *types.Type, allowNonImplement bool) *obj.LSym {
 // *runtime.itab value for concrete type typ implementing interface
 // iface.
 func ITabAddrAt(curfunc *ir.Func, pos src.XPos, typ, iface *types.Type) *ir.AddrExpr {
-	lsym := itabLsym(typ, iface, false)
-	return typecheck.LinksymAddr(curfunc, pos, lsym, types.Types[types.TUINT8])
+	lsym := itabLsym(curfunc.Target, typ, iface, false)
+	return typecheck.LinksymAddr(curfunc, pos, lsym, curfunc.Target.Type(types.TUINT8))
 }
 
 // needkeyupdate reports whether map updates with t as a key
@@ -659,21 +645,21 @@ func hashMightPanic(t *types.Type) bool {
 // formalType replaces predeclared aliases with real types.
 // They've been separate internally to make error messages
 // better, but we have to merge them in the reflect tables.
-func formalType(t *types.Type) *types.Type {
+func formalType(target *ir.Package, t *types.Type) *types.Type {
 	switch t {
-	case types.AnyType, types.ByteType, types.RuneType:
-		return types.Types[t.Kind()]
+	case target.AnyType, target.ByteType, target.RuneType:
+		return target.Type(t.Kind())
 	}
 	return t
 }
 
-func writeType(t *types.Type) *obj.LSym {
-	t = formalType(t)
+func writeType(target *ir.Package, t *types.Type) *obj.LSym {
+	t = formalType(target, t)
 	if t.IsUntyped() {
 		base.Fatalf("writeType %v", t)
 	}
 
-	s := types.TypeSym(t)
+	s := TypeSym(target, t)
 	lsym := s.Linksym()
 
 	// special case (look for runtime below):
@@ -691,7 +677,7 @@ func writeType(t *types.Type) *obj.LSym {
 	// package. We'll emit a description for the real type while
 	// compiling package runtime, so we don't need or want to emit one
 	// from this fake type.
-	if sym := tbase.Sym(); sym != nil && sym.Pkg == ir.Pkgs.Runtime {
+	if sym := tbase.Sym(); sym != nil && sym.Pkg == target.RuntimePkg {
 		return lsym
 	}
 
@@ -701,12 +687,12 @@ func writeType(t *types.Type) *obj.LSym {
 		// instance needs, so fill them in, including TFlagRegularMemory.
 		if lsym.WeakDef() && !types.TypeHasNoAlg(t) {
 			lsym.Set(obj.AttrWeakDef, false)
-			if eqfunc := geneq(t); eqfunc != nil {
-				objw.SymPtr(lsym, int(rttype.Type.OffsetOf("Equal")), eqfunc, 0)
+			if eqfunc := geneq(target, t); eqfunc != nil {
+				objw.SymPtr(target.Ctxt, lsym, int(rttype.For(target).Type.OffsetOf("Equal")), eqfunc, 0)
 			}
 			if types.AlgType(t) == types.AMEM {
-				off := int(rttype.Type.OffsetOf("TFlag"))
-				objw.Uint8(lsym, off, lsym.P[off]|uint8(abi.TFlagRegularMemory))
+				off := int(rttype.For(target).Type.OffsetOf("TFlag"))
+				objw.Uint8(target.Ctxt, lsym, off, lsym.P[off]|uint8(abi.TFlagRegularMemory))
 			}
 		}
 		return lsym
@@ -714,17 +700,17 @@ func writeType(t *types.Type) *obj.LSym {
 	s.SetSiggen(true)
 
 	if !tbase.HasShape() {
-		setTypeInfo(lsym, t) // ensure lsym.Extra is set
+		setTypeInfo(target, lsym, t) // ensure lsym.Extra is set
 	}
 
-	if !NeedEmit(tbase) {
+	if !NeedEmit(target, tbase) {
 		u := t
 		for u.IsPtr() {
 			u = u.Elem()
 		}
 		typecheck.CalcMethods(types.ReceiverBaseType(u))
 
-		if i := typecheck.BaseTypeIndex(t); i >= 0 {
+		if i := typecheck.BaseTypeIndex(target, t); i >= 0 {
 			lsym.Pkg = tbase.Sym().Pkg.Prefix
 			lsym.SymIdx = int32(i)
 			lsym.Set(obj.AttrIndexed, true)
@@ -762,7 +748,7 @@ func writeType(t *types.Type) *obj.LSym {
 	// and must be changed if the layout change.
 
 	// UncommonType section is included if we have a name or a method.
-	extra := t.Sym() != nil || len(methods(t)) != 0
+	extra := t.Sym() != nil || len(methods(target, t)) != 0
 
 	// Decide the underlying type of the descriptor, and remember
 	// the size we need for variable-length data.
@@ -770,44 +756,44 @@ func writeType(t *types.Type) *obj.LSym {
 	dataAdd := 0
 	switch t.Kind() {
 	default:
-		rt = rttype.Type
+		rt = rttype.For(target).Type
 	case types.TARRAY:
-		rt = rttype.ArrayType
+		rt = rttype.For(target).ArrayType
 	case types.TSLICE:
-		rt = rttype.SliceType
+		rt = rttype.For(target).SliceType
 	case types.TCHAN:
-		rt = rttype.ChanType
+		rt = rttype.For(target).ChanType
 	case types.TFUNC:
-		rt = rttype.FuncType
-		dataAdd = (t.NumRecvs() + t.NumParams() + t.NumResults()) * types.PtrSize
+		rt = rttype.For(target).FuncType
+		dataAdd = (t.NumRecvs() + t.NumParams() + t.NumResults()) * target.PtrSize
 	case types.TINTER:
-		rt = rttype.InterfaceType
-		dataAdd = len(imethods(t)) * int(rttype.IMethod.Size())
+		rt = rttype.For(target).InterfaceType
+		dataAdd = len(imethods(target, t)) * int(rttype.For(target).IMethod.Size())
 	case types.TMAP:
-		rt = rttype.MapType
+		rt = rttype.For(target).MapType
 	case types.TPTR:
-		rt = rttype.PtrType
-		// TODO: use rttype.Type for Elem() is ANY?
+		rt = rttype.For(target).PtrType
+		// TODO: use rttype.For(target).Type for Elem() is ANY?
 	case types.TSTRUCT:
-		rt = rttype.StructType
-		dataAdd = t.NumFields() * int(rttype.StructField.Size())
+		rt = rttype.For(target).StructType
+		dataAdd = t.NumFields() * int(rttype.For(target).StructField.Size())
 	}
 
 	// Compute offsets of each section.
 	B := rt.Size()
 	C := B
 	if extra {
-		C = B + rttype.UncommonType.Size()
+		C = B + rttype.For(target).UncommonType.Size()
 	}
 	D := C + int64(dataAdd)
-	E := D + int64(len(methods(t)))*rttype.Method.Size()
+	E := D + int64(len(methods(target, t)))*rttype.For(target).Method.Size()
 
 	// Write the runtime._type
-	c := rttype.NewCursor(lsym, 0, rt)
-	if rt == rttype.Type {
-		dcommontype(c, t)
+	c := rttype.NewCursor(target.Ctxt, lsym, 0, rt)
+	if rt == rttype.For(target).Type {
+		dcommontype(target, c, t)
 	} else {
-		dcommontype(c.Field("Type"), t)
+		dcommontype(target, c.Field("Type"), t)
 	}
 
 	// Write additional type-specific data
@@ -815,28 +801,28 @@ func writeType(t *types.Type) *obj.LSym {
 	switch t.Kind() {
 	case types.TARRAY:
 		// internal/abi.ArrayType
-		s1 := writeType(t.Elem())
+		s1 := writeType(target, t.Elem())
 		t2 := types.NewSlice(t.Elem())
-		s2 := writeType(t2)
+		s2 := writeType(target, t2)
 		c.Field("Elem").WritePtr(s1)
 		c.Field("Slice").WritePtr(s2)
 		c.Field("Len").WriteUintptr(uint64(t.NumElem()))
 
 	case types.TSLICE:
 		// internal/abi.SliceType
-		s1 := writeType(t.Elem())
+		s1 := writeType(target, t.Elem())
 		c.Field("Elem").WritePtr(s1)
 
 	case types.TCHAN:
 		// internal/abi.ChanType
-		s1 := writeType(t.Elem())
+		s1 := writeType(target, t.Elem())
 		c.Field("Elem").WritePtr(s1)
 		c.Field("Dir").WriteInt(int64(t.ChanDir()))
 
 	case types.TFUNC:
 		// internal/abi.FuncType
 		for _, t1 := range t.RecvParamsResults() {
-			writeType(t1.Type)
+			writeType(target, t1.Type)
 		}
 		inCount := t.NumRecvs() + t.NumParams()
 		outCount := t.NumResults()
@@ -849,42 +835,42 @@ func writeType(t *types.Type) *obj.LSym {
 
 		// Array of rtype pointers follows funcType.
 		typs := t.RecvParamsResults()
-		array := rttype.NewArrayCursor(lsym, C, types.Types[types.TUNSAFEPTR], len(typs))
+		array := rttype.NewArrayCursor(target.Ctxt, lsym, C, target.Type(types.TUNSAFEPTR), len(typs))
 		for i, t1 := range typs {
-			array.Elem(i).WritePtr(writeType(t1.Type))
+			array.Elem(i).WritePtr(writeType(target, t1.Type))
 		}
 
 	case types.TINTER:
 		// internal/abi.InterfaceType
-		m := imethods(t)
+		m := imethods(target, t)
 		n := len(m)
 		for _, a := range m {
-			writeType(a.type_)
+			writeType(target, a.type_)
 		}
 
 		var tpkg *types.Pkg
-		if t.Sym() != nil && t != types.Types[t.Kind()] && t != types.ErrorType {
+		if t.Sym() != nil && t != target.Type(t.Kind()) && t != target.ErrorType {
 			tpkg = t.Sym().Pkg
 		}
-		dgopkgpath(c.Field("PkgPath"), tpkg)
+		dgopkgpath(target, c.Field("PkgPath"), tpkg)
 		c.Field("Methods").WriteSlice(lsym, C, int64(n), int64(n))
 
-		array := rttype.NewArrayCursor(lsym, C, rttype.IMethod, n)
+		array := rttype.NewArrayCursor(target.Ctxt, lsym, C, rttype.For(target).IMethod, n)
 		for i, a := range m {
 			exported := types.IsExported(a.name.Name)
 			var pkg *types.Pkg
 			if !exported && a.name.Pkg != tpkg {
 				pkg = a.name.Pkg
 			}
-			nsym := dname(a.name.Name, "", pkg, exported, false)
+			nsym := dname(target, a.name.Name, "", pkg, exported, false)
 
 			e := array.Elem(i)
 			e.Field("Name").WriteSymPtrOff(nsym, false)
-			e.Field("Typ").WriteSymPtrOff(writeType(a.type_), false)
+			e.Field("Typ").WriteSymPtrOff(writeType(target, a.type_), false)
 		}
 
 	case types.TMAP:
-		writeMapType(t, lsym, c)
+		writeMapType(target, t, lsym, c)
 
 	case types.TPTR:
 		// internal/abi.PtrType
@@ -892,14 +878,14 @@ func writeType(t *types.Type) *obj.LSym {
 			base.Fatalf("bad pointer base type")
 		}
 
-		s1 := writeType(t.Elem())
+		s1 := writeType(target, t.Elem())
 		c.Field("Elem").WritePtr(s1)
 
 	case types.TSTRUCT:
 		// internal/abi.StructType
 		fields := t.Fields()
 		for _, t1 := range fields {
-			writeType(t1.Type)
+			writeType(target, t1.Type)
 		}
 
 		// All non-exported struct field names within a struct
@@ -915,21 +901,21 @@ func writeType(t *types.Type) *obj.LSym {
 			}
 		}
 
-		dgopkgpath(c.Field("PkgPath"), spkg)
+		dgopkgpath(target, c.Field("PkgPath"), spkg)
 		c.Field("Fields").WriteSlice(lsym, C, int64(len(fields)), int64(len(fields)))
 
-		array := rttype.NewArrayCursor(lsym, C, rttype.StructField, len(fields))
+		array := rttype.NewArrayCursor(target.Ctxt, lsym, C, rttype.For(target).StructField, len(fields))
 		for i, f := range fields {
 			e := array.Elem(i)
-			dnameField(e.Field("Name"), spkg, f)
-			e.Field("Typ").WritePtr(writeType(f.Type))
+			dnameField(target, e.Field("Name"), spkg, f)
+			e.Field("Typ").WritePtr(writeType(target, f.Type))
 			e.Field("Offset").WriteUintptr(uint64(f.Offset))
 		}
 	}
 
 	// Write the extra info, if any.
 	if extra {
-		dextratype(lsym, B, t, dataAdd)
+		dextratype(target, lsym, B, t, dataAdd)
 	}
 
 	dupok := 0
@@ -937,7 +923,7 @@ func writeType(t *types.Type) *obj.LSym {
 		dupok = obj.DUPOK
 	}
 
-	objw.Global(lsym, int32(E), int16(dupok|obj.RODATA))
+	objw.Global(target.Ctxt, lsym, int32(E), int16(dupok|obj.RODATA))
 
 	// A noalg type gets a descriptor without the type's hash and equality
 	// algorithms, because this package has no use for them. Another package
@@ -955,7 +941,7 @@ func writeType(t *types.Type) *obj.LSym {
 	//
 	// When buildmode=shared, all types are in typelinks so the
 	// runtime can deduplicate type pointers.
-	keep := base.Ctxt.Flag_dynlink
+	keep := target.Ctxt.Flag_dynlink
 	if !keep && t.Sym() == nil {
 		// For an unnamed type, we only need the link if the type can
 		// be created at run time by reflect.PointerTo and similar
@@ -972,14 +958,14 @@ func writeType(t *types.Type) *obj.LSym {
 		keep = false
 	}
 	lsym.Set(obj.AttrMakeTypelink, keep)
-	lsym.Align = int16(types.PtrSize)
+	lsym.Align = int16(target.PtrSize)
 
 	return lsym
 }
 
 // InterfaceMethodOffset returns the offset of the i-th method in the interface
 // type descriptor, ityp.
-func InterfaceMethodOffset(ityp *types.Type, i int64) int64 {
+func InterfaceMethodOffset(target *ir.Package, ityp *types.Type, i int64) int64 {
 	// interface type descriptor layout is struct {
 	//   _type        // commonSize
 	//   pkgpath      // 1 word
@@ -988,65 +974,87 @@ func InterfaceMethodOffset(ityp *types.Type, i int64) int64 {
 	//   [...]imethod
 	// }
 	// The size of imethod is 8.
-	return int64(commonSize()+4*types.PtrSize+uncommonSize(ityp)) + i*8
+	return int64(commonSize(target)+4*target.PtrSize+uncommonSize(target, ityp)) + i*8
 }
 
 // NeedRuntimeType ensures that a runtime type descriptor is emitted for t.
-func NeedRuntimeType(t *types.Type) {
-	if _, ok := signatset[t]; !ok {
-		signatset[t] = struct{}{}
-		signatslice = append(signatslice, typeAndStr{t: t, short: types.TypeSymName(t), regular: t.String()})
+func NeedRuntimeType(target *ir.Package, t *types.Type) {
+	target.RuntimeTypeMu.Lock()
+	if target.RuntimeTypes == nil {
+		target.RuntimeTypes = make(map[*types.Type]struct{})
 	}
+	if _, ok := target.RuntimeTypes[t]; !ok {
+		target.RuntimeTypes[t] = struct{}{}
+		target.RuntimeTypeQueue = append(target.RuntimeTypeQueue, t)
+	}
+	target.RuntimeTypeMu.Unlock()
 }
 
 // ForEachRuntimeType calls fn for each type for which a runtime type descriptor
 // has been requested. This is used by the code that indexes symbols early, so
 // we can recursively index the symbols WriteRuntimeTypes numbers using the
 // recursive writeType function.
-func ForEachRuntimeType(fn func(*types.Type)) {
-	for _, ts := range signatslice {
-		fn(ts.t)
+func ForEachRuntimeType(target *ir.Package, fn func(*types.Type)) {
+	target.RuntimeTypeMu.Lock()
+	queue := append([]*types.Type(nil), target.RuntimeTypeQueue...)
+	target.RuntimeTypeMu.Unlock()
+	for _, t := range queue {
+		fn(t)
 	}
 }
 
-func WriteRuntimeTypes() {
-	// Process signatslice. Use a loop, as writeType adds
-	// entries to signatslice while it is being processed.
-	for len(signatslice) > 0 {
-		signats := signatslice
+func WriteRuntimeTypes(target *ir.Package) {
+	// Process the runtime type queue. Use a loop, as writeType adds
+	// entries to the queue while it is being processed.
+	for {
+		target.RuntimeTypeMu.Lock()
+		if len(target.RuntimeTypeQueue) == 0 {
+			target.RuntimeTypeMu.Unlock()
+			break
+		}
+		signats := append([]*types.Type(nil), target.RuntimeTypeQueue...)
+		target.RuntimeTypeMu.Unlock()
+		entries := make([]typeAndStr, len(signats))
+		for i, t := range signats {
+			entries[i] = typeAndStr{t: t, short: types.TypeSymName(t), regular: t.String()}
+		}
 		// Sort for reproducible builds.
-		slices.SortFunc(signats, typesStrCmp)
-		for _, ts := range signats {
+		slices.SortFunc(entries, typesStrCmp)
+		for _, ts := range entries {
 			t := ts.t
-			writeType(t)
+			writeType(target, t)
 			if t.Sym() != nil {
-				writeType(types.NewPtr(t))
+				writeType(target, types.NewPtr(t))
 			}
 		}
-		signatslice = signatslice[len(signats):]
+		target.RuntimeTypeMu.Lock()
+		target.RuntimeTypeQueue = target.RuntimeTypeQueue[len(signats):]
+		target.RuntimeTypeMu.Unlock()
 	}
 }
 
-func WriteGCSymbols() {
+func WriteGCSymbols(target *ir.Package) {
 	// Emit GC data symbols.
-	gcsyms := make([]typeAndStr, 0, len(gcsymset))
-	for t := range gcsymset {
+	target.RuntimeTypeMu.Lock()
+	gcsyms := make([]typeAndStr, 0, len(target.GCSymTypes))
+	for t := range target.GCSymTypes {
 		gcsyms = append(gcsyms, typeAndStr{t: t, short: types.TypeSymName(t), regular: t.String()})
 	}
+	target.RuntimeTypeMu.Unlock()
 	slices.SortFunc(gcsyms, typesStrCmp)
 	for _, ts := range gcsyms {
-		dgcsym(ts.t, true, false)
+		dgcsym(target, ts.t, true, false)
 	}
 }
 
 // writeITab writes the itab for concrete type typ implementing interface iface. If
 // allowNonImplement is true, allow the case where typ does not implement iface, and just
 // create a dummy itab with zeroed-out method entries.
-func writeITab(lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
+func writeITab(target *ir.Package, lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
 	// TODO(mdempsky): Fix geneq and genhash (and maybe others) to stop
 	// clobbering base.Pos.
-	oldpos := base.Pos
-	defer func() { base.Pos = oldpos }()
+	oldpos := target.Pos
+	defer ir.SetPosValue(target, oldpos)
 
 	if typ == nil || (typ.IsPtr() && typ.Elem() == nil) || typ.IsUntyped() || iface == nil || !iface.IsInterface() || iface.IsEmptyInterface() {
 		base.Fatalf("writeITab(%v, %v)", typ, iface)
@@ -1057,7 +1065,7 @@ func writeITab(lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
 
 	// both sigs and methods are sorted by name,
 	// so we can find the intersection in a single pass
-	for _, m := range methods(typ) {
+	for _, m := range methods(target, typ) {
 		if m.name == sigs[0].Sym {
 			entries = append(entries, m.isym)
 			if m.isym == nil {
@@ -1082,9 +1090,9 @@ func writeITab(lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
 	//   _      [4]byte
 	//   fun    [1]uintptr // variable sized. fun[0]==0 means _type does not implement inter.
 	// }
-	c := rttype.NewCursor(lsym, 0, rttype.ITab)
-	c.Field("Inter").WritePtr(writeType(iface))
-	c.Field("Type").WritePtr(writeType(typ))
+	c := rttype.NewCursor(target.Ctxt, lsym, 0, rttype.For(target).ITab)
+	c.Field("Inter").WritePtr(writeType(target, iface))
+	c.Field("Type").WritePtr(writeType(target, typ))
 	c.Field("Hash").WriteUint32(types.TypeHash(typ)) // copy of type hash
 
 	var delta int64
@@ -1100,18 +1108,18 @@ func writeITab(lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
 		}
 	}
 	// Nothing writes static itabs, so they are read only.
-	objw.Global(lsym, int32(rttype.ITab.Size()+delta), int16(obj.DUPOK|obj.RODATA))
+	objw.Global(target.Ctxt, lsym, int32(rttype.For(target).ITab.Size()+delta), int16(obj.DUPOK|obj.RODATA))
 	lsym.Set(obj.AttrContentAddressable, true)
-	lsym.Align = int16(types.PtrSize)
+	lsym.Align = int16(target.PtrSize)
 }
 
-func WritePluginTable() {
-	ptabs := typecheck.Target.PluginExports
+func WritePluginTable(target *ir.Package) {
+	ptabs := target.PluginExports
 	if len(ptabs) == 0 {
 		return
 	}
 
-	lsym := base.Ctxt.Lookup("go:plugin.tabs")
+	lsym := target.Ctxt.Lookup("go:plugin.tabs")
 	ot := 0
 	for _, p := range ptabs {
 		// Dump ptab symbol into go.pluginsym package.
@@ -1120,37 +1128,37 @@ func WritePluginTable() {
 		//	name nameOff
 		//	typ  typeOff // pointer to symbol
 		// }
-		nsym := dname(p.Sym().Name, "", nil, true, false)
+		nsym := dname(target, p.Sym().Name, "", nil, true, false)
 		t := p.Type()
 		if p.Class != ir.PFUNC {
 			t = types.NewPtr(t)
 		}
-		tsym := writeType(t)
-		ot = objw.SymPtrOff(lsym, ot, nsym)
-		ot = objw.SymPtrOff(lsym, ot, tsym)
+		tsym := writeType(target, t)
+		ot = objw.SymPtrOff(target.Ctxt, lsym, ot, nsym)
+		ot = objw.SymPtrOff(target.Ctxt, lsym, ot, tsym)
 		// Plugin exports symbols as interfaces. Mark their types
 		// as UsedInIface.
 		tsym.Set(obj.AttrUsedInIface, true)
 	}
-	objw.Global(lsym, int32(ot), int16(obj.RODATA))
+	objw.Global(target.Ctxt, lsym, int32(ot), int16(obj.RODATA))
 
-	lsym = base.Ctxt.Lookup("go:plugin.exports")
+	lsym = target.Ctxt.Lookup("go:plugin.exports")
 	ot = 0
 	for _, p := range ptabs {
-		ot = objw.SymPtr(lsym, ot, p.Linksym(), 0)
+		ot = objw.SymPtr(target.Ctxt, lsym, ot, p.Linksym(), 0)
 	}
-	objw.Global(lsym, int32(ot), int16(obj.RODATA))
+	objw.Global(target.Ctxt, lsym, int32(ot), int16(obj.RODATA))
 }
 
 // writtenByWriteBasicTypes reports whether typ is written by WriteBasicTypes.
 // WriteBasicTypes always writes pointer types; any pointer has been stripped off typ already.
-func writtenByWriteBasicTypes(typ *types.Type) bool {
+func writtenByWriteBasicTypes(target *ir.Package, typ *types.Type) bool {
 	if typ.Sym() == nil && typ.Kind() == types.TFUNC {
 		// func(error) string
 		if typ.NumRecvs() == 0 &&
 			typ.NumParams() == 1 && typ.NumResults() == 1 &&
-			typ.Param(0).Type == types.ErrorType &&
-			typ.Result(0).Type == types.Types[types.TSTRING] {
+			typ.Param(0).Type == target.ErrorType &&
+			typ.Result(0).Type == target.Type(types.TSTRING) {
 			return true
 		}
 	}
@@ -1163,14 +1171,14 @@ func writtenByWriteBasicTypes(typ *types.Type) bool {
 
 	// Basic types.
 	sym := typ.Sym()
-	if sym != nil && (sym.Pkg == types.BuiltinPkg || sym.Pkg == types.UnsafePkg) {
+	if sym != nil && sym.Pkg != nil && (sym.Pkg.Prefix == "go:builtin" || sym.Pkg.Path == "unsafe") {
 		return true
 	}
 	// any or error
-	return (sym == nil && typ.IsEmptyInterface()) || typ == types.ErrorType
+	return (sym == nil && typ.IsEmptyInterface()) || typ == target.ErrorType
 }
 
-func WriteBasicTypes() {
+func WriteBasicTypes(target *ir.Package) {
 	// do basic types if compiling package runtime.
 	// they have to be in at least one package,
 	// and runtime is always loaded implicitly,
@@ -1178,31 +1186,31 @@ func WriteBasicTypes() {
 	// another possible choice would be package main,
 	// but using runtime means fewer copies in object files.
 	// The code here needs to be in sync with writtenByWriteBasicTypes above.
-	if base.Ctxt.Pkgpath != "runtime" {
+	if target.Ctxt.Pkgpath != "runtime" {
 		return
 	}
 
 	// Note: always write NewPtr(t) because NeedEmit's caller strips the pointer.
 	var list []*types.Type
 	for i := types.Kind(1); i <= types.TBOOL; i++ {
-		list = append(list, types.Types[i])
+		list = append(list, target.Type(i))
 	}
 	list = append(list,
-		types.Types[types.TSTRING],
-		types.Types[types.TUNSAFEPTR],
-		types.AnyType,
-		types.ErrorType)
+		target.Type(types.TSTRING),
+		target.Type(types.TUNSAFEPTR),
+		target.AnyType,
+		target.ErrorType)
 	for _, t := range list {
-		writeType(types.NewPtr(t))
-		writeType(types.NewPtr(types.NewSlice(t)))
+		writeType(target, types.NewPtr(t))
+		writeType(target, types.NewPtr(types.NewSlice(t)))
 	}
 
 	// emit type for func(error) string,
 	// which is the type of an auto-generated wrapper.
-	writeType(types.NewPtr(types.NewSignature(nil, []*types.Field{
-		types.NewField(base.Pos, nil, types.ErrorType),
+	writeType(target, types.NewPtr(types.NewSignature(nil, []*types.Field{
+		types.NewField(target.AutoPos, nil, target.ErrorType),
 	}, []*types.Field{
-		types.NewField(base.Pos, nil, types.Types[types.TSTRING]),
+		types.NewField(target.AutoPos, nil, target.Type(types.TSTRING)),
 	})))
 }
 
@@ -1262,15 +1270,16 @@ func typesStrCmp(a, b typeAndStr) int {
 // GC information is always a bitmask, never a gc program.
 // GCSym may be called in concurrent backend, so it does not emit the symbol
 // content.
-func GCSym(t *types.Type, onDemandAllowed bool) (lsym *obj.LSym, ptrdata int64) {
+func GCSym(target *ir.Package, t *types.Type, onDemandAllowed bool) (lsym *obj.LSym, ptrdata int64) {
 	// Record that we need to emit the GC symbol.
-	gcsymmu.Lock()
-	if _, ok := gcsymset[t]; !ok {
-		gcsymset[t] = struct{}{}
+	target.RuntimeTypeMu.Lock()
+	if target.GCSymTypes == nil {
+		target.GCSymTypes = make(map[*types.Type]struct{})
 	}
-	gcsymmu.Unlock()
+	target.GCSymTypes[t] = struct{}{}
+	target.RuntimeTypeMu.Unlock()
 
-	lsym, _, ptrdata = dgcsym(t, false, onDemandAllowed)
+	lsym, _, ptrdata = dgcsym(target, t, false, onDemandAllowed)
 	return
 }
 
@@ -1278,38 +1287,38 @@ func GCSym(t *types.Type, onDemandAllowed bool) (lsym *obj.LSym, ptrdata int64) 
 // with a boolean reporting whether the gc mask should be computed on demand
 // at runtime, and the ptrdata field to record in the reflect type information.
 // When write is true, it writes the symbol data.
-func dgcsym(t *types.Type, write, onDemandAllowed bool) (lsym *obj.LSym, onDemand bool, ptrdata int64) {
+func dgcsym(target *ir.Package, t *types.Type, write, onDemandAllowed bool) (lsym *obj.LSym, onDemand bool, ptrdata int64) {
 	ptrdata = types.PtrDataSize(t)
 	if !onDemandAllowed || t.TFlag()&abi.TFlagGCMaskOnDemand == 0 {
-		lsym = dgcptrmask(t, write)
+		lsym = dgcptrmask(target, t, write)
 		return
 	}
 
 	onDemand = true
-	lsym = dgcptrmaskOnDemand(t, write)
+	lsym = dgcptrmaskOnDemand(target, t, write)
 	return
 }
 
 // dgcptrmask emits and returns the symbol containing a pointer mask for type t.
-func dgcptrmask(t *types.Type, write bool) *obj.LSym {
+func dgcptrmask(target *ir.Package, t *types.Type, write bool) *obj.LSym {
 	// Bytes we need for the ptrmask.
-	n := (types.PtrDataSize(t)/int64(types.PtrSize) + 7) / 8
+	n := (types.PtrDataSize(t)/int64(target.PtrSize) + 7) / 8
 	// Runtime wants ptrmasks padded to a multiple of uintptr in size.
-	n = (n + int64(types.PtrSize) - 1) &^ (int64(types.PtrSize) - 1)
+	n = (n + int64(target.PtrSize) - 1) &^ (int64(target.PtrSize) - 1)
 	ptrmask := make([]byte, n)
-	fillptrmask(t, ptrmask)
+	fillptrmask(target, t, ptrmask)
 	p := fmt.Sprintf("runtime.gcbits.%x", ptrmask)
 
-	lsym := base.Ctxt.Lookup(p)
+	lsym := target.Ctxt.Lookup(p)
 	if write && !lsym.OnList() {
 		for i, x := range ptrmask {
-			objw.Uint8(lsym, i, x)
+			objw.Uint8(target.Ctxt, lsym, i, x)
 		}
-		objw.Global(lsym, int32(len(ptrmask)), obj.DUPOK|obj.RODATA|obj.LOCAL)
+		objw.Global(target.Ctxt, lsym, int32(len(ptrmask)), obj.DUPOK|obj.RODATA|obj.LOCAL)
 		lsym.Set(obj.AttrContentAddressable, true)
 		// The runtime expects ptrmasks to be aligned
 		// as a uintptr.
-		lsym.Align = int16(types.PtrSize)
+		lsym.Align = int16(target.PtrSize)
 	}
 	return lsym
 }
@@ -1317,15 +1326,15 @@ func dgcptrmask(t *types.Type, write bool) *obj.LSym {
 // fillptrmask fills in ptrmask with 1s corresponding to the
 // word offsets in t that hold pointers.
 // ptrmask is assumed to fit at least types.PtrDataSize(t)/PtrSize bits.
-func fillptrmask(t *types.Type, ptrmask []byte) {
+func fillptrmask(target *ir.Package, t *types.Type, ptrmask []byte) {
 	if !t.HasPointers() {
 		return
 	}
 
 	vec := bitvec.New(8 * int32(len(ptrmask)))
-	typebits.Set(t, 0, vec)
+	typebits.Set(target.PtrSize, t, 0, vec)
 
-	nptr := types.PtrDataSize(t) / int64(types.PtrSize)
+	nptr := types.PtrDataSize(t) / int64(target.PtrSize)
 	for i := int64(0); i < nptr; i++ {
 		if vec.Get(int32(i)) {
 			ptrmask[i/8] |= 1 << (uint(i) % 8)
@@ -1335,13 +1344,13 @@ func fillptrmask(t *types.Type, ptrmask []byte) {
 
 // dgcptrmaskOnDemand emits and returns the symbol that should be referenced by
 // the GCData field of a type, for large types.
-func dgcptrmaskOnDemand(t *types.Type, write bool) *obj.LSym {
-	lsym := TypeLinksymPrefix(".gcmask", t)
+func dgcptrmaskOnDemand(target *ir.Package, t *types.Type, write bool) *obj.LSym {
+	lsym := TypeLinksymPrefix(target, ".gcmask", t)
 	if write && !lsym.OnList() {
 		// Note: contains a pointer, but a pointer to a
 		// persistentalloc allocation. Starts with nil.
 		// Allocated in BSS.
-		objw.Global(lsym, int32(types.PtrSize), obj.DUPOK|obj.NOPTR|obj.LOCAL)
+		objw.Global(target.Ctxt, lsym, int32(target.PtrSize), obj.DUPOK|obj.NOPTR|obj.LOCAL)
 	}
 	return lsym
 }
@@ -1352,11 +1361,11 @@ func ZeroAddr(curfunc *ir.Func, size int64) ir.Node {
 	if size >= 1<<31 {
 		base.Fatalf("map elem too big %d", size)
 	}
-	if ZeroSize < size {
-		ZeroSize = size
+	if curfunc.Target.ZeroSize < size {
+		curfunc.Target.ZeroSize = size
 	}
 	lsym := base.PkgLinksym("go:map", "zero", obj.ABI0)
-	x := ir.NewLinksymExpr(base.Pos, lsym, types.Types[types.TUINT8])
+	x := ir.NewLinksymExpr(curfunc.Target.Pos, lsym, curfunc.Target.Type(types.TUINT8))
 	return typecheck.Expr(curfunc, typecheck.NodAddr(curfunc, x))
 }
 
@@ -1368,7 +1377,7 @@ func TypeCanBeDupok(t *types.Type) bool {
 
 // NeedEmit reports whether typ is a type that we need to emit code
 // for (e.g., runtime type descriptors, method wrappers).
-func NeedEmit(typ *types.Type) bool {
+func NeedEmit(target *ir.Package, typ *types.Type) bool {
 	// TODO(mdempsky): Export data should keep track of which anonymous
 	// and instantiated types were emitted, so at least downstream
 	// packages can skip re-emitting them.
@@ -1379,15 +1388,15 @@ func NeedEmit(typ *types.Type) bool {
 	// instantiated generic functions too.
 
 	switch sym := typ.Sym(); {
-	case writtenByWriteBasicTypes(typ):
-		return base.Ctxt.Pkgpath == "runtime"
+	case writtenByWriteBasicTypes(target, typ):
+		return target.Ctxt.Pkgpath == "runtime"
 
 	case sym == nil:
 		// Anonymous type; possibly never seen before or ever again.
 		// Need to emit to be safe (however, see TODO above).
 		return true
 
-	case sym.Pkg == types.LocalPkg:
+	case sym.Pkg == target.LocalPkg:
 		// Local defined type; our responsibility.
 		return true
 
@@ -1443,33 +1452,31 @@ func NeedEmit(typ *types.Type) bool {
 //	}
 //
 // These wrappers are always fully stenciled.
-func methodWrapper(rcvr *types.Type, method *types.Field, forItab bool) *obj.LSym {
+func methodWrapper(target *ir.Package, rcvr *types.Type, method *types.Field, forItab bool) *obj.LSym {
 	if forItab && !types.IsDirectIface(rcvr) {
 		rcvr = rcvr.PtrTo()
 	}
 
-	sym, _ := ir.MethodSym(rcvr, method)
+	sym, _ := ir.MethodSym(target, rcvr, method)
 	lsym := sym.Linksym()
 
 	// Unified IR creates its own wrappers.
 	return lsym
 }
 
-var ZeroSize int64
-
 // MarkTypeUsedInInterface marks that type t is converted to an interface.
 // This information is used in the linker in dead method elimination.
-func MarkTypeUsedInInterface(t *types.Type, from *obj.LSym) {
+func MarkTypeUsedInInterface(target *ir.Package, t *types.Type, from *obj.LSym) {
 	if t.HasShape() {
 		// Shape types shouldn't be put in interfaces, so we shouldn't ever get here.
 		base.Fatalf("shape types have no methods %+v", t)
 	}
-	MarkTypeSymUsedInInterface(TypeLinksym(t), from)
+	MarkTypeSymUsedInInterface(target, TypeLinksym(target, t), from)
 }
-func MarkTypeSymUsedInInterface(tsym *obj.LSym, from *obj.LSym) {
+func MarkTypeSymUsedInInterface(target *ir.Package, tsym *obj.LSym, from *obj.LSym) {
 	// Emit a marker relocation. The linker will know the type is converted
 	// to an interface if "from" is reachable.
-	from.AddRel(base.Ctxt, obj.Reloc{Type: objabi.R_USEIFACE, Sym: tsym})
+	from.AddRel(target.Ctxt, obj.Reloc{Type: objabi.R_USEIFACE, Sym: tsym})
 }
 
 // MarkUsedIfaceMethod marks that an interface method is used in the current
@@ -1501,18 +1508,18 @@ func MarkUsedIfaceMethod(curfunc *ir.Func, n *ir.CallExpr) {
 		// type, and the linker could do more complicated matching using
 		// some sort of fuzzy shape matching. For now, only use the name
 		// of the method for matching.
-		curfunc.LSym.AddRel(base.Ctxt, obj.Reloc{
+		curfunc.LSym.AddRel(curfunc.Target.Ctxt, obj.Reloc{
 			Type: objabi.R_USENAMEDMETHOD,
-			Sym:  staticdata.StringSymNoCommon(dot.Sel.Name),
+			Sym:  staticdata.StringSymNoCommon(curfunc.Target, dot.Sel.Name),
 		})
 		return
 	}
 
 	// dot.Offset() is the method index * PtrSize (the offset of code pointer in itab).
-	midx := dot.Offset() / int64(types.PtrSize)
-	curfunc.LSym.AddRel(base.Ctxt, obj.Reloc{
+	midx := dot.Offset() / int64(curfunc.Target.PtrSize)
+	curfunc.LSym.AddRel(curfunc.Target.Ctxt, obj.Reloc{
 		Type: objabi.R_USEIFACEMETHOD,
-		Sym:  TypeLinksym(ityp),
-		Add:  InterfaceMethodOffset(ityp, midx),
+		Sym:  TypeLinksym(curfunc.Target, ityp),
+		Add:  InterfaceMethodOffset(curfunc.Target, ityp, midx),
 	})
 }

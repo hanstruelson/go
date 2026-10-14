@@ -12,7 +12,6 @@ import (
 	"cmd/internal/src"
 	"fmt"
 	"math"
-	"sync"
 )
 
 //......................................................................
@@ -98,6 +97,7 @@ type RegIndex uint8
 // (as described above), not architected registers.
 type ABIParamAssignment struct {
 	Type      *types.Type
+	target    *ir.Package
 	Name      *ir.Name
 	Registers []RegIndex
 	offset    int32
@@ -129,7 +129,7 @@ func RegisterTypes(apa []ABIParamAssignment) []*types.Type {
 		if len(pa.Registers) == 0 {
 			continue
 		}
-		rts = appendParamTypes(rts, pa.Type)
+		rts = appendParamTypes(pa.target, rts, pa.Type)
 	}
 	return rts
 }
@@ -141,11 +141,11 @@ func (pa *ABIParamAssignment) RegisterTypesAndOffsets() ([]*types.Type, []int64)
 	}
 	typs := make([]*types.Type, 0, l)
 	offs := make([]int64, 0, l)
-	offs, _ = appendParamOffsets(offs, 0, pa.Type) // 0 is aligned for everything.
-	return appendParamTypes(typs, pa.Type), offs
+	offs, _ = appendParamOffsets(pa.target, offs, 0, pa.Type) // 0 is aligned for everything.
+	return appendParamTypes(pa.target, typs, pa.Type), offs
 }
 
-func appendParamTypes(rts []*types.Type, t *types.Type) []*types.Type {
+func appendParamTypes(target *ir.Package, rts []*types.Type, t *types.Type) []*types.Type {
 	w := t.Size()
 	if w == 0 {
 		return rts
@@ -155,37 +155,37 @@ func appendParamTypes(rts []*types.Type, t *types.Type) []*types.Type {
 			c := types.FloatForComplex(t)
 			return append(rts, c, c)
 		} else {
-			if int(t.Size()) <= types.RegSize || t.IsSIMD() {
+			if int(t.Size()) <= target.RegSize || t.IsSIMD() {
 				return append(rts, t)
 			}
 			// assume 64bit int on 32-bit machine
 			// TODO endianness? Should high-order (sign bits) word come first?
 			if t.IsSigned() {
-				rts = append(rts, types.Types[types.TINT32])
+				rts = append(rts, target.Type(types.TINT32))
 			} else {
-				rts = append(rts, types.Types[types.TUINT32])
+				rts = append(rts, target.Type(types.TUINT32))
 			}
-			return append(rts, types.Types[types.TUINT32])
+			return append(rts, target.Type(types.TUINT32))
 		}
 	} else {
 		typ := t.Kind()
 		switch typ {
 		case types.TARRAY:
 			for i := int64(0); i < t.NumElem(); i++ { // 0 gets no registers, plus future-proofing.
-				rts = appendParamTypes(rts, t.Elem())
+				rts = appendParamTypes(target, rts, t.Elem())
 			}
 		case types.TSTRUCT:
 			for _, f := range t.Fields() {
 				if f.Type.Size() > 0 { // embedded zero-width types receive no registers
-					rts = appendParamTypes(rts, f.Type)
+					rts = appendParamTypes(target, rts, f.Type)
 				}
 			}
 		case types.TSLICE:
-			return appendParamTypes(rts, synthSlice)
+			return appendParamTypes(target, rts, target.ABISynthSlice)
 		case types.TSTRING:
-			return appendParamTypes(rts, synthString)
+			return appendParamTypes(target, rts, target.ABISynthString)
 		case types.TINTER:
-			return appendParamTypes(rts, synthIface)
+			return appendParamTypes(target, rts, target.ABISynthIface)
 		}
 	}
 	return rts
@@ -194,7 +194,7 @@ func appendParamTypes(rts []*types.Type, t *types.Type) []*types.Type {
 // appendParamOffsets appends the offset(s) of type t, starting from "at",
 // to input offsets, and returns the longer slice and the next unused offset.
 // at should already be aligned for t.
-func appendParamOffsets(offsets []int64, at int64, t *types.Type) ([]int64, int64) {
+func appendParamOffsets(target *ir.Package, offsets []int64, at int64, t *types.Type) ([]int64, int64) {
 	w := t.Size()
 	if w == 0 {
 		return offsets, at
@@ -203,7 +203,7 @@ func appendParamOffsets(offsets []int64, at int64, t *types.Type) ([]int64, int6
 		return append(offsets, at), at + w
 	}
 	if t.IsScalar() || t.IsPtrShaped() {
-		if t.IsComplex() || int(t.Size()) > types.RegSize { // complex and *int64 on 32-bit
+		if t.IsComplex() || int(t.Size()) > target.RegSize { // complex and *int64 on 32-bit
 			s := w / 2
 			return append(offsets, at, at+s), at + w
 		} else {
@@ -216,24 +216,24 @@ func appendParamOffsets(offsets []int64, at int64, t *types.Type) ([]int64, int6
 			te := t.Elem()
 			for i := int64(0); i < t.NumElem(); i++ {
 				at = align(at, te)
-				offsets, at = appendParamOffsets(offsets, at, te)
+				offsets, at = appendParamOffsets(target, offsets, at, te)
 			}
 		case types.TSTRUCT:
 			at0 := at
 			for i, f := range t.Fields() {
 				at = at0 + f.Offset // Fields may be over-aligned, see wasm32.
-				offsets, at = appendParamOffsets(offsets, at, f.Type)
+				offsets, at = appendParamOffsets(target, offsets, at, f.Type)
 				if f.Type.Size() == 0 && i == t.NumFields()-1 {
 					at++ // last field has zero width
 				}
 			}
 			at = align(at, t) // type size is rounded up to its alignment
 		case types.TSLICE:
-			return appendParamOffsets(offsets, at, synthSlice)
+			return appendParamOffsets(target, offsets, at, target.ABISynthSlice)
 		case types.TSTRING:
-			return appendParamOffsets(offsets, at, synthString)
+			return appendParamOffsets(target, offsets, at, target.ABISynthString)
 		case types.TINTER:
-			return appendParamOffsets(offsets, at, synthIface)
+			return appendParamOffsets(target, offsets, at, target.ABISynthIface)
 		}
 	}
 	return offsets, at
@@ -267,6 +267,7 @@ type RegAmounts struct {
 // by the ABI rules for parameter passing and result returning.
 type ABIConfig struct {
 	// Do we need anything more than this?
+	target          *ir.Package
 	offsetForLocals int64 // e.g., obj.(*Link).Arch.FixedFrameSize -- extra linkage information on some architectures.
 	regAmounts      RegAmounts
 	which           obj.ABI
@@ -274,8 +275,8 @@ type ABIConfig struct {
 
 // NewABIConfig returns a new ABI configuration for an architecture with
 // iRegsCount integer/pointer registers and fRegsCount floating point registers.
-func NewABIConfig(iRegsCount, fRegsCount int, offsetForLocals int64, which uint8) *ABIConfig {
-	return &ABIConfig{offsetForLocals: offsetForLocals, regAmounts: RegAmounts{iRegsCount, fRegsCount}, which: obj.ABI(which)}
+func NewABIConfig(target *ir.Package, iRegsCount, fRegsCount int, offsetForLocals int64, which uint8) *ABIConfig {
+	return &ABIConfig{target: target, offsetForLocals: offsetForLocals, regAmounts: RegAmounts{iRegsCount, fRegsCount}, which: obj.ABI(which)}
 }
 
 // Which returns the ABI number
@@ -313,8 +314,9 @@ func (config *ABIConfig) NumParamRegs(typ *types.Type) int {
 // corresponding method/function type, except that all the embedded parameter names are nil.
 // This is intended for use by ssagen/ssa.go:(*state).rtcall, for runtime functions that lack a parsed function type.
 func (config *ABIConfig) ABIAnalyzeTypes(params, results []*types.Type) *ABIParamResultInfo {
-	setup()
+	setup(config.target)
 	s := assignState{
+		target:      config.target,
 		stackOffset: config.offsetForLocals,
 		rTotal:      config.regAmounts,
 	}
@@ -331,7 +333,7 @@ func (config *ABIConfig) ABIAnalyzeTypes(params, results []*types.Type) *ABIPara
 
 	// Inputs
 	info.inparams = assignParams(params, false)
-	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.RegSize))
+	s.stackOffset = types.RoundUp(s.stackOffset, int64(config.target.RegSize))
 	info.inRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 
 	// Outputs
@@ -339,8 +341,8 @@ func (config *ABIConfig) ABIAnalyzeTypes(params, results []*types.Type) *ABIPara
 	info.outparams = assignParams(results, true)
 	// The spill area is at a register-aligned offset and its size is rounded up to a register alignment.
 	// TODO in theory could align offset only to minimum required by spilled data types.
-	info.offsetToSpillArea = alignTo(s.stackOffset, types.RegSize)
-	info.spillAreaSize = alignTo(s.spillOffset, types.RegSize)
+	info.offsetToSpillArea = alignTo(s.stackOffset, config.target.RegSize)
+	info.spillAreaSize = alignTo(s.spillOffset, config.target.RegSize)
 	info.outRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 
 	return info
@@ -351,8 +353,9 @@ func (config *ABIConfig) ABIAnalyzeTypes(params, results []*types.Type) *ABIPara
 // and results will be passed (in registers or on the stack), returning
 // an ABIParamResultInfo object that holds the results of the analysis.
 func (config *ABIConfig) ABIAnalyzeFuncType(ft *types.Type) *ABIParamResultInfo {
-	setup()
+	setup(config.target)
 	s := assignState{
+		target:      config.target,
 		stackOffset: config.offsetForLocals,
 		rTotal:      config.regAmounts,
 	}
@@ -373,7 +376,7 @@ func (config *ABIConfig) ABIAnalyzeFuncType(ft *types.Type) *ABIParamResultInfo 
 
 	// Inputs
 	info.inparams = assignParams(ft.RecvParams(), false)
-	s.stackOffset = types.RoundUp(s.stackOffset, int64(types.RegSize))
+	s.stackOffset = types.RoundUp(s.stackOffset, int64(config.target.RegSize))
 	info.inRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 
 	// Outputs
@@ -381,8 +384,8 @@ func (config *ABIConfig) ABIAnalyzeFuncType(ft *types.Type) *ABIParamResultInfo 
 	info.outparams = assignParams(ft.Results(), true)
 	// The spill area is at a register-aligned offset and its size is rounded up to a register alignment.
 	// TODO in theory could align offset only to minimum required by spilled data types.
-	info.offsetToSpillArea = alignTo(s.stackOffset, types.RegSize)
-	info.spillAreaSize = alignTo(s.spillOffset, types.RegSize)
+	info.offsetToSpillArea = alignTo(s.stackOffset, config.target.RegSize)
+	info.spillAreaSize = alignTo(s.spillOffset, config.target.RegSize)
 	info.outRegistersUsed = s.rUsed.intRegs + s.rUsed.floatRegs
 	return info
 }
@@ -482,6 +485,7 @@ func (ri *ABIParamResultInfo) String() string {
 // assignState holds intermediate state during the register assigning process
 // for a given function signature.
 type assignState struct {
+	target      *ir.Package
 	rTotal      RegAmounts // total reg amounts from ABI rules
 	rUsed       RegAmounts // regs used by params completely assigned so far
 	stackOffset int64      // current stack offset
@@ -525,7 +529,7 @@ func (state *assignState) allocateRegs(regs []RegIndex, t *types.Type) []RegInde
 			regs = append(regs, RegIndex(rf+state.rTotal.intRegs))
 			rf += 1
 		} else {
-			n := (int(t.Size()) + types.RegSize - 1) / types.RegSize
+			n := (int(t.Size()) + state.target.RegSize - 1) / state.target.RegSize
 			for i := 0; i < n; i++ { // looking ahead to really big integers
 				regs = append(regs, RegIndex(ri))
 				ri += 1
@@ -548,52 +552,48 @@ func (state *assignState) allocateRegs(regs []RegIndex, t *types.Type) []RegInde
 			}
 			return regs
 		case types.TSLICE:
-			return state.allocateRegs(regs, synthSlice)
+			return state.allocateRegs(regs, state.target.ABISynthSlice)
 		case types.TSTRING:
-			return state.allocateRegs(regs, synthString)
+			return state.allocateRegs(regs, state.target.ABISynthString)
 		case types.TINTER:
-			return state.allocateRegs(regs, synthIface)
+			return state.allocateRegs(regs, state.target.ABISynthIface)
 		}
 	}
 	base.Fatalf("was not expecting type %s", t)
 	panic("unreachable")
 }
 
-// synthOnce ensures that we only create the synth* fake types once.
-var synthOnce sync.Once
-
 // synthSlice, synthString, and syncIface are synthesized struct types
 // meant to capture the underlying implementations of string/slice/interface.
-var synthSlice *types.Type
-var synthString *types.Type
-var synthIface *types.Type
-
 // setup performs setup for the register assignment utilities, manufacturing
 // a small set of synthesized types that we'll need along the way.
-func setup() {
-	synthOnce.Do(func() {
-		fname := types.BuiltinPkg.Lookup
-		nxp := src.NoXPos
-		bp := types.NewPtr(types.Types[types.TUINT8])
-		it := types.Types[types.TINT]
-		synthSlice = types.NewStruct([]*types.Field{
-			types.NewField(nxp, fname("ptr"), bp),
-			types.NewField(nxp, fname("len"), it),
-			types.NewField(nxp, fname("cap"), it),
-		})
-		types.CalcStructSize(synthSlice)
-		synthString = types.NewStruct([]*types.Field{
-			types.NewField(nxp, fname("data"), bp),
-			types.NewField(nxp, fname("len"), it),
-		})
-		types.CalcStructSize(synthString)
-		unsp := types.Types[types.TUNSAFEPTR]
-		synthIface = types.NewStruct([]*types.Field{
-			types.NewField(nxp, fname("f1"), unsp),
-			types.NewField(nxp, fname("f2"), unsp),
-		})
-		types.CalcStructSize(synthIface)
+func setup(target *ir.Package) {
+	target.ABITypesMu.Lock()
+	defer target.ABITypesMu.Unlock()
+	if target.ABISynthSlice != nil {
+		return
+	}
+	fname := target.Type(types.TINT).Sym().Pkg.Lookup
+	nxp := src.NoXPos
+	bp := types.NewPtr(target.Type(types.TUINT8))
+	it := target.Type(types.TINT)
+	target.ABISynthSlice = types.NewStruct([]*types.Field{
+		types.NewField(nxp, fname("ptr"), bp),
+		types.NewField(nxp, fname("len"), it),
+		types.NewField(nxp, fname("cap"), it),
 	})
+	types.CalcStructSize(target.ABISynthSlice)
+	target.ABISynthString = types.NewStruct([]*types.Field{
+		types.NewField(nxp, fname("data"), bp),
+		types.NewField(nxp, fname("len"), it),
+	})
+	types.CalcStructSize(target.ABISynthString)
+	unsp := target.Type(types.TUNSAFEPTR)
+	target.ABISynthIface = types.NewStruct([]*types.Field{
+		types.NewField(nxp, fname("f1"), unsp),
+		types.NewField(nxp, fname("f2"), unsp),
+	})
+	types.CalcStructSize(target.ABISynthIface)
 }
 
 // assignParam processes a given receiver, param, or result
@@ -612,6 +612,7 @@ func (state *assignState) assignParam(typ *types.Type, name *ir.Name, isResult b
 
 	return ABIParamAssignment{
 		Type:      typ,
+		target:    state.target,
 		Name:      name,
 		Registers: registers,
 		offset:    int32(offset),
@@ -662,11 +663,11 @@ func (pa *ABIParamAssignment) ComputePadding(storage []uint64) []uint64 {
 		return padding
 	}
 	types := make([]*types.Type, 0, nr)
-	types = appendParamTypes(types, pa.Type)
+	types = appendParamTypes(pa.target, types, pa.Type)
 	if len(types) != nr {
 		panic("internal error")
 	}
-	offsets, _ := appendParamOffsets([]int64{}, 0, pa.Type)
+	offsets, _ := appendParamOffsets(pa.target, []int64{}, 0, pa.Type)
 	for idx, t := range types {
 		ts := t.Size()
 		off := offsets[idx] + ts

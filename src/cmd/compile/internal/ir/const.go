@@ -30,8 +30,8 @@ func NewString(pos src.XPos, s string) Node {
 }
 
 // NewUintptr returns an OLITERAL representing v as a uintptr.
-func NewUintptr(pos src.XPos, v int64) Node {
-	return NewBasicLit(pos, types.Types[types.TUINTPTR], constant.MakeInt64(v))
+func NewUintptr(target *Package, pos src.XPos, v int64) Node {
+	return NewBasicLit(pos, target.Type(types.TUINTPTR), constant.MakeInt64(v))
 }
 
 // NewZero returns a zero value of the given type.

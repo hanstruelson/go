@@ -100,7 +100,6 @@ import (
 	"slices"
 	"unsafe"
 
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssabase"
@@ -770,7 +769,7 @@ func (s *regAllocState) init(f *ssa.Func) {
 	// The clobberdeadreg experiment inserts code to clobber dead registers
 	// at call sites.
 	// Ignore huge functions to avoid doing too much work.
-	if base.Flag.ClobberDeadReg && len(s.f.Blocks) <= 10000 {
+	if s.f.Config.Target.Flags.ClobberDeadReg && len(s.f.Blocks) <= 10000 {
 		// TODO: honor GOCLOBBERDEADHASH, or maybe GOSSAHASH.
 		s.doClobber = true
 	}
@@ -2079,7 +2078,7 @@ func (s *regAllocState) regalloc(f *ssa.Func) {
 		}
 		s.endRegs[b.ID] = regList
 
-		if checkEnabled {
+		if checkEnabledForFunc(s.f) {
 			regValLiveSet.Clear()
 			if s.live != nil {
 				for _, x := range s.live[b.ID] {

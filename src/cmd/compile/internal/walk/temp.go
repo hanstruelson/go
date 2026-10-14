@@ -17,7 +17,7 @@ func (w *walkState) initStackTemp(init *ir.Nodes, tmp *ir.Name, val ir.Node) *ir
 	if val != nil && !types.Identical(tmp.Type(), val.Type()) {
 		base.Fatalf("bad initial value for %L: %L", tmp, val)
 	}
-	w.appendWalkStmt(init, ir.NewAssignStmt(base.Pos, tmp, val))
+	w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, tmp, val))
 	return typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, tmp)).(*ir.AddrExpr)
 }
 
@@ -25,7 +25,7 @@ func (w *walkState) initStackTemp(init *ir.Nodes, tmp *ir.Name, val ir.Node) *ir
 // allocated temporary variable of the given type. Statements to
 // zero-initialize tmp are appended to init.
 func (w *walkState) stackTempAddr(init *ir.Nodes, typ *types.Type) *ir.AddrExpr {
-	n := typecheck.TempAt(base.Pos, w.curfunc, typ)
+	n := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, typ)
 	n.SetNonMergeable(true)
 	return w.initStackTemp(init, n, nil)
 }
@@ -35,8 +35,8 @@ func (w *walkState) stackTempAddr(init *ir.Nodes, typ *types.Type) *ir.AddrExpr 
 // initialized, and elem must not contain pointers.
 func (w *walkState) stackBufAddr(len int64, elem *types.Type) *ir.AddrExpr {
 	if elem.HasPointers() {
-		base.FatalfAt(base.Pos, "%v has pointers", elem)
+		base.FatalfAt(w.curfunc.Target.Pos, "%v has pointers", elem)
 	}
-	tmp := typecheck.TempAt(base.Pos, w.curfunc, types.NewArray(elem, len))
+	tmp := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewArray(elem, len))
 	return typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, tmp)).(*ir.AddrExpr)
 }

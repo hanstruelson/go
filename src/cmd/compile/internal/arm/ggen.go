@@ -5,9 +5,7 @@
 package arm
 
 import (
-	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
-	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 	"cmd/internal/obj/arm"
 )
@@ -21,17 +19,17 @@ func zerorange(pp *objw.Progs, p *obj.Prog, off, cnt int64, r0 *uint32) *obj.Pro
 		*r0 = 1
 	}
 
-	if cnt < int64(4*types.PtrSize) {
-		for i := int64(0); i < cnt; i += int64(types.PtrSize) {
+	if cnt < int64(4*pp.CurFunc.Target.PtrSize) {
+		for i := int64(0); i < cnt; i += int64(pp.CurFunc.Target.PtrSize) {
 			p = pp.Append(p, arm.AMOVW, obj.TYPE_REG, arm.REG_R0, 0, obj.TYPE_MEM, arm.REGSP, 4+off+i)
 		}
-	} else if cnt <= int64(128*types.PtrSize) {
+	} else if cnt <= int64(128*pp.CurFunc.Target.PtrSize) {
 		p = pp.Append(p, arm.AADD, obj.TYPE_CONST, 0, 4+off, obj.TYPE_REG, arm.REG_R1, 0)
 		p.Reg = arm.REGSP
 		p = pp.Append(p, obj.ADUFFZERO, obj.TYPE_NONE, 0, 0, obj.TYPE_MEM, 0, 0)
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = ir.Syms.Duffzero
-		p.To.Offset = 4 * (128 - cnt/int64(types.PtrSize))
+		p.To.Sym = pp.CurFunc.Target.Symbols.Duffzero
+		p.To.Offset = 4 * (128 - cnt/int64(pp.CurFunc.Target.PtrSize))
 	} else {
 		p = pp.Append(p, arm.AADD, obj.TYPE_CONST, 0, 4+off, obj.TYPE_REG, arm.REG_R1, 0)
 		p.Reg = arm.REGSP

@@ -270,11 +270,17 @@ func (d *HashDebug) matchPkgFunc(pkg, fn string, note func() string) bool {
 // Note that the default answer for no environment variable (d == nil)
 // is "yes", do the thing.
 func (d *HashDebug) MatchPos(pos src.XPos, desc func() string) bool {
+	return d.MatchPosWithLink(Ctxt, pos, desc)
+}
+
+// MatchPosWithLink is like MatchPos, but uses ctxt instead of the legacy
+// process-wide linker context.
+func (d *HashDebug) MatchPosWithLink(ctxt *obj.Link, pos src.XPos, desc func() string) bool {
 	if d == nil {
 		return true
 	}
 	// Written this way to make inlining likely.
-	return d.matchPos(Ctxt, pos, desc)
+	return d.matchPos(ctxt, pos, desc)
 }
 
 func (d *HashDebug) matchPos(ctxt *obj.Link, pos src.XPos, note func() string) bool {
@@ -303,11 +309,17 @@ func (d *HashDebug) matchPosWithInfo(ctxt *obj.Link, pos src.XPos, info any, not
 // Note that the default answer for no environment variable (d == nil)
 // is "yes", do the thing.
 func (d *HashDebug) MatchPosWithInfo(pos src.XPos, info any, desc func() string) bool {
+	return d.MatchPosWithInfoAndLink(Ctxt, pos, info, desc)
+}
+
+// MatchPosWithInfoAndLink is like MatchPosWithInfo, but uses ctxt instead of
+// the legacy process-wide linker context.
+func (d *HashDebug) MatchPosWithInfoAndLink(ctxt *obj.Link, pos src.XPos, info any, desc func() string) bool {
 	if d == nil {
 		return true
 	}
 	// Written this way to make inlining likely.
-	return d.matchPosWithInfo(Ctxt, pos, info, desc)
+	return d.matchPosWithInfo(ctxt, pos, info, desc)
 }
 
 // matchAndLog is the core matcher. It reports whether the hash matches the pattern.

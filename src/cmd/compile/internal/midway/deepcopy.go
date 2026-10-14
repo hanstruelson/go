@@ -82,7 +82,7 @@ func (c *DeepCopier) OnName(id *syntax.Name) *syntax.Name {
 	if c.analyzer.isDependentObj[obj] || isBaseSimdTypeObj(obj) {
 		newId := syntax.NewName(id.Pos(), id.Value+c.dependentSuffix)
 		// Object link will be handled manually in deepcopier Use/Def mapper
-		if base.Debug.Simd > 0 {
+		if c.analyzer.target.Debug.Simd > 0 {
 			base.Warn("%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
 		}
 		return newId
@@ -135,7 +135,7 @@ func (c *DeepCopier) OnNameExpr(id *syntax.Name) syntax.Expr {
 	if c.analyzer.isDependentObj[obj] {
 		newId := syntax.NewName(id.Pos(), id.Value+c.dependentSuffix)
 		// Object link will be handled manually in deepcopier Use/Def mapper
-		if base.Debug.Simd > 0 {
+		if c.analyzer.target.Debug.Simd > 0 {
 			base.Warn("%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
 		}
 		return newId

@@ -6,7 +6,7 @@ package ssacompile
 
 import (
 	"cmd/compile/internal/abi"
-	"cmd/compile/internal/base"
+	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/rewrite/amd64"
 	"cmd/compile/internal/ssa/rewrite/amd64latelower"
@@ -31,13 +31,15 @@ import (
 	"cmd/internal/obj"
 )
 
-func NewConfig(softFloat bool) *ssa.Config {
-	types_ := ssa.NewTypes()
-	return newConfig(base.Ctxt.Arch.Name, *types_, base.Ctxt, base.Flag.N == 0, softFloat)
+func NewConfig(target *ir.Package, softFloat bool) *ssa.Config {
+	types_ := ssa.NewTypes(target)
+	cfg := newConfig(target, target.Ctxt.Arch.Name, *types_, target.Ctxt, target.Flags.N == 0, softFloat)
+	cfg.Target = target
+	return cfg
 }
 
 // newConfig returns a new configuration object for the given architecture.
-func newConfig(arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat bool) *ssa.Config {
+func newConfig(target *ir.Package, arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat bool) *ssa.Config {
 	c := &ssa.Config{Arch: arch, Types: types}
 	switch arch {
 	case "amd64":
@@ -250,8 +252,8 @@ func newConfig(arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat
 		c.FloatParamRegs = nil // no FP registers in softfloat mode
 	}
 
-	c.ABI0 = abi.NewABIConfig(0, 0, ctxt.Arch.FixedFrameSize, 0)
-	c.ABI1 = abi.NewABIConfig(len(c.IntParamRegs), len(c.FloatParamRegs), ctxt.Arch.FixedFrameSize, 1)
+	c.ABI0 = abi.NewABIConfig(target, 0, 0, ctxt.Arch.FixedFrameSize, 0)
+	c.ABI1 = abi.NewABIConfig(target, len(c.IntParamRegs), len(c.FloatParamRegs), ctxt.Arch.FixedFrameSize, 1)
 
 	if ctxt.Flag_shared {
 		// LoweredWB is secretly a CALL and CALLs on 386 in
