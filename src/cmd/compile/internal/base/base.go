@@ -20,6 +20,9 @@ func Exit(code int) {
 		atExitFuncs = atExitFuncs[:i]
 		f()
 	}
+	if sessionActive {
+		panic(ExitError(code))
+	}
 	os.Exit(code)
 }
 

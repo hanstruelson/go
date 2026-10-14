@@ -48,6 +48,15 @@ func Callee(curfunc *ir.Func, n ir.Node) ir.Node {
 
 var traceIndent []byte
 
+// SwapTraceIndent replaces the type-checking trace indentation and returns
+// the previous value. Reusable compiler requests use it to isolate debug
+// tracing state between compilations.
+func SwapTraceIndent(indent []byte) []byte {
+	old := append([]byte(nil), traceIndent...)
+	traceIndent = append([]byte(nil), indent...)
+	return old
+}
+
 func contextForFunc(curfunc *ir.Func) *types.Context {
 	if curfunc != nil && curfunc.Target != nil {
 		return curfunc.Target.TypeContext

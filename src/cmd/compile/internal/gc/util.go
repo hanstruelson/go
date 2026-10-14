@@ -32,6 +32,12 @@ func profileName(ctxt *obj.Link, fn, suffix string) string {
 }
 
 func startProfile(target *ir.Package) {
+	// The reusable request API rejects profiling flags because profiling
+	// changes process-wide runtime state. Do not let an unconfigured request
+	// reset a host process's profile rates either.
+	if base.InSession() {
+		return
+	}
 	ctxt := target.Ctxt
 	if target.Flags.CPUProfile != "" {
 		fn := profileName(ctxt, target.Flags.CPUProfile, ".cpuprof")

@@ -105,6 +105,11 @@ func EnableLogging(doit bool) {
 	logDwarf = doit
 }
 
+// LoggingEnabled reports whether debug logging is enabled.
+func LoggingEnabled() bool {
+	return logDwarf
+}
+
 // MergeRanges creates a new range list by merging the ranges from
 // its two arguments, then returns the new list.
 func MergeRanges(in1, in2 []Range) []Range {

@@ -139,7 +139,6 @@ import (
 	"fmt"
 	"internal/bisect"
 	"internal/buildcfg"
-	"log"
 	"os"
 	"strings"
 )
@@ -165,12 +164,21 @@ var bisectFIPS *bisect.Matcher
 // so that if FIPS symbol type conversions are causing problems,
 // you can use 'bisect -compile fips go test strings' to identify exactly
 // which symbol is not being handled correctly.
-func SetFIPSDebugHash(pattern string) {
+func SetFIPSDebugHash(pattern string) error {
 	m, err := bisect.New(pattern)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	bisectFIPS = m
+	return nil
+}
+
+// SaveFIPSDebugHash saves the current FIPS debug matcher and returns a
+// function that restores it. This is used by the compiler's reusable request
+// API to keep debug options local to one compilation.
+func SaveFIPSDebugHash() func() {
+	old := bisectFIPS
+	return func() { bisectFIPS = old }
 }
 
 // EnableFIPS reports whether FIPS should be enabled at all

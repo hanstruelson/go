@@ -31,10 +31,10 @@ func Flagprint(w io.Writer) {
 	flag.PrintDefaults()
 }
 
-func Flagparse(usage func()) {
+func Flagparse(usage func()) error {
 	flag.Usage = usage
 	os.Args = expandArgs(os.Args)
-	flag.Parse()
+	return flag.CommandLine.Parse(os.Args[1:])
 }
 
 // expandArgs expands "response files" arguments in the provided slice.
@@ -408,14 +408,14 @@ func (f *DebugFlag) Set(debugstr string) error {
 				*vp = valstring
 			case *int:
 				if !haveInt {
-					log.Fatalf("invalid debug value %v", name)
+					return fmt.Errorf("invalid debug value %v", name)
 				}
 				*vp = val
 			case **bisect.Matcher:
 				var err error
 				*vp, err = bisect.New(valstring)
 				if err != nil {
-					log.Fatalf("debug flag %v: %v", name, err)
+					return fmt.Errorf("debug flag %v: %v", name, err)
 				}
 			default:
 				panic("bad debugtab type")
@@ -436,7 +436,7 @@ func (f *DebugFlag) Set(debugstr string) error {
 			}
 			err := f.debugSSA(phase, flag, val, valstring)
 			if err != "" {
-				log.Fatal(err)
+				return fmt.Errorf("%s", err)
 			}
 			// Setting this false for -d=ssa/... preserves old behavior
 			// of turning off concurrency for any debug flags.

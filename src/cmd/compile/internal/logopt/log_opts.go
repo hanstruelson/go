@@ -321,6 +321,39 @@ func checkLogPath(destination string) string {
 var loggedOpts []*LoggedOpt
 var mu = sync.Mutex{} // mu protects loggedOpts.
 
+// Session scopes optimizer-logging state for one compiler request.
+type Session struct {
+	closed     bool
+	format     logFormat
+	dest       string
+	loggedOpts []*LoggedOpt
+}
+
+// NewSession saves and clears optimizer-logging state. Close restores the
+// previous state after the compilation completes.
+func NewSession() *Session {
+	mu.Lock()
+	defer mu.Unlock()
+	s := &Session{format: Format, dest: dest, loggedOpts: loggedOpts}
+	Format = None
+	dest = ""
+	loggedOpts = nil
+	return s
+}
+
+// Close restores the optimizer-logging state saved by NewSession.
+func (s *Session) Close() {
+	if s == nil || s.closed {
+		return
+	}
+	s.closed = true
+	mu.Lock()
+	defer mu.Unlock()
+	Format = s.format
+	dest = s.dest
+	loggedOpts = s.loggedOpts
+}
+
 // NewLoggedOpt allocates a new LoggedOpt, to later be passed to either NewLoggedOpt or LogOpt as "args".
 // Pos is the source position (including inlining), what is the message, pass is which pass created the message,
 // funcName is the name of the function

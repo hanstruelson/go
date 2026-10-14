@@ -38,7 +38,6 @@ import (
 	"flag"
 	"fmt"
 	"internal/buildcfg"
-	"log"
 	"os"
 	"runtime"
 )
@@ -51,6 +50,9 @@ func handlePanic(target *ir.Package) {
 	ir.CloseHTMLWriters(target)
 	noder.CloseHTMLWriters(target)
 	if err := recover(); err != nil {
+		if _, ok := err.(base.ExitError); ok {
+			panic(err)
+		}
 		if err == "-h" {
 			// Force real panic now with -h option (hcrash) - the error
 			// information will have already been printed.
@@ -64,13 +66,19 @@ func handlePanic(target *ir.Package) {
 // arguments, type-checks the parsed Go package, compiles functions to machine
 // code, and finally writes the compiled package definition to disk.
 func Main(archInit func(*ssagen.ArchInfo)) {
+	mainWithSources(archInit, nil)
+}
+
+func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile) {
 	var compilequeue []*ir.Func
 	var target *ir.Package
 	timer := &base.Timings{}
 	backend := ssagen.NewContext()
 	timer.Start("fe", "init")
-	counter.Open()
-	counter.Inc("compile/invocations")
+	if !base.InSession() {
+		counter.Open()
+		counter.Inc("compile/invocations")
+	}
 
 	defer func() { handlePanic(target) }()
 
@@ -107,13 +115,15 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	target.VariableMakeHash = base.VariableMakeHash
 	target.MergeLocalsHash = base.MergeLocalsHash
 
-	if flagGCStart := target.Debug.GCStart; flagGCStart > 0 || // explicit flags overrides environment variable disable of GC boost
-		os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" && target.Flags.LowerC != 1 { // explicit GC knobs or no concurrency implies default heap
-		startHeapMB := int64(128)
-		if flagGCStart > 0 {
-			startHeapMB = int64(flagGCStart)
+	if !base.InSession() {
+		if flagGCStart := target.Debug.GCStart; flagGCStart > 0 || // explicit flags overrides environment variable disable of GC boost
+			os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" && target.Flags.LowerC != 1 { // explicit GC knobs or no concurrency implies default heap
+			startHeapMB := int64(128)
+			if flagGCStart > 0 {
+				startHeapMB = int64(flagGCStart)
+			}
+			base.AdjustStartingHeap(uint64(startHeapMB)<<20, 0, 0, 0, target.Debug.GCAdjust == 1)
 		}
-		base.AdjustStartingHeap(uint64(startHeapMB)<<20, 0, 0, 0, target.Debug.GCAdjust == 1)
 	}
 
 	target.LocalPkg = target.Pkg(target.Ctxt.Pkgpath, "")
@@ -146,7 +156,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	dwarfgen.RecordFlags(target, "B", "N", "l", "msan", "race", "asan", "shared", "dynlink", "dwarf", "dwarflocationlists", "dwarfbasentries", "smallframes", "spectre")
 
 	if !base.EnableTrace && target.Flags.LowerT {
-		log.Fatalf("compiler not built with support for -t")
+		base.CommandErrorf("compiler not built with support for -t")
 	}
 
 	// Enable inlining (after RecordFlags, to avoid recording the rewritten -l).  For now:
@@ -174,12 +184,12 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		target.Ctxt.Flag_locationlists = false
 	}
 	if target.Ctxt.Flag_locationlists && len(target.Ctxt.Arch.DWARFRegisters) == 0 {
-		log.Fatalf("location lists requested but register mapping not available on %v", target.Ctxt.Arch.Name)
+		base.CommandErrorf("location lists requested but register mapping not available on %v", target.Ctxt.Arch.Name)
 	}
 
 	langVersion, err := types.ParseLangFlag(target.Flags.Lang)
 	if err != nil {
-		log.Fatalf("%v", err)
+		base.CommandErrorf("%v", err)
 	}
 	target.LangVersion = langVersion
 
@@ -233,7 +243,12 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	ssagen.InitTables(target)
 
 	// Parse and typecheck input.
-	frontend := noder.LoadPackage(flag.Args(), target, timer)
+	var frontend *noder.Context
+	if sourceFiles == nil {
+		frontend = noder.LoadPackage(flag.Args(), target, timer)
+	} else {
+		frontend = noder.LoadPackageFromSourceFiles(sourceFiles, target, timer)
+	}
 
 	// As a convenience to users (toolchain maintainers, in particular),
 	// when compiling a package named "main", we default the package
@@ -259,7 +274,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		var err error
 		profile, err = pgoir.New(target.Flags.PgoProfile, target, frontend.LookupFunc, frontend.PostLookupCleanup)
 		if err != nil {
-			log.Fatalf("%s: PGO error: %v", target.Flags.PgoProfile, err)
+			base.CommandErrorf("%s: PGO error: %v", target.Flags.PgoProfile, err)
 		}
 	}
 
@@ -429,7 +444,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 	if target.Flags.Bench != "" {
 		if err := writebench(timer, target.Ctxt.Pkgpath, target.Flags.Bench); err != nil {
-			log.Fatalf("cannot write benchmark data: %v", err)
+			base.CommandErrorf("cannot write benchmark data: %v", err)
 		}
 	}
 }

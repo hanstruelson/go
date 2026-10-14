@@ -277,6 +277,9 @@ func ErrorExit() {
 	if Flag.LowerO != "" && Flag.ExportFD <= 0 {
 		os.Remove(Flag.LowerO)
 	}
+	if sessionActive {
+		panic(ExitError(2))
+	}
 	os.Exit(2)
 }
 

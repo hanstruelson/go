@@ -7,7 +7,6 @@ package ssagen
 import (
 	"fmt"
 	"internal/buildcfg"
-	"log"
 	"os"
 	"strings"
 
@@ -61,7 +60,7 @@ func (s *SymABIs) canonicalize(linksym string) string {
 func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 	data, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatalf("-symabis: %v", err)
+		base.CommandErrorf("-symabis: %v", err)
 	}
 
 	for lineNum, line := range strings.Split(string(data), "\n") {
@@ -76,12 +75,12 @@ func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 		case "def", "ref":
 			// Parse line.
 			if len(parts) != 3 {
-				log.Fatalf(`%s:%d: invalid symabi: syntax is "%s sym abi"`, file, lineNum, parts[0])
+				base.CommandErrorf(`%s:%d: invalid symabi: syntax is "%s sym abi"`, file, lineNum, parts[0])
 			}
 			sym, abistr := parts[1], parts[2]
 			abi, valid := obj.ParseABI(abistr)
 			if !valid {
-				log.Fatalf(`%s:%d: invalid symabi: unknown abi "%s"`, file, lineNum, abistr)
+				base.CommandErrorf(`%s:%d: invalid symabi: unknown abi "%s"`, file, lineNum, abistr)
 			}
 
 			sym = s.canonicalize(sym)
@@ -94,7 +93,7 @@ func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 				s.refs[sym] |= obj.ABISetOf(abi)
 			}
 		default:
-			log.Fatalf(`%s:%d: invalid symabi type "%s"`, file, lineNum, parts[0])
+			base.CommandErrorf(`%s:%d: invalid symabi type "%s"`, file, lineNum, parts[0])
 		}
 	}
 }

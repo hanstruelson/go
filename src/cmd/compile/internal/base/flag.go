@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"internal/buildcfg"
 	"internal/platform"
-	"log"
 	"os"
 	"reflect"
 	"runtime"
@@ -151,7 +150,7 @@ type CmdFlags struct {
 func addEnv(s string) {
 	i := strings.Index(s, "=")
 	if i < 0 {
-		log.Fatal("-env argument must be of the form key=value")
+		commandFatal("-env argument must be of the form key=value")
 	}
 	os.Setenv(s[:i], s[i+1:])
 }
@@ -201,10 +200,14 @@ func ParseFlags() {
 
 	objabi.AddVersionFlag() // -V
 	registerFlags()
-	objabi.Flagparse(usage)
-	counter.CountFlags("compile/flag:", *flag.CommandLine)
+	if err := objabi.Flagparse(usage); err != nil {
+		commandFatalf("%v", err)
+	}
+	if !sessionActive {
+		counter.CountFlags("compile/flag:", *flag.CommandLine)
+	}
 
-	if gcd := os.Getenv("GOCOMPILEDEBUG"); gcd != "" {
+	if gcd := os.Getenv("GOCOMPILEDEBUG"); gcd != "" && !sessionActive {
 		// This will only override the flags set in gcd;
 		// any others set on the command line remain set.
 		Flag.LowerD.Set(gcd)
@@ -213,7 +216,9 @@ func ParseFlags() {
 	if Debug.Gossahash != "" {
 		hashDebug = NewHashDebug("gossahash", Debug.Gossahash, nil)
 	}
-	obj.SetFIPSDebugHash(Debug.FIPSHash)
+	if err := obj.SetFIPSDebugHash(Debug.FIPSHash); err != nil {
+		commandFatalf("%v", err)
+	}
 
 	// Compute whether we're compiling the runtime from the package path. Test
 	// code can also use the flag to set this explicitly.
@@ -292,16 +297,16 @@ func ParseFlags() {
 	}
 
 	if Flag.MSan && !platform.MSanSupported(buildcfg.GOOS, buildcfg.GOARCH) {
-		log.Fatalf("%s/%s does not support -msan", buildcfg.GOOS, buildcfg.GOARCH)
+		commandFatalf("%s/%s does not support -msan", buildcfg.GOOS, buildcfg.GOARCH)
 	}
 	if Flag.ASan && !platform.ASanSupported(buildcfg.GOOS, buildcfg.GOARCH) {
-		log.Fatalf("%s/%s does not support -asan", buildcfg.GOOS, buildcfg.GOARCH)
+		commandFatalf("%s/%s does not support -asan", buildcfg.GOOS, buildcfg.GOARCH)
 	}
 	if Flag.Race && !platform.RaceDetectorSupported(buildcfg.GOOS, buildcfg.GOARCH) {
-		log.Fatalf("%s/%s does not support -race", buildcfg.GOOS, buildcfg.GOARCH)
+		commandFatalf("%s/%s does not support -race", buildcfg.GOOS, buildcfg.GOARCH)
 	}
 	if (*Flag.Shared || *Flag.Dynlink || *Flag.LinkShared) && !Ctxt.Arch.InFamily(sys.AMD64, sys.ARM, sys.ARM64, sys.I386, sys.Loong64, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X) {
-		log.Fatalf("%s/%s does not support -shared", buildcfg.GOOS, buildcfg.GOARCH)
+		commandFatalf("%s/%s does not support -shared", buildcfg.GOOS, buildcfg.GOARCH)
 	}
 	parseSpectre(Flag.Spectre) // left as string for RecordFlags
 
@@ -346,11 +351,11 @@ func ParseFlags() {
 	}
 	switch {
 	case Flag.Race && Flag.MSan:
-		log.Fatal("cannot use both -race and -msan")
+		commandFatal("cannot use both -race and -msan")
 	case Flag.Race && Flag.ASan:
-		log.Fatal("cannot use both -race and -asan")
+		commandFatal("cannot use both -race and -asan")
 	case Flag.MSan && Flag.ASan:
-		log.Fatal("cannot use both -msan and -asan")
+		commandFatal("cannot use both -msan and -asan")
 	}
 	if Flag.Race || Flag.MSan || Flag.ASan {
 		// -race, -msan and -asan imply -d=checkptr for now.
@@ -360,10 +365,10 @@ func ParseFlags() {
 	}
 
 	if Flag.LowerC < 1 {
-		log.Fatalf("-c must be at least 1, got %d", Flag.LowerC)
+		commandFatalf("-c must be at least 1, got %d", Flag.LowerC)
 	}
 	if Flag.ExportFD > 0 && Flag.LinkObj == "" {
-		log.Fatalf("-exportfd requires -linkobj")
+		commandFatalf("-exportfd requires -linkobj")
 	}
 	if !concurrentBackendAllowed() {
 		Flag.LowerC = 1
@@ -383,7 +388,7 @@ func ParseFlags() {
 	}
 
 	if len(Flag.Cfg.ImportDirs) > 0 && Flag.Cfg.PackageFile != nil {
-		log.Fatalf("cannot use both -I and -importcfg")
+		commandFatalf("cannot use both -I and -importcfg")
 	}
 
 	if Debug.Checkptr == -1 { // if not set explicitly
@@ -526,7 +531,7 @@ func readImportCfg(file string) {
 	Flag.Cfg.PackageFile = map[string]string{}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatalf("-importcfg: %v", err)
+		commandFatalf("-importcfg: %v", err)
 	}
 
 	for lineNum, line := range strings.Split(string(data), "\n") {
@@ -544,15 +549,15 @@ func readImportCfg(file string) {
 
 		switch verb {
 		default:
-			log.Fatalf("%s:%d: unknown directive %q", file, lineNum, verb)
+			commandFatalf("%s:%d: unknown directive %q", file, lineNum, verb)
 		case "importmap":
 			if !hasEq || before == "" || after == "" {
-				log.Fatalf(`%s:%d: invalid importmap: syntax is "importmap old=new"`, file, lineNum)
+				commandFatalf(`%s:%d: invalid importmap: syntax is "importmap old=new"`, file, lineNum)
 			}
 			Flag.Cfg.ImportMap[before] = after
 		case "packagefile":
 			if !hasEq || before == "" || after == "" {
-				log.Fatalf(`%s:%d: invalid packagefile: syntax is "packagefile path=filename"`, file, lineNum)
+				commandFatalf(`%s:%d: invalid packagefile: syntax is "packagefile path=filename"`, file, lineNum)
 			}
 			Flag.Cfg.PackageFile[before] = after
 		}
@@ -563,10 +568,10 @@ func readCoverageCfg(file string) {
 	var cfg covcmd.CoverFixupConfig
 	data, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatalf("-coveragecfg: %v", err)
+		commandFatalf("-coveragecfg: %v", err)
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Fatalf("error reading -coveragecfg file %q: %v", file, err)
+		commandFatalf("error reading -coveragecfg file %q: %v", file, err)
 	}
 	Flag.Cfg.CoverageInfo = &cfg
 }
@@ -574,16 +579,16 @@ func readCoverageCfg(file string) {
 func readEmbedCfg(file string) {
 	data, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatalf("-embedcfg: %v", err)
+		commandFatalf("-embedcfg: %v", err)
 	}
 	if err := json.Unmarshal(data, &Flag.Cfg.Embed); err != nil {
-		log.Fatalf("%s: %v", file, err)
+		commandFatalf("%s: %v", file, err)
 	}
 	if Flag.Cfg.Embed.Patterns == nil {
-		log.Fatalf("%s: invalid embedcfg: missing Patterns", file)
+		commandFatalf("%s: invalid embedcfg: missing Patterns", file)
 	}
 	if Flag.Cfg.Embed.Files == nil {
-		log.Fatalf("%s: invalid embedcfg: missing Files", file)
+		commandFatalf("%s: invalid embedcfg: missing Files", file)
 	}
 }
 
@@ -593,7 +598,7 @@ func parseSpectre(s string) {
 		f = strings.TrimSpace(f)
 		switch f {
 		default:
-			log.Fatalf("unknown setting -spectre=%s", f)
+			commandFatalf("unknown setting -spectre=%s", f)
 		case "":
 			// nothing
 		case "all":
@@ -611,7 +616,7 @@ func parseSpectre(s string) {
 		case "amd64":
 			// ok
 		default:
-			log.Fatalf("GOARCH=%s does not support -spectre=index", buildcfg.GOARCH)
+			commandFatalf("GOARCH=%s does not support -spectre=index", buildcfg.GOARCH)
 		}
 	}
 }
