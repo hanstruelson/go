@@ -200,33 +200,8 @@ when working locally, and in tutorials, examples, and test code.
 
 Internal packages
 
-Code in or below a directory named "internal" is importable only
-by code that shares the same import path above the internal directory.
-Here's an example directory layout of a module example.com/m:
-
-    /home/user/modules/m/
-            go.mod                 (declares module example.com/m)
-            crash/
-                bang/              (go code in package bang)
-                    b.go
-            foo/                   (go code in package foo)
-                f.go
-                bar/               (go code in package bar)
-                    x.go
-                internal/
-                    baz/           (go code in package baz)
-                        z.go
-                quux/              (go code in package quux)
-                    y.go
-
-
-The code in z.go is imported as "example.com/m/foo/internal/baz", but that
-import statement can only appear in packages with the import path prefix
-"example.com/m/foo". The packages "example.com/m/foo", "example.com/m/foo/bar", and
-"example.com/m/foo/quux" can all import "foo/internal/baz", but the package
-"example.com/m/crash/bang" cannot.
-
-See https://go.dev/s/go14internal for details.
+The word "internal" in an import path has no effect on visibility. Any package
+that can resolve the import path may import it.
 
 Fully-qualified import paths
 

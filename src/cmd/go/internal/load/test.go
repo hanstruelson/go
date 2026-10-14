@@ -25,6 +25,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/str"
@@ -137,7 +138,7 @@ func TestPackagesAndErrors(ld *modload.Loader, ctx context.Context, done func(),
 
 	var ptestCompiledImports []string
 	if hasSimd := hasSimd(p.TestImports); hasSimd {
-		p1, err := loadImport(ld, ctx, opts, pre, SimdBridgePkg, p.Dir, p, &stk, nil, ResolveImport|allowSimdInternalBridge)
+		p1, err := loadImport(ld, ctx, opts, pre, SimdBridgePkg, p.Dir, p, &stk, nil, ResolveImport)
 		if err != nil && ptestErr == nil {
 			ptestErr = err
 			incomplete = true
@@ -184,7 +185,7 @@ func TestPackagesAndErrors(ld *modload.Loader, ctx context.Context, done func(),
 
 	var pxtestCompiledImports []string
 	if hasSimd := hasSimd(p.XTestImports); hasSimd {
-		p1, err := loadImport(ld, ctx, opts, pre, SimdBridgePkg, p.Dir, p, &stk, nil, ResolveImport|allowSimdInternalBridge)
+		p1, err := loadImport(ld, ctx, opts, pre, SimdBridgePkg, p.Dir, p, &stk, nil, ResolveImport)
 		if err != nil && pxtestErr == nil {
 			pxtestErr = err
 		}
@@ -349,6 +350,23 @@ func TestPackagesAndErrors(ld *modload.Loader, ctx context.Context, done func(),
 	}
 	for _, d := range ldDeps {
 		deps = append(deps, d)
+	}
+	if cfg.BuildJIT {
+		if err := prepareJITStandardLibraries(); err != nil && pmain.Error == nil {
+			pmain.Error = &PackageError{Err: err}
+			pmain.Incomplete = true
+		} else if err == nil {
+			have := make(map[string]bool, len(deps)+len(jitPackages))
+			for _, dep := range deps {
+				have[dep] = true
+			}
+			for _, dep := range jitPackages {
+				if !have[dep] {
+					deps = append(deps, dep)
+					have[dep] = true
+				}
+			}
+		}
 	}
 	for _, dep := range deps {
 		if dep == ptest.ImportPath {

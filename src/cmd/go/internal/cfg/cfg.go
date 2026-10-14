@@ -76,6 +76,12 @@ var (
 	BuildModExplicit       bool                    // whether -mod was set explicitly
 	BuildModReason         string                  // reason -mod was set, if set by default
 	BuildLinkshared        bool                    // -linkshared flag
+	BuildJIT               bool                    // -JIT flag
+	BuildJITBundlePath     string                  // prepared Go toolchain payload for -JIT
+	BuildJITBundleID       string                  // content ID of BuildJITBundlePath
+	BuildJITBundleGoos     string                  // target GOOS of the bundled toolchain
+	BuildJITBundleGoarch   string                  // target GOARCH of the bundled toolchain
+	BuildJITBundleVersion  string                  // Go version of the bundled toolchain
 	BuildMSan              bool                    // -msan flag
 	BuildASan              bool                    // -asan flag
 	BuildCover             bool                    // -cover flag

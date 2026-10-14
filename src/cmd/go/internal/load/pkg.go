@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -38,6 +39,7 @@ import (
 	"cmd/go/internal/fsys"
 	"cmd/go/internal/gover"
 	"cmd/go/internal/imports"
+	"cmd/go/internal/jitbundle"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modindex"
 	"cmd/go/internal/modinfo"
@@ -234,7 +236,6 @@ type PackageInternal struct {
 	Cover             CoverSetup          // coverage mode and other setup info of -cover is being applied to this package
 	OmitDebug         bool                // tell linker not to write debug information
 	GobinSubdir       bool                // install target would be subdir of GOBIN
-	InternalImportOk  bool                // this package may be imported even though it is internal
 	BuildInfo         *debug.BuildInfo    // add this info to package main
 	TestmainGo        *[]byte             // content for _testmain.go
 	Embed             map[string][]string // //go:embed comment mapping
@@ -679,9 +680,6 @@ const (
 	// cmdlinePkgLiteral is for a package mentioned on the command line
 	// without using any wildcards or meta-patterns.
 	cmdlinePkgLiteral
-
-	// allow simd/internal/bridge
-	allowSimdInternalBridge
 )
 
 // LoadPackage does Load import, but without a parent package load context
@@ -785,13 +783,6 @@ func loadImport(ld *modload.Loader, ctx context.Context, opts PackageOpts, pre *
 		}
 	}
 
-	if mode&allowSimdInternalBridge == 0 || path != SimdBridgePkg { // Special case for just this import.
-		// Checked on every import because the rules depend on the code doing the importing.
-		if perr := disallowInternal(ld, ctx, srcDir, parent, parentPath, p, stk); perr != nil {
-			perr.setPos(importPos)
-			return p, perr
-		}
-	}
 	if mode&ResolveImport != 0 {
 		if perr := disallowVendor(srcDir, path, parentPath, p, stk); perr != nil {
 			perr.setPos(importPos)
@@ -1473,136 +1464,6 @@ func reusePackage(p *Package, stk *ImportStack) *Package {
 	return p
 }
 
-// disallowInternal checks that srcDir (containing package importerPath, if non-empty)
-// is allowed to import p.
-// If the import is allowed, disallowInternal returns the original package p.
-// If not, it returns a new package containing just an appropriate error.
-func disallowInternal(ld *modload.Loader, ctx context.Context, srcDir string, importer *Package, importerPath string, p *Package, stk *ImportStack) *PackageError {
-	// golang.org/s/go14internal:
-	// An import of a path containing the element “internal”
-	// is disallowed if the importing code is outside the tree
-	// rooted at the parent of the “internal” directory.
-
-	// There was an error loading the package; stop here.
-	if p.Error != nil {
-		return nil
-	}
-
-	// The generated 'testmain' package is allowed to access testing/internal/...,
-	// as if it were generated into the testing directory tree
-	// (it's actually in a temporary directory outside any Go tree).
-	// This cleans up a former kludge in passing functionality to the testing package.
-	if str.HasPathPrefix(p.ImportPath, "testing/internal") && importerPath == "testmain" {
-		return nil
-	}
-
-	// We can't check standard packages with gccgo.
-	if cfg.BuildContext.Compiler == "gccgo" && p.Standard {
-		return nil
-	}
-
-	// The sort package depends on internal/reflectlite, but during bootstrap
-	// the path rewriting causes the normal internal checks to fail.
-	// Instead, just ignore the internal rules during bootstrap.
-	if p.Standard && strings.HasPrefix(importerPath, "bootstrap/") {
-		return nil
-	}
-
-	// importerPath is empty: we started
-	// with a name given on the command line, not an
-	// import. Anything listed on the command line is fine.
-	if importerPath == "" {
-		return nil
-	}
-
-	// Check for "internal" element: three cases depending on begin of string and/or end of string.
-	i, ok := findInternal(p.ImportPath)
-	if !ok {
-		return nil
-	}
-
-	// Internal is present.
-	// Map import path back to directory corresponding to parent of internal.
-	if i > 0 {
-		i-- // rewind over slash in ".../internal"
-	}
-
-	// FIPS-140 snapshots are special, because they comes from a non-GOROOT
-	// directory, so the usual directory rules don't work apply, or rather they
-	// apply differently depending on whether we are using a snapshot or the
-	// in-tree copy of the code. We apply a consistent rule here:
-	// crypto/internal/fips140 can only see crypto/internal, never top-of-tree internal.
-	// Similarly, crypto/... can see crypto/internal/fips140 even though the usual rules
-	// would not allow it in snapshot mode.
-	if str.HasPathPrefix(importerPath, "crypto") && str.HasPathPrefix(p.ImportPath, "crypto/internal/fips140") {
-		return nil // crypto can use crypto/internal/fips140
-	}
-	if str.HasPathPrefix(importerPath, "crypto/internal/fips140") {
-		if str.HasPathPrefix(p.ImportPath, "crypto/internal") {
-			return nil // crypto/internal/fips140 can use crypto/internal
-		}
-		goto Error
-	}
-
-	if p.Module == nil {
-		parent := p.Dir[:i+len(p.Dir)-len(p.ImportPath)]
-
-		if str.HasFilePathPrefix(filepath.Clean(srcDir), filepath.Clean(parent)) {
-			return nil
-		}
-
-		// Look for symlinks before reporting error.
-		srcDir = expandPath(srcDir)
-		parent = expandPath(parent)
-		if str.HasFilePathPrefix(filepath.Clean(srcDir), filepath.Clean(parent)) {
-			return nil
-		}
-	} else {
-		// p is in a module, so make it available based on the importer's import path instead
-		// of the file path (https://golang.org/issue/23970).
-		if importer.Internal.CmdlineFiles {
-			// The importer is a list of command-line files.
-			// Pretend that the import path is the import path of the
-			// directory containing them.
-			// If the directory is outside the main modules, this will resolve to ".",
-			// which is not a prefix of any valid module.
-			importerPath, _ = ld.MainModules.DirImportPath(ld, ctx, importer.Dir)
-		}
-		parentOfInternal := p.ImportPath[:i]
-		if str.HasPathPrefix(importerPath, parentOfInternal) {
-			return nil
-		}
-	}
-
-Error:
-	// Internal is present, and srcDir is outside parent's tree. Not allowed.
-	perr := &PackageError{
-		alwaysPrintStack: true,
-		ImportStack:      stk.Copy(),
-		Err:              ImportErrorf(p.ImportPath, "use of internal package %s not allowed", p.ImportPath),
-	}
-	return perr
-}
-
-// findInternal looks for the final "internal" path element in the given import path.
-// If there isn't one, findInternal returns ok=false.
-// Otherwise, findInternal returns ok=true and the index of the "internal".
-func findInternal(path string) (index int, ok bool) {
-	// Three cases, depending on internal at start/end of string or not.
-	// The order matters: we must return the index of the final element,
-	// because the final one produces the most restrictive requirement
-	// on the importer.
-	switch {
-	case strings.HasSuffix(path, "/internal"):
-		return len(path) - len("internal"), true
-	case strings.Contains(path, "/internal/"):
-		return strings.LastIndex(path, "/internal/") + 1, true
-	case path == "internal", strings.HasPrefix(path, "internal/"):
-		return 0, true
-	}
-	return 0, false
-}
-
 // disallowVendor checks that srcDir is allowed to import p as path.
 // If the import is allowed, disallowVendor returns the original package p.
 // If not, it returns a PackageError.
@@ -1838,6 +1699,12 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 		p.Incomplete = true
 		p.setLoadPackageDataError(err, path, stk, importPos)
 	}
+	if p.Error == nil && cfg.BuildJIT && p.Name == "main" && p.Internal.CmdlinePkg {
+		if err := prepareJITStandardLibraries(); err != nil {
+			setError(err)
+			return
+		}
+	}
 
 	useBindir := p.Name == "main"
 	if !p.Standard {
@@ -1926,11 +1793,14 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 			p.Internal.CompiledImports = append(p.Internal.CompiledImports, path)
 		}
 	}
+	if cfg.BuildJIT && p.Name == "main" && p.Internal.CmdlinePkg {
+		for _, path := range jitPackages {
+			addImport(path, false)
+		}
+	}
 
-	allowInternalSimdImport := 0
 	if hasSimd := hasSimd(p.Imports); hasSimd {
 		addImport(SimdBridgePkg, true)
-		allowInternalSimdImport = allowSimdInternalBridge
 	}
 
 	if !opts.IgnoreImports {
@@ -2056,7 +1926,7 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 		if path == "C" {
 			continue
 		}
-		p1, err := loadImport(ld, ctx, opts, nil, path, p.Dir, p, stk, p.Internal.Build.ImportPos[path], ResolveImport|allowInternalSimdImport)
+		p1, err := loadImport(ld, ctx, opts, nil, path, p.Dir, p, stk, p.Internal.Build.ImportPos[path], ResolveImport)
 		if err != nil && p.Error == nil {
 			p.Error = err
 			p.Incomplete = true
@@ -2116,6 +1986,34 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 		setError(fmt.Errorf("Fortran source files not allowed when not using cgo or SWIG: %s", strings.Join(p.FFiles, " ")))
 		return
 	}
+}
+
+var jitBundleOnce sync.Once
+var jitBundleErr error
+var jitPackages []string
+
+func prepareJITStandardLibraries() error {
+	jitBundleOnce.Do(func() {
+		jitPackages, jitBundleErr = jitbundle.ToolchainPackages(cfg.BuildContext, cfg.GOROOT)
+		if jitBundleErr != nil || cfg.BuildN {
+			return
+		}
+		var artifact jitbundle.Artifact
+		artifact, jitBundleErr = jitbundle.PrepareGOROOT(cfg.GOROOT, cfg.Goos, cfg.Goarch)
+		if jitBundleErr != nil {
+			return
+		}
+		cfg.BuildJITBundlePath = artifact.Path
+		cfg.BuildJITBundleID = artifact.ID
+		cfg.BuildJITBundleGoos = artifact.GOOS
+		cfg.BuildJITBundleGoarch = artifact.GOARCH
+		cfg.BuildJITBundleVersion = artifact.Version
+		base.AtExit(func() { _ = os.Remove(artifact.Path) })
+	})
+	if jitBundleErr != nil {
+		return jitBundleErr
+	}
+	return nil
 }
 
 // An EmbedError indicates a problem with a go:embed directive.
@@ -2435,6 +2333,9 @@ func (p *Package) setBuildInfo(ctx context.Context, f *modfetch.Fetcher, autoVCS
 	}
 	if BuildAsmflags.present {
 		appendSetting("-asmflags", BuildAsmflags.String())
+	}
+	if cfg.BuildJIT {
+		appendSetting("-JIT", "true")
 	}
 	buildmode := cfg.BuildBuildmode
 	if buildmode == "default" {

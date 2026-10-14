@@ -60,6 +60,19 @@ func BuildInit(ld *modload.Loader) {
 	modload.Init(ld)
 	instrumentInit()
 	buildModeInit()
+	if cfg.BuildJIT {
+		if cfg.BuildToolchainName != "gc" {
+			base.Fatalf("go: -JIT requires the gc toolchain")
+		}
+		if cfg.BuildLinkshared {
+			base.Fatalf("go: -JIT cannot be used with -linkshared")
+		}
+		switch cfg.BuildBuildmode {
+		case "default", "exe", "pie":
+		default:
+			base.Fatalf("go: -JIT requires an executable build mode, not %q", cfg.BuildBuildmode)
+		}
+	}
 	initCompilerConcurrencyPool()
 	cfgChangedEnv = makeCfgChangedEnv()
 

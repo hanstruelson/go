@@ -527,6 +527,23 @@ func (ctxt *Link) findLibPath(libname string) string {
 }
 
 func (ctxt *Link) loadlib() {
+	if ctxt.JIT {
+		// The go command adds all buildable standard library packages to the
+		// import configuration for JIT builds. Load them even though they are
+		// not part of the main package's initialization graph.
+		var packages []string
+		for pkg := range ctxt.PackageFile {
+			packages = append(packages, pkg)
+		}
+		sort.Strings(packages)
+		for _, pkg := range packages {
+			if ctxt.LibraryByPkg[pkg] != nil {
+				continue
+			}
+			addlibpath(ctxt, "JIT importcfg", "JIT importcfg", ctxt.PackageFile[pkg], pkg, "", goobj.FingerprintType{})
+		}
+	}
+
 	var flags uint32
 	if *flagCheckLinkname {
 		flags |= loader.FlagCheckLinkname

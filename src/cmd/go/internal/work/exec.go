@@ -39,6 +39,7 @@ import (
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
 	"cmd/go/internal/gover"
+	"cmd/go/internal/jitbundle"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modinfo"
 	"cmd/go/internal/modload"
@@ -2035,6 +2036,9 @@ func (b *Builder) linkActionID(a *Action) cache.ActionID {
 	if cfg.BuildTrimpath {
 		fmt.Fprintln(h, "trimpath")
 	}
+	if cfg.BuildJIT {
+		fmt.Fprintf(h, "jitbundle %s\n", cfg.BuildJITBundleID)
+	}
 
 	// Toolchain-dependent configuration, shared with b.linkSharedActionID.
 	b.printLinkerConfig(h, p)
@@ -2145,7 +2149,32 @@ func (b *Builder) link(ctx context.Context, a *Action) (err error) {
 		return err
 	}
 
-	// Update the binary with the final build ID.
+	if cfg.BuildJIT {
+		if cfg.BuildN {
+			sh.ShowCmd("", "go internal: append Go toolchain bundle to %s # internal", a.Target)
+		} else {
+			artifact := jitbundle.Artifact{
+				Path:    cfg.BuildJITBundlePath,
+				ID:      cfg.BuildJITBundleID,
+				GOOS:    cfg.BuildJITBundleGoos,
+				GOARCH:  cfg.BuildJITBundleGoarch,
+				Version: cfg.BuildJITBundleVersion,
+			}
+			var packages []jitbundle.PackageFile
+			for _, dep := range a.Deps {
+				p := dep.Package
+				if p == nil || !p.Goroot || p.Name == "main" || dep.built == "" {
+					continue
+				}
+				packages = append(packages, jitbundle.PackageFile{ImportPath: p.ImportPath, Path: dep.built})
+			}
+			if err := jitbundle.Append(a.Target, artifact, packages); err != nil {
+				return fmt.Errorf("appending Go toolchain bundle: %w", err)
+			}
+		}
+	}
+	// Update the binary with the final build ID after appending the JIT bundle,
+	// so the build cache stores the complete executable.
 	if err := b.updateBuildID(a, a.Target); err != nil {
 		return err
 	}
@@ -2159,7 +2188,7 @@ func (b *Builder) writeLinkImportcfg(a *Action, file string) error {
 	var icfg bytes.Buffer
 	for _, a1 := range a.Deps {
 		p1 := a1.Package
-		if p1 == nil {
+		if p1 == nil || cfg.BuildJIT && p1.Name == "main" {
 			continue
 		}
 		fmt.Fprintf(&icfg, "packagefile %s=%s\n", p1.ImportPath, a1.built)

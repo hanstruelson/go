@@ -205,6 +205,7 @@ func Main(arch *sys.Arch, theArch Arch) {
 		flag.BoolVar(&flag8, "8", false, "use 64-bit addresses in symbol table")
 	}
 	flagHeadType := flag.String("H", "", "set header `type`")
+	flag.BoolVar(&ctxt.JIT, "JIT", false, "retain all linked Go symbols for JIT compilation")
 	flag.BoolVar(&ctxt.linkShared, "linkshared", false, "link against installed Go shared libraries")
 	flag.Var(&ctxt.LinkMode, "linkmode", "set link `mode`")
 	flag.Var(&ctxt.BuildMode, "buildmode", "set build `mode`")
