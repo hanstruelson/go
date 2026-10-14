@@ -7,8 +7,8 @@
 package sha1
 
 import (
-	"crypto/internal/impl"
-	"internal/cpu"
+	"crypto/publicinternal/impl"
+	"publicinternal/cpu"
 )
 
 //go:noescape

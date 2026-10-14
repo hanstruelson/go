@@ -5,8 +5,8 @@
 package reflect
 
 import (
-	"internal/abi"
-	"internal/goarch"
+	"publicinternal/abi"
+	"publicinternal/goarch"
 	"unsafe"
 )
 
@@ -17,7 +17,7 @@ import (
 // may be executing) and are generally only modified
 // when testing this package.
 //
-// They should never be set higher than their internal/abi
+// They should never be set higher than their publicinternal/abi
 // constant counterparts, because the system relies on a
 // structure that is at least large enough to hold the
 // registers the system supports.

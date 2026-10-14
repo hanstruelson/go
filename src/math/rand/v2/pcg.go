@@ -6,7 +6,7 @@ package rand
 
 import (
 	"errors"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"math/bits"
 )
 

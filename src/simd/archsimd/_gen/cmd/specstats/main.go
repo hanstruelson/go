@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Specstats reports progress on the internal/spec transition described in
+// Specstats reports progress on the publicinternal/spec transition described in
 // SPEC-TRANSITION.md. The checked-in output is archsimd/_gen/SPEC-STATS.txt:
 //
 //	go run ./cmd/specstats -w

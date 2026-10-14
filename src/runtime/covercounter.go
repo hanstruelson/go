@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/coverage/rtcov"
+	"publicinternal/coverage/rtcov"
 	"unsafe"
 )
 
-//go:linkname coverage_getCovCounterList internal/coverage/cfile.getCovCounterList
+//go:linkname coverage_getCovCounterList publicinternal/coverage/cfile.getCovCounterList
 func coverage_getCovCounterList() []rtcov.CovCounterBlob {
 	res := []rtcov.CovCounterBlob{}
 	u32sz := unsafe.Sizeof(uint32(0))

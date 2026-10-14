@@ -11,8 +11,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/intconv"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/analysis/intconv"
 )
 
 //go:embed doc.go

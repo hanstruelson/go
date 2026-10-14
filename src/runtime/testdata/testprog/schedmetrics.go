@@ -7,7 +7,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"runtime"

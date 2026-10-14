@@ -5,8 +5,8 @@
 package aes
 
 import (
-	"crypto/internal/boring"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/cryptotest"
 	"fmt"
 	"testing"
 )

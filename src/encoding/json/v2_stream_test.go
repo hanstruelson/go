@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"encoding/json/internal/jsontest"
+	"encoding/json/publicinternal/jsontest"
 )
 
 type CaseName = jsontest.CaseName

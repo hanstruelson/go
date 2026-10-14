@@ -10,7 +10,7 @@ import (
 	"net"
 )
 
-// http3Server is an HTTP/3 server implementation. net/http/internal/http3
+// http3Server is an HTTP/3 server implementation. net/http/publicinternal/http3
 // registers an implementation of this interface by passing it to Server.Serve.
 type http3Server interface {
 	ServeHTTP3(context.Context, net.PacketConn, *tls.Config, Handler) error

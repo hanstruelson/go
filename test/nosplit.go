@@ -349,7 +349,7 @@ TestCases:
 				// This isn't exactly right because we could have
 				// nosplit -> split -> nosplit, but it's good enough.
 				if !adjusted && nosplit != "" {
-					const stackNosplitBase = 800 // internal/abi.StackNosplitBase
+					const stackNosplitBase = 800 // publicinternal/abi.StackNosplitBase
 					adjusted = true
 					size += stackNosplitBase - 128
 				}

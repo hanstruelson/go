@@ -15,7 +15,7 @@ import (
 var dumpTraces = flag.Bool("dump-traces", false, "dump traces to a file, even on success")
 
 // This file just contains smoke tests and tests of runtime/trace logic only.
-// It doesn't validate the resulting traces. See the internal/trace package for
+// It doesn't validate the resulting traces. See the publicinternal/trace package for
 // more comprehensive end-to-end tests.
 
 func TestTraceStartStop(t *testing.T) {

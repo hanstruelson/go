@@ -7,7 +7,7 @@ package gob
 import (
 	"bufio"
 	"errors"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"reflect"
 	"sync"

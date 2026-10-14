@@ -6,6 +6,6 @@
 
 package big
 
-import "internal/cpu"
+import "publicinternal/cpu"
 
 var hasADX = cpu.X86.HasADX && cpu.X86.HasBMI2

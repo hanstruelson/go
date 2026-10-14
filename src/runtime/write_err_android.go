@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"unsafe"
 )
 

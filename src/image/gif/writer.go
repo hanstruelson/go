@@ -13,7 +13,7 @@ import (
 	"image/color"
 	"image/color/palette"
 	"image/draw"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"io"
 	"math/bits"
 )

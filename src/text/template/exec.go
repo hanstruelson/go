@@ -7,7 +7,7 @@ package template
 import (
 	"errors"
 	"fmt"
-	"internal/fmtsort"
+	"publicinternal/fmtsort"
 	"io"
 	"reflect"
 	"runtime"

@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 )
 

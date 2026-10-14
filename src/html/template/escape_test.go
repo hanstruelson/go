@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"strings"
 	"testing"

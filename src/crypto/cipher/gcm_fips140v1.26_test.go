@@ -8,10 +8,10 @@ package cipher_test
 
 import (
 	"crypto/cipher"
-	"crypto/internal/cryptotest"
-	"crypto/internal/fips140"
-	fipsaes "crypto/internal/fips140/aes"
-	"crypto/internal/fips140/aes/gcm"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/fips140"
+	fipsaes "crypto/publicinternal/fips140/aes"
+	"crypto/publicinternal/fips140/aes/gcm"
 	"encoding/binary"
 	"math"
 	"testing"

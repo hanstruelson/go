@@ -13,8 +13,8 @@ package filepath
 
 import (
 	"errors"
-	"internal/bytealg"
-	"internal/filepathlite"
+	"publicinternal/bytealg"
+	"publicinternal/filepathlite"
 	"io/fs"
 	"os"
 	"slices"

@@ -8,11 +8,11 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/asan"
-	"internal/goos"
-	"internal/msan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/goos"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

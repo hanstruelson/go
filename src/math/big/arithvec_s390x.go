@@ -6,7 +6,7 @@
 
 package big
 
-import "internal/cpu"
+import "publicinternal/cpu"
 
 var hasVX = cpu.S390X.HasVX
 

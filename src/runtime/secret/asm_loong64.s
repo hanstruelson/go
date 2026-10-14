@@ -46,14 +46,14 @@ TEXT ·loadRegisters(SB),0,$0-8
 	MOVD	(R4), F22
 	MOVD	(R4), F23
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
 	BEQ	R5, return
 	VMOVQ	(R4), V24
 	VMOVQ	(R4), V25
 	VMOVQ	(R4), V26
 	VMOVQ	(R4), V27
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
 	BEQ	R5, return
 	XVMOVQ	(R4), X28
 	XVMOVQ	(R4), X29
@@ -79,7 +79,7 @@ TEXT ·spillRegisters(SB),0,$0-16
 	ADDV	$64, R4
 	ADDV	$64, R5
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R6
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R6
 	BEQ	R6, return
 	VMOVQ	V24, 0(R4)
 	VMOVQ	V25, 16(R4)
@@ -88,7 +88,7 @@ TEXT ·spillRegisters(SB),0,$0-16
 	ADDV	$64, R4
 	ADDV	$64, R5
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R6
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R6
 	BEQ	R6, return
 	XVMOVQ	X28, 0(R4)
 	XVMOVQ	X29, 32(R4)
@@ -107,10 +107,10 @@ TEXT ·useSecret(SB),0,$0-24
 	MOVV	secret_base+0(FP), REGTMP2
 	MOVV	(REGTMP2), REGTMP1
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), REGTMP2
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), REGTMP2
 	BNE	REGTMP2, dirtyLASX
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), REGTMP2
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), REGTMP2
 	BNE	REGTMP2, dirtyLSX
 
 	// Dirty the floating point registers

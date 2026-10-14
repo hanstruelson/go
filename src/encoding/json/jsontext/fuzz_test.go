@@ -14,7 +14,7 @@ import (
 	"slices"
 	"testing"
 
-	"encoding/json/internal/jsontest"
+	"encoding/json/publicinternal/jsontest"
 )
 
 func FuzzCoder(f *testing.F) {

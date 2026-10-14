@@ -7,7 +7,7 @@
 package net
 
 import (
-	"internal/testpty"
+	"publicinternal/testpty"
 	"io"
 	"os"
 	"sync"

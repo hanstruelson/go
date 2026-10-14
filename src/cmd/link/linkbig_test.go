@@ -11,8 +11,8 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"internal/buildcfg"
-	"internal/testenv"
+	"publicinternal/buildcfg"
+	"publicinternal/testenv"
 	"os"
 	"testing"
 )

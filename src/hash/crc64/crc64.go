@@ -10,7 +10,7 @@ package crc64
 import (
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"sync"
 )
 

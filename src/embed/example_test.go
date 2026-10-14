@@ -10,7 +10,7 @@ import (
 	"net/http"
 )
 
-//go:embed internal/embedtest/testdata/*.txt
+//go:embed publicinternal/embedtest/testdata/*.txt
 var content embed.FS
 
 func Example() {

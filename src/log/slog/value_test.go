@@ -6,7 +6,7 @@ package slog
 
 import (
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"reflect"
 	"strings"
 	"testing"

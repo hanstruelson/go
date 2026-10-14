@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"math/rand"
 	"os"
@@ -38,7 +38,7 @@ func hookSupportsSendfile(t *testing.T) {
 	}
 }
 
-// expectSendfile runs f, and verifies that internal/poll.SendFile successfully handles
+// expectSendfile runs f, and verifies that publicinternal/poll.SendFile successfully handles
 // a write to wantConn during f's execution.
 //
 // On platforms where supportsSendfile() is false, expectSendfile runs f but does not
@@ -62,7 +62,7 @@ func expectSendfile(t *testing.T, wantConn Conn, f func()) {
 	)
 	poll.TestHookDidSendFile = func(dstFD *poll.FD, src uintptr, written int64, err error, handled bool) {
 		if called {
-			t.Error("internal/poll.SendFile called multiple times, want one call")
+			t.Error("publicinternal/poll.SendFile called multiple times, want one call")
 		}
 		called = true
 		gotHandled = handled
@@ -71,11 +71,11 @@ func expectSendfile(t *testing.T, wantConn Conn, f func()) {
 	}
 	f()
 	if !called {
-		t.Error("internal/poll.SendFile was not called, want it to be")
+		t.Error("publicinternal/poll.SendFile was not called, want it to be")
 		return
 	}
 	if !gotHandled {
-		t.Error("internal/poll.SendFile did not handle the write, want it to, error:", gotErr)
+		t.Error("publicinternal/poll.SendFile did not handle the write, want it to, error:", gotErr)
 		return
 	}
 	if &wantConn.(*TCPConn).fd.pfd != gotFD {

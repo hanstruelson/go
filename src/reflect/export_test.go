@@ -5,8 +5,8 @@
 package reflect
 
 import (
-	"internal/abi"
-	"internal/goarch"
+	"publicinternal/abi"
+	"publicinternal/goarch"
 	"sync"
 	"unsafe"
 )

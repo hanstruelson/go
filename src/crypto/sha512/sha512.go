@@ -12,8 +12,8 @@ package sha512
 
 import (
 	"crypto"
-	"crypto/internal/boring"
-	"crypto/internal/fips140/sha512"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/sha512"
 	"hash"
 )
 

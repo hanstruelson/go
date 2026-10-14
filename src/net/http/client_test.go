@@ -13,7 +13,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"log"
 	"net"

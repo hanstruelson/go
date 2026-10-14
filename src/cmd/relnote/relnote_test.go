@@ -6,7 +6,7 @@ package main
 
 import (
 	"flag"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"

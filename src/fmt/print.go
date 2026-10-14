@@ -5,7 +5,7 @@
 package fmt
 
 import (
-	"internal/fmtsort"
+	"publicinternal/fmtsort"
 	"io"
 	"os"
 	"reflect"

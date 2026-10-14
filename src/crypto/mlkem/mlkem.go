@@ -13,7 +13,7 @@ package mlkem
 
 import (
 	"crypto"
-	"crypto/internal/fips140/mlkem"
+	"crypto/publicinternal/fips140/mlkem"
 )
 
 const (

@@ -6,7 +6,7 @@ package macho
 
 import (
 	"bytes"
-	"internal/obscuretestdata"
+	"publicinternal/obscuretestdata"
 	"io"
 	"os"
 	"path/filepath"

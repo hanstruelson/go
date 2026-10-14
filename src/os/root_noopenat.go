@@ -8,8 +8,8 @@ package os
 
 import (
 	"errors"
-	"internal/filepathlite"
-	"internal/stringslite"
+	"publicinternal/filepathlite"
+	"publicinternal/stringslite"
 	"sync/atomic"
 	"syscall"
 	"time"

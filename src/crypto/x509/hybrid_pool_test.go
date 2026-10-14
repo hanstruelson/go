@@ -11,7 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math/big"
 	"runtime"
 	"testing"

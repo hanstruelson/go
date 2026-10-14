@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"crypto/cipher"
 	"crypto/des"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"testing"
 )
 

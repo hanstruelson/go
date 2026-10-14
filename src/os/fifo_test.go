@@ -8,8 +8,8 @@ package os_test
 
 import (
 	"errors"
-	"internal/syscall/unix"
-	"internal/testenv"
+	"publicinternal/syscall/unix"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"os"

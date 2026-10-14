@@ -15,9 +15,9 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/abi"
-	"internal/asan"
-	"internal/msan"
+	"publicinternal/abi"
+	"publicinternal/asan"
+	"publicinternal/msan"
 	"math"
 	"os"
 	"regexp"

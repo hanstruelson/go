@@ -79,8 +79,8 @@ import (
 	"bufio"
 	"cmp"
 	"fmt"
-	"internal/abi"
-	"internal/profilerecord"
+	"publicinternal/abi"
+	"publicinternal/profilerecord"
 	"io"
 	"runtime"
 	"slices"
@@ -581,7 +581,7 @@ func printStackRecord(w io.Writer, stk []uintptr, allFrames bool) {
 		if name == "" {
 			show = true
 			fmt.Fprintf(w, "#\t%#x\n", frame.PC)
-		} else if name != "runtime.goexit" && (show || !(strings.HasPrefix(name, "runtime.") || strings.HasPrefix(name, "internal/runtime/"))) {
+		} else if name != "runtime.goexit" && (show || !(strings.HasPrefix(name, "runtime.") || strings.HasPrefix(name, "publicinternal/runtime/"))) {
 			// Hide runtime.goexit and any runtime functions at the beginning.
 			// This is useful mainly for allocation traces.
 			show = true

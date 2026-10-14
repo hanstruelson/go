@@ -6,7 +6,7 @@ package sync_test
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"strings"

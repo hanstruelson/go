@@ -2416,7 +2416,7 @@
 //
 // The GOCACHEPROG environment variable can be used to provide an
 // externally managed build cache. For details see:
-// "go doc cmd/go/internal/cacheprog".
+// "go doc cmd/go/publicinternal/cacheprog".
 //
 // # Environment variables
 //
@@ -2454,7 +2454,7 @@
 //	GOCACHEPROG
 //		A command (with optional space-separated flags) that implements an
 //		external go command build cache.
-//		See 'go doc cmd/go/internal/cacheprog'.
+//		See 'go doc cmd/go/publicinternal/cacheprog'.
 //	GODEBUG
 //		Enable various debugging facilities for programs built with Go,
 //		including the go command. Cannot be set using 'go env -w'.
@@ -2614,7 +2614,7 @@
 //	GOEXPERIMENT
 //		Comma-separated list of toolchain experiments to enable or disable.
 //		The list of available experiments may change arbitrarily over time.
-//		See GOROOT/src/internal/goexperiment/flags.go for currently valid values.
+//		See GOROOT/src/publicinternal/goexperiment/flags.go for currently valid values.
 //		Warning: This variable is provided for the development and testing
 //		of the Go toolchain itself. Use beyond that purpose is unsupported.
 //	GOFIPS140

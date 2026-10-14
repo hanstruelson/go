@@ -5,7 +5,7 @@
 package net
 
 import (
-	"internal/routebsd"
+	"publicinternal/routebsd"
 	"syscall"
 )
 

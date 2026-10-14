@@ -11,8 +11,8 @@
 package net
 
 import (
-	"internal/poll"
-	"internal/syscall/unix"
+	"publicinternal/poll"
+	"publicinternal/syscall/unix"
 	"os"
 	"syscall"
 )

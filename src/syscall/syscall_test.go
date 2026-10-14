@@ -5,7 +5,7 @@
 package syscall_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"runtime"
 	"syscall"

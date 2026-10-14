@@ -769,11 +769,11 @@ func writeGoDefs(cl unify.Closure) error {
 		files.NewGoFile(simdPackage+"/ops_internal_"+goTypeArch+".go"),
 		deduped, typeMap, archLower == "amd64",
 	)
-	writeSIMDIntrinsics(files.NewGoFile("cmd/compile/internal/ssagen/simd"+simdTag+"intrinsics.go"), deduped, typeMap)
-	writeSIMDGenericOps(files.NewGoFile("cmd/compile/internal/ssa/_gen/simd"+simdTag+"genericOps_gen.go"), deduped)
-	writeSIMDMachineOps(files.NewGoFile("cmd/compile/internal/ssa/_gen/simd"+simdTag+"ops.go"), deduped)
-	writeSIMDSSA(files.NewGoFile("cmd/compile/internal/"+archLower+"/"+archInfo.ssaGenFile()), deduped)
-	writeSIMDRules(files.NewRawFile("cmd/compile/internal/ssa/_gen/simd"+simdTag+".rules"), deduped)
+	writeSIMDIntrinsics(files.NewGoFile("cmd/compile/publicinternal/ssagen/simd"+simdTag+"intrinsics.go"), deduped, typeMap)
+	writeSIMDGenericOps(files.NewGoFile("cmd/compile/publicinternal/ssa/_gen/simd"+simdTag+"genericOps_gen.go"), deduped)
+	writeSIMDMachineOps(files.NewGoFile("cmd/compile/publicinternal/ssa/_gen/simd"+simdTag+"ops.go"), deduped)
+	writeSIMDSSA(files.NewGoFile("cmd/compile/publicinternal/"+archLower+"/"+archInfo.ssaGenFile()), deduped)
+	writeSIMDRules(files.NewRawFile("cmd/compile/publicinternal/ssa/_gen/simd"+simdTag+".rules"), deduped)
 
 	return nil
 }

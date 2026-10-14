@@ -6,8 +6,8 @@ package pbkdf2_test
 
 import (
 	"bytes"
-	"crypto/internal/boring"
-	"crypto/internal/fips140"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140"
 	"crypto/pbkdf2"
 	"crypto/sha1"
 	"crypto/sha256"

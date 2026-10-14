@@ -29,5 +29,5 @@ go list -test runtime/cgo
 stdout '^runtime/cgo$' # runtime/cgo
 
 go list -deps -f '{{if .DepOnly}}{{.ImportPath}}{{end}}' sort
-stdout '^internal/reflectlite$' # internal/reflectlite
+stdout '^publicinternal/reflectlite$' # publicinternal/reflectlite
 ! stdout '^sort' # should not have sort

@@ -5,7 +5,7 @@
 package runtime_test
 
 import (
-	"internal/asan"
+	"publicinternal/asan"
 	"os"
 	"syscall"
 	"testing"

@@ -4,7 +4,7 @@
 
 package runtime
 
-import "internal/runtime/syscall/windows"
+import "publicinternal/runtime/syscall/windows"
 
 func prepareContextForSigResume(c *windows.Context) {
 	c.R8 = c.Rsp

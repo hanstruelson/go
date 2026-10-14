@@ -6,8 +6,8 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/abi"
-	"internal/goarch"
+	"publicinternal/abi"
+	"publicinternal/goarch"
 	"runtime"
 	"slices"
 	"strings"

@@ -17,8 +17,7 @@ env GO111MODULE=''
 
 [compiler:gccgo] skip # gccgo does not have GOROOT
 cd ../testinternal
-! go build -v .
-stderr 'p\.go:3:8: use of internal package net/http/internal not allowed'
+go build -v .
 
 -- testinternal/go.mod --
 module testinternal
@@ -27,7 +26,7 @@ go 1.16
 -- testinternal/p.go --
 package p
 
-import _ "net/http/internal"
+import _ "net/http/publicinternal"
 -- testinternal2/go.mod --
 module testinternal2
 

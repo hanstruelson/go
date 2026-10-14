@@ -16,10 +16,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/typeparams"
-	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/typeparams"
+	"golang.org/x/tools/publicinternal/typesinternal"
+	"golang.org/x/tools/publicinternal/versions"
 )
 
 const Doc = `check for locks erroneously passed by value

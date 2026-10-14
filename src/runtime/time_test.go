@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os/exec"
 	"reflect"
 	"runtime"

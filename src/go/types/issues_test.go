@@ -11,7 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"regexp"
 	"slices"
 	"strings"
@@ -182,7 +182,7 @@ L7 uses var z int`
 // This tests that the package associated with the types.Object.Pkg method
 // is the type's package independent of the order in which the imports are
 // listed in the sources src1, src2 below.
-// The actual issue is in go/internal/gcimporter which has a corresponding
+// The actual issue is in go/publicinternal/gcimporter which has a corresponding
 // test; we leave this test here to verify correct behavior at the go/types
 // level.
 func TestIssue13898(t *testing.T) {

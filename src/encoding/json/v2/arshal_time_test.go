@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 func baseLabel(base uint64) string {

@@ -8,10 +8,10 @@ import (
 	"bufio"
 	"bytes"
 	"crypto"
-	"crypto/internal/boring"
-	"crypto/internal/cryptotest"
-	"crypto/internal/fips140"
-	"crypto/internal/fips140/ecdsa"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/fips140"
+	"crypto/publicinternal/fips140/ecdsa"
 	"crypto/rand"
 	. "crypto/rsa"
 	"crypto/sha1"
@@ -136,7 +136,7 @@ func TestTinyKeyGeneration(t *testing.T) {
 
 // TestKeyGenerationVectors tests RSA key generation against the
 // c2sp.org/det-keygen test vectors. See the comment on
-// [crypto/internal/fips140/rsa.GenerateKey] for more details.
+// [crypto/publicinternal/fips140/rsa.GenerateKey] for more details.
 func TestKeyGenerationVectors(t *testing.T) {
 	// The RSA key generation algorithm changed after Go 1.26.0, so the
 	// generated keys only match with recent FIPS 140-3 modules.
@@ -822,7 +822,7 @@ func BenchmarkSignPKCS1v15(b *testing.B) {
 		benchmarkSignPKCS1v15(b, test2048KeyWithoutPrecomputed)
 	})
 	// This is different from "2048" because it's only the public precomputed
-	// values, and not the crypto/internal/fips140/rsa.PrivateKey.
+	// values, and not the crypto/publicinternal/fips140/rsa.PrivateKey.
 	b.Run("2048/noprecomp/AllValues", func(b *testing.B) {
 		benchmarkSignPKCS1v15(b, test2048KeyWithPrecomputed)
 	})

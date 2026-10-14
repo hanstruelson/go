@@ -7,8 +7,8 @@ package bytes_test
 import (
 	. "bytes"
 	"fmt"
-	"internal/asan"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/testenv"
 	"iter"
 	"math"
 	"math/rand"

@@ -6,7 +6,7 @@
 
 // Torture test for range-over-func.
 //
-// cmd/internal/testdir runs this like
+// cmd/publicinternal/testdir runs this like
 //
 //	go run rangegen.go >x.go
 //	go run x.go

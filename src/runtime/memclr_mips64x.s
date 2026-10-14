@@ -18,7 +18,7 @@ TEXT runtime·memclrNoHeapPointers(SB),NOSPLIT,$0-16
 	// if less than 16 bytes or no MSA, do words check
 	SGTU	$16, R2, R3
 	BNE	R3, no_msa
-	MOVBU	internal∕cpu·MIPS64X+const_offsetMIPS64XHasMSA(SB), R3
+	MOVBU	publicinternal∕cpu·MIPS64X+const_offsetMIPS64XHasMSA(SB), R3
 	BEQ	R3, R0, no_msa
 
 	VMOVB	$0, W0

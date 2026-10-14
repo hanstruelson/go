@@ -14,7 +14,7 @@
 package big
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"math/bits"
 	"math/rand"
 	"slices"

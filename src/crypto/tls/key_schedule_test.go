@@ -6,7 +6,7 @@ package tls
 
 import (
 	"bytes"
-	"crypto/internal/fips140/tls13"
+	"crypto/publicinternal/fips140/tls13"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"

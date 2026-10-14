@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"crypto/ecdh"
 	"crypto/ecdsa"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/x509"
 	"fmt"
 	"testing"

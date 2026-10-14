@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/goexperiment"
+	"publicinternal/cpu"
+	"publicinternal/goexperiment"
 	"unsafe"
 )
 
@@ -88,7 +88,7 @@ func vgetrandomDestroy(mp *m) {
 	unlock(&vgetrandomAlloc.statesLock)
 }
 
-// This is exported for use in internal/syscall/unix as well as x/sys/unix.
+// This is exported for use in publicinternal/syscall/unix as well as x/sys/unix.
 //
 //go:linkname vgetrandom
 func vgetrandom(p []byte, flags uint32) (ret int, supported bool) {

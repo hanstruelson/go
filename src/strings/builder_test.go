@@ -6,7 +6,7 @@ package strings_test
 
 import (
 	"bytes"
-	"internal/asan"
+	"publicinternal/asan"
 	. "strings"
 	"testing"
 	"unicode/utf8"

@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"syscall"
 )
 

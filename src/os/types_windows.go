@@ -5,9 +5,9 @@
 package os
 
 import (
-	"internal/filepathlite"
-	"internal/godebug"
-	"internal/syscall/windows"
+	"publicinternal/filepathlite"
+	"publicinternal/godebug"
+	"publicinternal/syscall/windows"
 	"sync"
 	"syscall"
 	"time"

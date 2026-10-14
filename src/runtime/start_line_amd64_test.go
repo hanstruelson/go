@@ -5,7 +5,7 @@
 package runtime_test
 
 import (
-	"internal/runtime/startlinetest"
+	"publicinternal/runtime/startlinetest"
 	"testing"
 )
 

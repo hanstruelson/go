@@ -13,7 +13,7 @@ import (
 type ArchInfo struct {
 	Arch      string // e.g., "amd64", "arm64"
 	ArchUpper string // SSA op prefix, e.g., "AMD64", "ARM64". SVE shares "ARM64".
-	ObjArch   string // e.g., "x86", "arm64" (for cmd/internal/obj/*)
+	ObjArch   string // e.g., "x86", "arm64" (for cmd/publicinternal/obj/*)
 	// GoTypeArch identifies a distinct simdgen target and is the single tag that
 	// names its generated output: the Go API files (types_<GoTypeArch>.go,
 	// ops_<GoTypeArch>.go) and, in the backend package, simdssa_<GoTypeArch>.go.
@@ -147,7 +147,7 @@ var arm64RegInfoSet = map[string]bool{
 }
 
 // arm64Arrangements contains the SIMD arrangement suffixes for ARM64 NEON.
-// These correspond to the ARNG_* constants in cmd/internal/obj/arm64/a.out.go.
+// These correspond to the ARNG_* constants in cmd/publicinternal/obj/arm64/a.out.go.
 var arm64Arrangements = []string{
 	"8B", "16B", "1D", "4H", "8H", "2S", "4S", "2D", "1Q", "B", "H", "S", "D",
 }
@@ -219,7 +219,7 @@ func (a ArchInfo) isSVE() bool { return a.GoTypeArch == "sve" }
 func (a ArchInfo) sharesBackendPackage() bool { return a.GoTypeArch != a.Arch }
 
 // ssaGenFile returns the basename of the generated ssa-to-prog lowering file in
-// internal/<Arch>/. The primary target keeps the historical "simdssa.go"; a
+// publicinternal/<Arch>/. The primary target keeps the historical "simdssa.go"; a
 // one sharing another's uses a tagged name so it sits beside it.
 func (a ArchInfo) ssaGenFile() string {
 	if a.sharesBackendPackage() {

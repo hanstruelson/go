@@ -6,10 +6,10 @@ package os
 
 import (
 	"errors"
-	"internal/filepathlite"
-	"internal/godebug"
-	"internal/poll"
-	"internal/syscall/windows"
+	"publicinternal/filepathlite"
+	"publicinternal/godebug"
+	"publicinternal/poll"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"sync"
 	"sync/atomic"

@@ -6,11 +6,11 @@ package rsa
 
 import (
 	"crypto"
-	"crypto/internal/boring"
-	"crypto/internal/fips140/rsa"
-	"crypto/internal/fips140hash"
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/rsa"
+	"crypto/publicinternal/fips140hash"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 	"errors"
 	"hash"
 	"io"

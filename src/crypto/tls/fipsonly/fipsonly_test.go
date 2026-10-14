@@ -7,7 +7,7 @@
 package fipsonly
 
 import (
-	"crypto/tls/internal/fips140tls"
+	"crypto/tls/publicinternal/fips140tls"
 	"testing"
 )
 

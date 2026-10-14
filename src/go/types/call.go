@@ -9,7 +9,7 @@ package types
 import (
 	"go/ast"
 	"go/token"
-	. "internal/types/errors"
+	. "publicinternal/types/errors"
 	"strings"
 )
 

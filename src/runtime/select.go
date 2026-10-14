@@ -7,8 +7,8 @@ package runtime
 // This file contains the implementation of Go select statements.
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -16,7 +16,7 @@ const debugSelect = false
 
 // Select case descriptor.
 // Known to compiler.
-// Changes here must also be made in src/cmd/compile/internal/walk/select.go's scasetype.
+// Changes here must also be made in src/cmd/compile/publicinternal/walk/select.go's scasetype.
 type scase struct {
 	c    *hchan         // chan
 	elem unsafe.Pointer // data element

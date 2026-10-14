@@ -5,7 +5,7 @@
 package main
 
 import (
-	"cmd/go/internal/base"
+	"cmd/go/publicinternal/base"
 	"os"
 	"strings"
 	"testing"

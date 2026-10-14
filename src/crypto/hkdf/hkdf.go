@@ -11,9 +11,9 @@
 package hkdf
 
 import (
-	"crypto/internal/fips140/hkdf"
-	"crypto/internal/fips140hash"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140/hkdf"
+	"crypto/publicinternal/fips140hash"
+	"crypto/publicinternal/fips140only"
 	"errors"
 	"hash"
 )

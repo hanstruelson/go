@@ -7,7 +7,7 @@ package sql
 import (
 	"database/sql/driver"
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"reflect"
 	"runtime"
 	"strings"

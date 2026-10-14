@@ -6,7 +6,7 @@ package pbkdf2_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/pbkdf2"
 	"crypto/sha1"
 	"crypto/sha256"

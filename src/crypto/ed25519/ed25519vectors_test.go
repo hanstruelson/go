@@ -6,7 +6,7 @@ package ed25519_test
 
 import (
 	"crypto/ed25519"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"encoding/hex"
 	"encoding/json"
 	"os"

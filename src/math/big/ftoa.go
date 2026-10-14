@@ -4,7 +4,7 @@
 
 // This file implements Float-to-string conversion functions.
 // It is closely following the corresponding implementation
-// in internal/strconv/ftoa.go, but modified and simplified for Float.
+// in publicinternal/strconv/ftoa.go, but modified and simplified for Float.
 
 package big
 

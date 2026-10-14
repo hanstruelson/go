@@ -4,7 +4,7 @@
 
 package runtime
 
-import "internal/runtime/atomic"
+import "publicinternal/runtime/atomic"
 
 // gcCPULimiter is a mechanism to limit GC CPU utilization in situations
 // where it might become excessive and inhibit application progress (e.g.

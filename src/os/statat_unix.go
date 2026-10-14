@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 )
 
 func (f *File) lstatatNolog(name string) (FileInfo, error) {

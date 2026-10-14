@@ -7,7 +7,7 @@
 package simd
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"math"
 	"math/bits"
 )

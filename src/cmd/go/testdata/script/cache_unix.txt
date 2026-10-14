@@ -1,6 +1,6 @@
 env GO111MODULE=off
 
-# Integration test for cache directory calculation (cmd/go/internal/cache).
+# Integration test for cache directory calculation (cmd/go/publicinternal/cache).
 
 [GOOS:windows] skip 'windows does not use XDG_CACHE_HOME'
 [GOOS:darwin]  skip 'darwin does not use XDG_CACHE_HOME'

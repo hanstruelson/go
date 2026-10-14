@@ -5,8 +5,8 @@
 package slog
 
 import (
-	"internal/asan"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/testenv"
 	"testing"
 	"time"
 )

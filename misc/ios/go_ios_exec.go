@@ -239,7 +239,7 @@ func copyLocalData(dstbase string) (pkgpath string, err error) {
 			return "", err
 		}
 		// Copy src/runtime/textflag.h for (at least) Test386EndToEnd in
-		// cmd/asm/internal/asm.
+		// cmd/asm/publicinternal/asm.
 		runtimePath := filepath.Join(dstbase, "src", "runtime")
 		if err := os.MkdirAll(runtimePath, 0755); err != nil {
 			return "", err

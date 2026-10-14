@@ -11,9 +11,9 @@ import (
 	"io"
 	"math/bits"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonopts"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // Encoder is a streaming encoder to raw JSON tokens and values.

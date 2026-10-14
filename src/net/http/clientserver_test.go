@@ -15,8 +15,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"hash"
-	"internal/nettest"
-	internalsynctest "internal/synctest"
+	"publicinternal/nettest"
+	internalsynctest "publicinternal/synctest"
 	"io"
 	"log"
 	"maps"
@@ -39,7 +39,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"net/http/internal/http3"
+	"net/http/publicinternal/http3"
 )
 
 type testMode string

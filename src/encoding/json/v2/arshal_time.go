@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonopts"
+	"encoding/json/publicinternal/jsonwire"
 	"encoding/json/jsontext"
 )
 

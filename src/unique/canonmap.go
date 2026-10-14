@@ -5,8 +5,8 @@
 package unique
 
 import (
-	"internal/abi"
-	"internal/goarch"
+	"publicinternal/abi"
+	"publicinternal/goarch"
 	"runtime"
 	"sync"
 	"sync/atomic"

@@ -12,7 +12,7 @@ import (
 )
 
 // FindSpecDir returns the path to the standard spec package
-// GOROOT/simd/internal/spec. If GOROOT is "", it uses gentools.DefaultGOROOT().
+// GOROOT/simd/publicinternal/spec. If GOROOT is "", it uses gentools.DefaultGOROOT().
 func FindSpecDir(goroot string) (string, error) {
 	if goroot == "" {
 		goroot = gentools.DefaultGOROOT()
@@ -20,7 +20,7 @@ func FindSpecDir(goroot string) (string, error) {
 			return "", fmt.Errorf("could not find GOROOT")
 		}
 	}
-	path := filepath.Join(goroot, "src/simd/internal/spec")
+	path := filepath.Join(goroot, "src/simd/publicinternal/spec")
 	if _, err := os.Stat(path); err != nil {
 		return "", fmt.Errorf("could not find spec package: %w (this tool requires a complete Go checkout)", err)
 	}

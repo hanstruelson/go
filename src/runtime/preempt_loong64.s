@@ -56,9 +56,9 @@ TEXT ·asyncPreempt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVV g_m(g), R4
 	MOVV m_p(R4), R4
 	ADDV $(p_xRegs+xRegPerP_scratch), R4, R4
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
 	BNE R5, saveLASX
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
 	BNE R5, saveLSX
 saveFP:
 	MOVD F0, 0(R4)
@@ -167,9 +167,9 @@ preempt:
 	MOVV g_m(g), R4
 	MOVV m_p(R4), R4
 	MOVV (p_xRegs+xRegPerP_cache)(R4), R4
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
 	BNE R5, restoreLASX
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
 	BNE R5, restoreLSX
 restoreFP:
 	MOVD 992(R4), F31

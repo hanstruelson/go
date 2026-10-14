@@ -14,11 +14,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"internal/testenv"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"publicinternal/testenv"
 	"regexp"
 	"strings"
 	"testing"
@@ -108,7 +108,7 @@ func TestDisallowedAssemblyInstructions(t *testing.T) {
 	// We do this because the assembler itself will sometimes insert WORD
 	// instructions for things like function preambles etc.
 
-	boringSigPath := filepath.Join("internal", "boring", "sig")
+	boringSigPath := filepath.Join("publicinternal", "boring", "sig")
 
 	matcher, err := regexp.Compile(`(^|;)\s(BYTE|WORD)\s`)
 	if err != nil {

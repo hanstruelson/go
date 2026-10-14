@@ -9,7 +9,7 @@ package syscall_test
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"math/rand"
 	"os"

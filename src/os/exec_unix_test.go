@@ -8,7 +8,7 @@ package os_test
 
 import (
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math"
 	. "os"
 	"runtime"

@@ -4,7 +4,7 @@
 
 package x509
 
-import "internal/goos"
+import "publicinternal/goos"
 
 // Possible certificate files; stop after finding one.
 var certFiles = []string{

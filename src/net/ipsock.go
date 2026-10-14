@@ -6,7 +6,7 @@ package net
 
 import (
 	"context"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"runtime"
 	"sync"
 	_ "unsafe" // for linkname

@@ -291,7 +291,7 @@ func Lchown(path string, uid, gid int) error {
 }
 
 func UtimesNano(path string, ts []Timespec) error {
-	// UTIME_OMIT value must match internal/syscall/unix/at_js.go
+	// UTIME_OMIT value must match publicinternal/syscall/unix/at_js.go
 	const UTIME_OMIT = -0x2
 	if err := checkPath(path); err != nil {
 		return err

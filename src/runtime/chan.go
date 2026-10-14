@@ -18,10 +18,10 @@ package runtime
 //  c.qcount < c.dataqsiz implies that c.sendq is empty.
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
-	"internal/runtime/math"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -833,7 +833,7 @@ func reflect_chanlen(c *hchan) int {
 	return chanlen(c)
 }
 
-//go:linkname reflectlite_chanlen internal/reflectlite.chanlen
+//go:linkname reflectlite_chanlen publicinternal/reflectlite.chanlen
 func reflectlite_chanlen(c *hchan) int {
 	return chanlen(c)
 }

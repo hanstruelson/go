@@ -6,7 +6,7 @@
 
 package runtime
 
-import "internal/trace/tracev2"
+import "publicinternal/trace/tracev2"
 
 // traceInitReadCPU initializes CPU profile -> tracer state for tracing.
 //

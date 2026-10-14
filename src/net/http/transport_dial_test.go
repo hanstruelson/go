@@ -8,7 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"internal/nettest"
+	"publicinternal/nettest"
 	"io"
 	"net"
 	"net/http"

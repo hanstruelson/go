@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// See ../internal/types/testdata/spec/range.go for most tests.
+// See ../publicinternal/types/testdata/spec/range.go for most tests.
 // The ones in this file cannot be expressed in that framework
 // due to conflicts between that framework's error location pickiness
 // and gofmt's comment location pickiness.

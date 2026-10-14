@@ -9,7 +9,7 @@ package jsontext
 import (
 	"io"
 
-	"encoding/json/internal"
+	"encoding/json/publicinternal"
 )
 
 // TODO(https://go.dev/issue/73435): Remove the Internal symbol.

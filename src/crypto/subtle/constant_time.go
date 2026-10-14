@@ -7,12 +7,12 @@
 package subtle
 
 import (
-	"crypto/internal/constanttime"
-	"crypto/internal/fips140/subtle"
+	"crypto/publicinternal/constanttime"
+	"crypto/publicinternal/fips140/subtle"
 )
 
-// These functions are forwarded to crypto/internal/constanttime for intrinsified
-// operations, and to crypto/internal/fips140/subtle for byte slice operations.
+// These functions are forwarded to crypto/publicinternal/constanttime for intrinsified
+// operations, and to crypto/publicinternal/fips140/subtle for byte slice operations.
 
 // ConstantTimeCompare returns 1 if the two slices, x and y, have equal contents
 // and 0 otherwise. The time taken is a function of the length of the slices and

@@ -6,7 +6,7 @@
 
 // A generated method with a return value large enough to be
 // initialized by duffzero is not a leaf method, which violated
-// assumptions made by cmd/internal/obj/ppc64.
+// assumptions made by cmd/publicinternal/obj/ppc64.
 
 package main
 

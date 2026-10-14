@@ -12,7 +12,7 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/mod/internal/lazyregexp"
+	"golang.org/x/mod/publicinternal/lazyregexp"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/sumdb/tlog"
 )

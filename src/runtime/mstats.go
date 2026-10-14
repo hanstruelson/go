@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
 	"unsafe"
 )
 

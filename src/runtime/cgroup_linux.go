@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/runtime/cgroup"
+	"publicinternal/runtime/cgroup"
 )
 
 // cgroup-aware GOMAXPROCS default
@@ -32,7 +32,7 @@ var (
 	cgroupOK  bool
 	cgroupCPU cgroup.CPU
 
-	// defaultGOMAXPROCSInit runs before internal/godebug init, so we can't
+	// defaultGOMAXPROCSInit runs before publicinternal/godebug init, so we can't
 	// directly update the GODEBUG counter. Store the result until after
 	// init runs.
 	containermaxprocsNonDefault bool
@@ -70,8 +70,8 @@ func defaultGOMAXPROCSInit() {
 	c.Close()
 }
 
-// defaultGOMAXPROCSUpdateGODEBUG updates the internal/godebug counter for
-// container GOMAXPROCS, once internal/godebug is initialized.
+// defaultGOMAXPROCSUpdateGODEBUG updates the publicinternal/godebug counter for
+// container GOMAXPROCS, once publicinternal/godebug is initialized.
 func defaultGOMAXPROCSUpdateGODEBUG() {
 	if containermaxprocsNonDefault {
 		containermaxprocs.IncNonDefault()

@@ -7,7 +7,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"runtime"

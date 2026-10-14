@@ -5,7 +5,7 @@
 package fips140
 
 import (
-	"internal/godebug"
+	"publicinternal/godebug"
 	_ "unsafe" // for linkname
 )
 

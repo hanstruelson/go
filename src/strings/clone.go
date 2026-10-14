@@ -5,7 +5,7 @@
 package strings
 
 import (
-	"internal/stringslite"
+	"publicinternal/stringslite"
 )
 
 // Clone returns a fresh copy of s.

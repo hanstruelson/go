@@ -668,7 +668,7 @@ func filesInGitRepo(dir, rev, subdir string) ([]File, error) {
 	// techniques like git ls-files, but this approach most closely matches what
 	// the Go command does, which is beneficial.
 	//
-	// Note: some of this code is copied from https://go.googlesource.com/go/+/refs/tags/go1.16.5/src/cmd/go/internal/modfetch/codehost/git.go#826.
+	// Note: some of this code is copied from https://go.googlesource.com/go/+/refs/tags/go1.16.5/src/cmd/go/publicinternal/modfetch/codehost/git.go#826.
 	cmd := exec.Command("git", "-c", "core.autocrlf=input", "-c", "core.eol=lf", "archive", "--format=zip", rev)
 	if subdir != "" {
 		cmd.Args = append(cmd.Args, subdir)
@@ -711,8 +711,8 @@ func filesInGitRepo(dir, rev, subdir string) ([]File, error) {
 
 	if !haveLICENSE && subdir != "" {
 		// Note: this method of extracting the license from the root is copied from
-		// https://go.googlesource.com/go/+/refs/tags/go1.20.4/src/cmd/go/internal/modfetch/coderepo.go#1118
-		// https://go.googlesource.com/go/+/refs/tags/go1.20.4/src/cmd/go/internal/modfetch/codehost/git.go#657
+		// https://go.googlesource.com/go/+/refs/tags/go1.20.4/src/cmd/go/publicinternal/modfetch/coderepo.go#1118
+		// https://go.googlesource.com/go/+/refs/tags/go1.20.4/src/cmd/go/publicinternal/modfetch/codehost/git.go#657
 		cmd := exec.Command("git", "cat-file", "blob", rev+":LICENSE")
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "PWD="+dir)

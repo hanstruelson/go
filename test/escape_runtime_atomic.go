@@ -4,12 +4,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Test escape analysis for internal/runtime/atomic.
+// Test escape analysis for publicinternal/runtime/atomic.
 
 package escape
 
 import (
-	"internal/runtime/atomic"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 

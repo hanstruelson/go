@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 
@@ -138,7 +138,7 @@ var godebugUpdate atomic.Pointer[func(string, string)]
 var godebugEnv atomic.Pointer[string] // set by parsedebugvars
 var godebugNewIncNonDefault atomic.Pointer[func(string) func()]
 
-//go:linkname godebug_setUpdate internal/godebug.setUpdate
+//go:linkname godebug_setUpdate publicinternal/godebug.setUpdate
 func godebug_setUpdate(update func(string, string)) {
 	p := new(func(string, string))
 	*p = update
@@ -146,7 +146,7 @@ func godebug_setUpdate(update func(string, string)) {
 	godebugNotify(false)
 }
 
-//go:linkname godebug_setNewIncNonDefault internal/godebug.setNewIncNonDefault
+//go:linkname godebug_setNewIncNonDefault publicinternal/godebug.setNewIncNonDefault
 func godebug_setNewIncNonDefault(newIncNonDefault func(string) func()) {
 	p := new(func(string) func())
 	*p = newIncNonDefault
@@ -154,9 +154,9 @@ func godebug_setNewIncNonDefault(newIncNonDefault func(string) func()) {
 	defaultGOMAXPROCSUpdateGODEBUG()
 }
 
-// A godebugInc provides access to internal/godebug's IncNonDefault function
+// A godebugInc provides access to publicinternal/godebug's IncNonDefault function
 // for a given GODEBUG setting.
-// Calls before internal/godebug registers itself are dropped on the floor.
+// Calls before publicinternal/godebug registers itself are dropped on the floor.
 type godebugInc struct {
 	name string
 	inc  atomic.Pointer[func()]

@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"net/netip"
 	"os"

@@ -14,7 +14,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"internal/diff"
+	"publicinternal/diff"
 	"os"
 	"regexp"
 	"runtime/metrics"

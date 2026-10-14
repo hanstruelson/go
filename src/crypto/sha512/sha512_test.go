@@ -8,7 +8,7 @@ package sha512
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"encoding"
 	"encoding/hex"
 	"fmt"

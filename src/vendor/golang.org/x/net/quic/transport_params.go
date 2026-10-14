@@ -9,7 +9,7 @@ import (
 	"net/netip"
 	"time"
 
-	"golang.org/x/net/internal/quic/quicwire"
+	"golang.org/x/net/publicinternal/quic/quicwire"
 )
 
 // transportParameters transferred in the quic_transport_parameters TLS extension.

@@ -8,7 +8,7 @@ package runtime_test
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

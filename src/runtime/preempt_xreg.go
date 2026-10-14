@@ -20,8 +20,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

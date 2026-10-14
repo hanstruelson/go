@@ -8,9 +8,9 @@ package os
 
 import (
 	"errors"
-	"internal/filepathlite"
-	"internal/stringslite"
-	"internal/syscall/windows"
+	"publicinternal/filepathlite"
+	"publicinternal/stringslite"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"syscall"
 	"time"

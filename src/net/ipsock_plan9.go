@@ -6,8 +6,8 @@ package net
 
 import (
 	"context"
-	"internal/bytealg"
-	"internal/strconv"
+	"publicinternal/bytealg"
+	"publicinternal/strconv"
 	"io/fs"
 	"os"
 	"syscall"

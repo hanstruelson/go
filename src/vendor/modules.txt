@@ -5,8 +5,8 @@ golang.org/x/crypto/chacha20poly1305
 golang.org/x/crypto/cryptobyte
 golang.org/x/crypto/cryptobyte/asn1
 golang.org/x/crypto/hkdf
-golang.org/x/crypto/internal/alias
-golang.org/x/crypto/internal/poly1305
+golang.org/x/crypto/publicinternal/alias
+golang.org/x/crypto/publicinternal/poly1305
 # golang.org/x/net v0.59.0
 ## explicit; go 1.26.0
 golang.org/x/net/dns/dnsmessage
@@ -14,7 +14,7 @@ golang.org/x/net/http/httpguts
 golang.org/x/net/http/httpproxy
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
-golang.org/x/net/internal/quic/quicwire
+golang.org/x/net/publicinternal/quic/quicwire
 golang.org/x/net/lif
 golang.org/x/net/nettest
 golang.org/x/net/quic
@@ -31,5 +31,5 @@ golang.org/x/text/unicode/norm
 ## explicit; go 1.26.0
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/types/objectpath
-golang.org/x/tools/internal/gcimporter
-golang.org/x/tools/internal/pkgbits
+golang.org/x/tools/publicinternal/gcimporter
+golang.org/x/tools/publicinternal/pkgbits

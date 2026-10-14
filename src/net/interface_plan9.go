@@ -6,8 +6,8 @@ package net
 
 import (
 	"errors"
-	"internal/strconv"
-	"internal/stringslite"
+	"publicinternal/strconv"
+	"publicinternal/stringslite"
 	"os"
 )
 

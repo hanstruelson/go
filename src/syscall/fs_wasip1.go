@@ -7,7 +7,7 @@
 package syscall
 
 import (
-	"internal/stringslite"
+	"publicinternal/stringslite"
 	"runtime"
 	"structs"
 	"unsafe"
@@ -291,7 +291,7 @@ func fd_fdstat_get(fd int32, buf *fdstat) Errno
 //go:noescape
 func fd_fdstat_set_flags(fd int32, flags fdflags) Errno
 
-// fd_fdstat_get_flags is accessed from internal/syscall/unix
+// fd_fdstat_get_flags is accessed from publicinternal/syscall/unix
 //go:linkname fd_fdstat_get_flags
 
 func fd_fdstat_get_flags(fd int) (uint32, error) {
@@ -731,7 +731,7 @@ func Lchown(path string, uid, gid int) error {
 }
 
 func UtimesNano(path string, ts []Timespec) error {
-	// UTIME_OMIT value must match internal/syscall/unix/at_wasip1.go
+	// UTIME_OMIT value must match publicinternal/syscall/unix/at_wasip1.go
 	const UTIME_OMIT = -0x2
 	if path == "" {
 		return EINVAL

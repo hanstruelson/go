@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"maps"

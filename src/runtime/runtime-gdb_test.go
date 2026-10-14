@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

@@ -7,7 +7,7 @@
 package runtime_test
 
 import (
-	"internal/race"
+	"publicinternal/race"
 	"runtime"
 	"testing"
 )

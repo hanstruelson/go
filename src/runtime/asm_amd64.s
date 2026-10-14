@@ -645,7 +645,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0
 	MOVL	$0, DX
 	JMP	runtime·morestack(SB)
 
-// spillArgs stores return values from registers to a *internal/abi.RegArgs in R12.
+// spillArgs stores return values from registers to a *publicinternal/abi.RegArgs in R12.
 TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVQ AX, 0(R12)
 	MOVQ BX, 8(R12)
@@ -673,7 +673,7 @@ TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVQ X14, 184(R12)
 	RET
 
-// unspillArgs loads args into registers from a *internal/abi.RegArgs in R12.
+// unspillArgs loads args into registers from a *publicinternal/abi.RegArgs in R12.
 TEXT ·unspillArgs(SB),NOSPLIT,$0-0
 	MOVQ 0(R12), AX
 	MOVQ 8(R12), BX
@@ -1032,7 +1032,7 @@ needm:
 	XORPS	X15, X15
 #ifndef GOAMD64_v3
 #ifndef GOAMD64_v4
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	2(PC)
 #endif
 #endif
@@ -1196,7 +1196,7 @@ TEXT runtime·stackcheck(SB), NOSPLIT|NOFRAME, $0-0
 
 // func cputicks() int64
 TEXT runtime·cputicks(SB),NOSPLIT,$0-0
-	CMPB	internal∕cpu·X86+const_offsetX86HasRDTSCP(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasRDTSCP(SB), $1
 	JNE	fences
 	// Instruction stream serializing RDTSCP is supported.
 	// RDTSCP is supported by Intel Nehalem (2008) and
@@ -1258,7 +1258,7 @@ TEXT ·sigpanic0(SB),NOSPLIT,$0-0
 	XORPS	X15, X15
 #ifndef GOAMD64_v3
 #ifndef GOAMD64_v4
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	2(PC)
 #endif
 #endif

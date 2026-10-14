@@ -5,7 +5,7 @@
 package rand
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,18 +53,18 @@ func TestLinker(t *testing.T) {
 		t.Error("unexpected output:", out)
 	}
 
-	// In a snapshot, all the paths are crypto/internal/fips140/v1.2.3/...
+	// In a snapshot, all the paths are crypto/publicinternal/fips140/v1.2.3/...
 	// Remove the version number for the checks below.
-	snapshot := regexp.MustCompile(`^crypto/internal/fips140/v[^/]+/`)
+	snapshot := regexp.MustCompile(`^crypto/publicinternal/fips140/v[^/]+/`)
 
 	var consistent bool
 	nm := run(testenv.GoToolPath(t), "tool", "nm", "hello.exe")
 	for _, match := range regexp.MustCompile(`(?m)T (crypto/.*)$`).FindAllStringSubmatch(nm, -1) {
-		symbol := snapshot.ReplaceAllString(match[1], "crypto/internal/fips140/")
-		if strings.HasPrefix(symbol, "crypto/internal/fips140/drbg.") {
+		symbol := snapshot.ReplaceAllString(match[1], "crypto/publicinternal/fips140/")
+		if strings.HasPrefix(symbol, "crypto/publicinternal/fips140/drbg.") {
 			consistent = true
 		}
-		if strings.HasPrefix(symbol, "crypto/internal/fips140/aes/gcm.") ||
+		if strings.HasPrefix(symbol, "crypto/publicinternal/fips140/aes/gcm.") ||
 			strings.HasPrefix(symbol, "crypto/cipher.") {
 			t.Errorf("unexpected symbol in program using only crypto/rand: %s", symbol)
 		}

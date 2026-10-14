@@ -20,7 +20,7 @@ import (
 // line directive against the directory of the source file, so the expected
 // path may be a suffix of the actual filename rather than equal to it.
 // Accept either an exact match or the file as a path-component suffix.
-// Compiler-emitted paths are always slash-normalized (cmd/internal/objabi.AbsFile).
+// Compiler-emitted paths are always slash-normalized (cmd/publicinternal/objabi.AbsFile).
 func check(file string, line int) {
 	_, f, l, ok := runtime.Caller(1)
 	if !ok {

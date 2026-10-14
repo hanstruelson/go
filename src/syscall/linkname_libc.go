@@ -8,5 +8,5 @@ package syscall
 
 import _ "unsafe"
 
-// used by internal/poll
+// used by publicinternal/poll
 //go:linkname writev

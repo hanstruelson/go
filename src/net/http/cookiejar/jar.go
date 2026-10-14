@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/netip"
 	"net/url"
 	"slices"

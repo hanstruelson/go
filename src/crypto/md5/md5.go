@@ -12,10 +12,10 @@ package md5
 
 import (
 	"crypto"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140only"
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 func init() {

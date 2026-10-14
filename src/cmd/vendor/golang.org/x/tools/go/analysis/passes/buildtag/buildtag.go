@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
 )
 
 const Doc = "check //go:build and // +build directives"

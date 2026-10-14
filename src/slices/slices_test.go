@@ -6,10 +6,10 @@ package slices_test
 
 import (
 	"cmp"
-	"internal/asan"
-	"internal/msan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"math"
 	. "slices"
 	"strings"

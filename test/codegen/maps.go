@@ -168,7 +168,7 @@ func MapClearSideEffect(m map[int]int) int {
 }
 
 func MapLiteralSizing(x int) (map[int]int, map[int]int) {
-	// This is tested for internal/abi/maps.go:MapBucketCountBits={3,4,5}
+	// This is tested for publicinternal/abi/maps.go:MapBucketCountBits={3,4,5}
 	// amd64:"MOVL [$]33,"
 	m := map[int]int{
 		0:  0,

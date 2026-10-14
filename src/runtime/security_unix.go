@@ -7,7 +7,7 @@
 package runtime
 
 import (
-	"internal/stringslite"
+	"publicinternal/stringslite"
 )
 
 func secure() {

@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-// Copied from cmd/compile/internal/ssa/gen/*Ops.go
+// Copied from cmd/compile/publicinternal/ssa/gen/*Ops.go
 
 var regNames386 = []string{
 	"AX",
@@ -459,9 +459,9 @@ func genAMD64(g *gen) {
 
 	// Which registers do we need to save?
 	p("#ifdef GOEXPERIMENT_simd")
-	p("CMPB internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1")
+	p("CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1")
 	p("JE saveAVX512")
-	p("CMPB internal∕cpu·X86+const_offsetX86HasAVX(SB), $1")
+	p("CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1")
 	p("JE saveAVX")
 	p("#endif")
 
@@ -487,9 +487,9 @@ func genAMD64(g *gen) {
 	p("MOVQ (p_xRegs+xRegPerP_cache)(%s), %s", xReg, xReg)
 
 	p("#ifdef GOEXPERIMENT_simd")
-	p("CMPB internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1")
+	p("CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1")
 	p("JE restoreAVX512")
-	p("CMPB internal∕cpu·X86+const_offsetX86HasAVX(SB), $1")
+	p("CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1")
 	p("JE restoreAVX")
 	p("#endif")
 
@@ -635,7 +635,7 @@ func genARM64(g *gen) {
 	p("MOVD m_p(%s), %s", vReg, vReg)
 	p("ADD $(p_xRegs+xRegPerP_scratch), %s, %s", vReg, vReg)
 	p("#ifdef GOEXPERIMENT_simd")
-	p("MOVBU internal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27")
+	p("MOVBU publicinternal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27")
 	p("CMP $1, R27")
 	p("BNE saveNEON")
 	p("RDVL $1, R27")
@@ -664,7 +664,7 @@ func genARM64(g *gen) {
 	p("MOVD m_p(%s), %s", vReg, vReg)
 	p("MOVD (p_xRegs+xRegPerP_cache)(%s), %s", vReg, vReg)
 	p("#ifdef GOEXPERIMENT_simd")
-	p("MOVBU internal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27")
+	p("MOVBU publicinternal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27")
 	p("CMP $1, R27")
 	p("BNE restoreNEON")
 	p("RDVL $1, R27")
@@ -854,10 +854,10 @@ func genLoong64(g *gen) {
 	p("MOVV m_p(%s), %s", xReg, xReg)
 	p("ADDV $(p_xRegs+xRegPerP_scratch), %s, %s", xReg, xReg)
 
-	p("MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5")
+	p("MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5")
 	p("BNE R5, saveLASX")
 
-	p("MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5")
+	p("MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5")
 	p("BNE R5, saveLSX")
 
 	label("saveFP:")
@@ -879,10 +879,10 @@ func genLoong64(g *gen) {
 	p("MOVV m_p(%s), %s", xReg, xReg)
 	p("MOVV (p_xRegs+xRegPerP_cache)(%s), %s", xReg, xReg)
 
-	p("MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5")
+	p("MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5")
 	p("BNE R5, restoreLASX")
 
-	p("MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5")
+	p("MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5")
 	p("BNE R5, restoreLSX")
 
 	label("restoreFP:")

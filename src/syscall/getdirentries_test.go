@@ -8,7 +8,7 @@ package syscall_test
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"slices"

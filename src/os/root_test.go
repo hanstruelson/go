@@ -9,7 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"iter"

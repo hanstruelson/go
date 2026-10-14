@@ -18,8 +18,8 @@ package maphash
 
 import (
 	"hash"
-	"internal/abi"
-	"internal/runtime/maps"
+	"publicinternal/abi"
+	"publicinternal/runtime/maps"
 	"unsafe"
 )
 

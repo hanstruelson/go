@@ -6,7 +6,7 @@ package template_test
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"net/netip"
 	"path"
 	"slices"

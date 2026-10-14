@@ -85,10 +85,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

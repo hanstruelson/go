@@ -29,7 +29,7 @@ reserves the right to occasionally do so for some Go values.
 package arena
 
 import (
-	"internal/reflectlite"
+	"publicinternal/reflectlite"
 	"unsafe"
 )
 

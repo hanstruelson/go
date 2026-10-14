@@ -18,8 +18,8 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/typesinternal"
 )
 
 const badFormat = "2006-02-01"

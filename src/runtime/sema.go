@@ -20,8 +20,8 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/runtime/atomic"
+	"publicinternal/cpu"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 
@@ -71,7 +71,7 @@ func sync_runtime_Semacquire(addr *uint32) {
 	semacquire1(addr, false, semaBlockProfile, 0, waitReasonSemacquire)
 }
 
-//go:linkname poll_runtime_Semacquire internal/poll.runtime_Semacquire
+//go:linkname poll_runtime_Semacquire publicinternal/poll.runtime_Semacquire
 func poll_runtime_Semacquire(addr *uint32) {
 	semacquire1(addr, false, semaBlockProfile, 0, waitReasonSemacquire)
 }
@@ -90,7 +90,7 @@ func sync_runtime_Semrelease(addr *uint32, handoff bool, skipframes int) {
 	semrelease1(addr, handoff, skipframes)
 }
 
-//go:linkname internal_sync_runtime_SemacquireMutex internal/sync.runtime_SemacquireMutex
+//go:linkname internal_sync_runtime_SemacquireMutex publicinternal/sync.runtime_SemacquireMutex
 func internal_sync_runtime_SemacquireMutex(addr *uint32, lifo bool, skipframes int) {
 	semacquire1(addr, lifo, semaBlockProfile|semaMutexProfile, skipframes, waitReasonSyncMutexLock)
 }
@@ -114,12 +114,12 @@ func sync_runtime_SemacquireWaitGroup(addr *uint32, synctestDurable bool) {
 	semacquire1(addr, false, semaBlockProfile, 0, reason)
 }
 
-//go:linkname poll_runtime_Semrelease internal/poll.runtime_Semrelease
+//go:linkname poll_runtime_Semrelease publicinternal/poll.runtime_Semrelease
 func poll_runtime_Semrelease(addr *uint32) {
 	semrelease(addr)
 }
 
-//go:linkname internal_sync_runtime_Semrelease internal/sync.runtime_Semrelease
+//go:linkname internal_sync_runtime_Semrelease publicinternal/sync.runtime_Semrelease
 func internal_sync_runtime_Semrelease(addr *uint32, handoff bool, skipframes int) {
 	semrelease1(addr, handoff, skipframes)
 }
@@ -729,7 +729,7 @@ func notifyListCheck(sz uintptr) {
 	}
 }
 
-//go:linkname internal_sync_nanotime internal/sync.runtime_nanotime
+//go:linkname internal_sync_nanotime publicinternal/sync.runtime_nanotime
 func internal_sync_nanotime() int64 {
 	return nanotime()
 }

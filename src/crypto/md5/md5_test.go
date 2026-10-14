@@ -6,7 +6,7 @@ package md5
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"crypto/rand"
 	"encoding"
 	"fmt"

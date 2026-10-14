@@ -5,7 +5,7 @@
 package reflect
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 	_ "unsafe"
 )

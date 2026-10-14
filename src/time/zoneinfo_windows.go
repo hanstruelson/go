@@ -6,7 +6,7 @@ package time
 
 import (
 	"errors"
-	"internal/syscall/windows/registry"
+	"publicinternal/syscall/windows/registry"
 	"syscall"
 )
 

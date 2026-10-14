@@ -33,12 +33,12 @@ _testmain.go
 /src/_artifacts/
 /src/cmd/cgo/zdefaultcc.go
 /src/cmd/dist/dist
-/src/cmd/go/internal/cfg/zdefaultcc.go
-/src/cmd/internal/objabi/zbootstrap.go
+/src/cmd/go/publicinternal/cfg/zdefaultcc.go
+/src/cmd/publicinternal/objabi/zbootstrap.go
 /src/go/build/zcgo.go
 /src/go/doc/headscan
-/src/internal/buildcfg/zbootstrap.go
-/src/internal/runtime/sys/zversion.go
+/src/publicinternal/buildcfg/zbootstrap.go
+/src/publicinternal/runtime/sys/zversion.go
 /src/unicode/maketables
 /src/time/tzdata/zzipdata.go
 /test.out

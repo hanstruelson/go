@@ -6,8 +6,8 @@ package net
 
 import (
 	"cmp"
-	"internal/bytealg"
-	"internal/strconv"
+	"publicinternal/bytealg"
+	"publicinternal/strconv"
 	"slices"
 	_ "unsafe" // for go:linkname
 

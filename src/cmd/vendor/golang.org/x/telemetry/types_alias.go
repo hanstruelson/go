@@ -4,7 +4,7 @@
 
 package telemetry
 
-import "golang.org/x/telemetry/internal/telemetry"
+import "golang.org/x/telemetry/publicinternal/telemetry"
 
 // Common types and directories used by multiple packages.
 

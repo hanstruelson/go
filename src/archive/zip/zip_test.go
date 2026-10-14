@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"math/bits"
 	"slices"

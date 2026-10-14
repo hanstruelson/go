@@ -6,7 +6,7 @@
 
 package codegen
 
-// Div and mod rewrites, testing cmd/compile/internal/ssa/_gen/divmod.rules.
+// Div and mod rewrites, testing cmd/compile/publicinternal/ssa/_gen/divmod.rules.
 // See comments there for "Case 1" etc.
 
 // Convert multiplication by a power of two to a shift.

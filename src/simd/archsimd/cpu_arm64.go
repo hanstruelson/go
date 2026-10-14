@@ -6,7 +6,7 @@
 
 package archsimd
 
-import "internal/cpu"
+import "publicinternal/cpu"
 
 // vl reports the SVE hardware vector length in bytes. It is an intrinsic,
 // lowered to the RDVL instruction.

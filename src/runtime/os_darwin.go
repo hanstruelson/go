@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 
@@ -164,12 +164,12 @@ func sysctlbynameBytes(name, out []byte) int32 {
 	return ret
 }
 
-//go:linkname internal_cpu_sysctlbynameInt32 internal/cpu.sysctlbynameInt32
+//go:linkname internal_cpu_sysctlbynameInt32 publicinternal/cpu.sysctlbynameInt32
 func internal_cpu_sysctlbynameInt32(name []byte) (int32, int32) {
 	return sysctlbynameInt32(name)
 }
 
-//go:linkname internal_cpu_sysctlbynameBytes internal/cpu.sysctlbynameBytes
+//go:linkname internal_cpu_sysctlbynameBytes publicinternal/cpu.sysctlbynameBytes
 func internal_cpu_sysctlbynameBytes(name, out []byte) int32 {
 	return sysctlbynameBytes(name, out)
 }

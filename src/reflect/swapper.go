@@ -5,9 +5,9 @@
 package reflect
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/unsafeheader"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/unsafeheader"
 	"unsafe"
 )
 

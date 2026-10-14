@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"internal/trace/raw"
-	"internal/trace/traceviewer"
-	"internal/trace/traceviewer/format"
+	"publicinternal/trace/raw"
+	"publicinternal/trace/traceviewer"
+	"publicinternal/trace/traceviewer/format"
 )
 
 func TestJSONTraceHandler(t *testing.T) {

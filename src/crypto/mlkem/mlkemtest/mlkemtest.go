@@ -6,8 +6,8 @@
 package mlkemtest
 
 import (
-	fips140mlkem "crypto/internal/fips140/mlkem"
-	"crypto/internal/fips140only"
+	fips140mlkem "crypto/publicinternal/fips140/mlkem"
+	"crypto/publicinternal/fips140only"
 	"crypto/mlkem"
 	"errors"
 )

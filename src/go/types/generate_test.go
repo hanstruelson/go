@@ -15,7 +15,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"internal/diff"
+	"publicinternal/diff"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,7 +26,7 @@ import (
 var filesToWrite = flag.String("write", "", `go/types files to generate, or "all" for all files`)
 
 const (
-	srcDir = "/src/cmd/compile/internal/types2/"
+	srcDir = "/src/cmd/compile/publicinternal/types2/"
 	dstDir = "/src/go/types/"
 )
 
@@ -52,7 +52,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func generate(t *testing.T, filename string, write bool) {
-	// parse src (cmd/compile/internal/types2)
+	// parse src (cmd/compile/publicinternal/types2)
 	srcFilename := filepath.FromSlash(runtime.GOROOT() + srcDir + filename)
 	file, err := parser.ParseFile(testFSet, srcFilename, nil, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
@@ -102,11 +102,11 @@ type action func(in *ast.File)
 var filemap = map[string]action{
 	"alias.go": fixTokenPos,
 	"alias_test.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`)
 		renameIdents(f, "types2->types")
 	},
 	"assignments.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.Name->ast.Ident", "ident.Value->ident.Name", "ast.Pos->token.Pos") // must happen before renaming identifiers
 		renameIdents(f, "syntax->ast", "poser->positioner", "nopos->noposn")
 	},
@@ -114,14 +114,14 @@ var filemap = map[string]action{
 	"api_predicates.go": nil,
 	"basic.go":          nil,
 	"builtins.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameIdents(f, "syntax->ast")
 		renameSelectors(f, "ArgList->Args")
 		fixSelValue(f)
 		fixAtPosCall(f)
 	},
 	"builtins_test.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`, `"cmd/compile/internal/types2"->"go/types"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`, `"cmd/compile/publicinternal/types2"->"go/types"`)
 		renameSelectorExprs(f, "syntax.Name->ast.Ident", "p.Value->p.Name") // must happen before renaming identifiers
 		renameIdents(f, "syntax->ast")
 	},
@@ -131,13 +131,13 @@ var filemap = map[string]action{
 	"context_test.go": nil,
 	"conversions.go":  nil,
 	"cycles.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.Name->ast.Ident", "rhs.Value->rhs.Name")
 		renameSelectors(f, "Trace->_Trace")
 	},
 	"errorcalls_test.go": func(f *ast.File) {
 		insertImportPath(f, `"go/token"`)
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.StringLit->token.STRING", "syntax.Name->ast.Ident", "n.Value->n.Name")
 		renameIdents(f, "syntax->ast")
 		renameSelectors(f, "ArgList->Args")
@@ -149,15 +149,15 @@ var filemap = map[string]action{
 	"gcsizes.go": func(f *ast.File) {
 		renameIdents(f, "IsSyncAtomicAlign64->_IsSyncAtomicAlign64", "IsSyncAtomicAlign128->_IsSyncAtomicAlign128")
 	},
-	"hilbert_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`) },
+	"hilbert_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`) },
 	"infer.go":        func(f *ast.File) { fixTokenPos(f); fixInferSig(f) },
 	"initorder.go":    nil,
 	// "initorder.go": fixErrErrorfCall, // disabled for now due to unresolved error_ use implications for gopls
 	"instantiate.go":      func(f *ast.File) { fixTokenPos(f); fixCheckErrorfCall(f); fixSprintf(f) },
-	"instantiate_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`) },
+	"instantiate_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`) },
 	"literals.go": func(f *ast.File) {
 		insertImportPath(f, `"go/token"`)
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f,
 			"syntax.IntLit->token.INT", "syntax.FloatLit->token.FLOAT", "syntax.ImagLit->token.IMAG",
 			"syntax.Name->ast.Ident", "key.Value->key.Name", "atyp.Elem->atyp.Elt") // must happen before renaming identifiers
@@ -166,7 +166,7 @@ var filemap = map[string]action{
 	},
 	"lookup.go": fixTokenPos,
 	"lookup_test.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`)
 		fixFSet(f)
 	},
 	"main_test.go": nil,
@@ -177,17 +177,17 @@ var filemap = map[string]action{
 		renameSelectorExprs(f, "syntax.Expr->ast.Expr")
 	},
 	"mono_test.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`)
 		renameIdents(f, "types2->types")
 		fixFSet(f)
 	},
 	"named.go":       func(f *ast.File) { fixTokenPos(f); renameSelectors(f, "Trace->_Trace") },
 	"object.go":      func(f *ast.File) { fixTokenPos(f); renameIdents(f, "NewTypeNameLazy->_NewTypeNameLazy") },
-	"object_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`) },
+	"object_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`) },
 	"objset.go":      nil,
 	"operand.go": func(f *ast.File) {
 		insertImportPath(f, `"go/token"`)
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f,
 			"syntax.Pos->token.Pos", "syntax.LitKind->token.Token",
 			"syntax.IntLit->token.INT", "syntax.FloatLit->token.FLOAT",
@@ -199,12 +199,12 @@ var filemap = map[string]action{
 	"pointer.go":    nil,
 	"predicates.go": nil,
 	"range.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.Name->ast.Ident", "syntax.ForStmt->ast.RangeStmt", "ident.Value->ident.Name") // must happen before renaming identifiers
 		renameIdents(f, "syntax->ast", "poser->positioner")
 	},
 	"recording.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.Name->ast.Ident") // must happen before renaming identifiers
 		renameIdents(f, "syntax->ast")
 		fixAtPosCall(f)
@@ -217,7 +217,7 @@ var filemap = map[string]action{
 		renameIdents(f, "IsSyncAtomicAlign64->_IsSyncAtomicAlign64", "IsSyncAtomicAlign128->_IsSyncAtomicAlign128")
 	},
 	"sizes_test.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`, `"cmd/compile/internal/types2"->"go/types"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`, `"cmd/compile/publicinternal/types2"->"go/types"`)
 		renameSelectorExprs(f, "syntax.Expr->ast.Expr")
 		renameIdents(f, "types2->types")
 		fixFSet(f)
@@ -231,16 +231,16 @@ var filemap = map[string]action{
 	"tuple.go":           nil,
 	"typelists.go":       nil,
 	"typeset.go":         func(f *ast.File) { fixTokenPos(f); renameSelectors(f, "Trace->_Trace") },
-	"typeset_test.go":    func(f *ast.File) { renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`) },
+	"typeset_test.go":    func(f *ast.File) { renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`) },
 	"typeparam.go":       nil,
 	"typeterm_test.go":   nil,
 	"typeterm.go":        nil,
 	"typestring.go":      nil,
-	"typestring_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/internal/types2"->"go/types"`) },
+	"typestring_test.go": func(f *ast.File) { renameImportPath(f, `"cmd/compile/publicinternal/types2"->"go/types"`) },
 	"under.go":           nil,
 	"unify.go":           fixSprintf,
 	"union.go": func(f *ast.File) {
-		renameImportPath(f, `"cmd/compile/internal/syntax"->"go/ast"`)
+		renameImportPath(f, `"cmd/compile/publicinternal/syntax"->"go/ast"`)
 		renameSelectorExprs(f, "syntax.Expr->ast.Expr")
 	},
 	"universe.go":  fixGlobalTypVarDecl,
@@ -361,14 +361,14 @@ func insertImportPath(f *ast.File, path string) {
 	panic("no import declaration present")
 }
 
-// fixTokenPos changes imports of "cmd/compile/internal/syntax" to "go/token",
+// fixTokenPos changes imports of "cmd/compile/publicinternal/syntax" to "go/token",
 // uses of syntax.Pos to token.Pos, and calls to x.IsKnown() to x.IsValid().
 func fixTokenPos(f *ast.File) {
-	m := makeRenameMap(`"cmd/compile/internal/syntax"->"go/token"`, "syntax.Pos->token.Pos", "IsKnown->IsValid")
+	m := makeRenameMap(`"cmd/compile/publicinternal/syntax"->"go/token"`, "syntax.Pos->token.Pos", "IsKnown->IsValid")
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.ImportSpec:
-			// rewrite import path "cmd/compile/internal/syntax" to "go/token"
+			// rewrite import path "cmd/compile/publicinternal/syntax" to "go/token"
 			if n.Path.Kind != token.STRING {
 				panic("invalid import path")
 			}

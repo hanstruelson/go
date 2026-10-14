@@ -8,7 +8,7 @@ import (
 	"encoding"
 	"fmt"
 	"hash"
-	"internal/testhash"
+	"publicinternal/testhash"
 	"io"
 	"strings"
 	"testing"

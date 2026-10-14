@@ -7,7 +7,7 @@
 package os_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	. "os"
 	"testing"
 	"time"

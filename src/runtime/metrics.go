@@ -7,9 +7,9 @@ package runtime
 // Metrics implementation exported to runtime/metrics.
 
 import (
-	"internal/godebugs"
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
+	"publicinternal/godebugs"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
 	"unsafe"
 )
 
@@ -568,7 +568,7 @@ func (f metricReader) compute(_ *statAggregate, out *metricValue) {
 	out.scalar = f()
 }
 
-//go:linkname godebug_registerMetric internal/godebug.registerMetric
+//go:linkname godebug_registerMetric publicinternal/godebug.registerMetric
 func godebug_registerMetric(name string, read func() uint64) {
 	metricsLock()
 	initMetrics()

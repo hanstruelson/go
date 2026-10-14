@@ -12,7 +12,7 @@ env GOCACHE=$WORK/tmp/cache
 # will fail with "can't open import". See golang.org/issue/29004.
 #
 # (The fix in golang.org/issue/29004 didn't completely fix the underlying issue:
-# cmd/go/internal/load adds a bunch of implicit dependencies
+# cmd/go/publicinternal/load adds a bunch of implicit dependencies
 # based on various heuristics, and, due to a bug described in
 # https://golang.org/issue/31544#issuecomment-490607180,
 # those implicit dependencies are not added early enough during

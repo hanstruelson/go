@@ -8,8 +8,8 @@ package ecdh
 
 import (
 	"crypto"
-	"crypto/internal/boring"
-	"crypto/internal/fips140/ecdh"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/ecdh"
 	"crypto/subtle"
 	"errors"
 	"io"

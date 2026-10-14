@@ -5,13 +5,13 @@
 package x509
 
 import (
-	"crypto/internal/cryptotest"
-	"crypto/internal/cryptotest/x509limbo"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/cryptotest/x509limbo"
 	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"slices"

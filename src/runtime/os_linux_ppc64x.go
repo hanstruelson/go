@@ -6,7 +6,7 @@
 
 package runtime
 
-import "internal/cpu"
+import "publicinternal/cpu"
 
 func archauxv(tag, val uintptr) {
 	switch tag {

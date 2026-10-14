@@ -7,8 +7,8 @@
 package jsontext
 
 import (
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // AppendQuote appends a double-quoted JSON string literal representing src

@@ -19,8 +19,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"internal/saferio"
-	"internal/xcoff"
+	"publicinternal/saferio"
+	"publicinternal/xcoff"
 	"io"
 	"io/fs"
 	"os"
@@ -166,7 +166,7 @@ func readRawBuildInfo(r io.ReaderAt) (vers, mod string, err error) {
 	// On some platforms, the blob will be in its own section, and DataStart
 	// returns the address of that section. On others, it's somewhere in the
 	// data segment; the linker puts it near the beginning.
-	// See cmd/link/internal/ld.Link.buildinfo.
+	// See cmd/link/publicinternal/ld.Link.buildinfo.
 	dataAddr, dataSize := x.DataStart()
 	if dataSize == 0 {
 		return "", "", errNotGoExe
@@ -261,7 +261,7 @@ func readRawBuildInfo(r io.ReaderAt) (vers, mod string, err error) {
 	}
 	if len(mod) >= 33 && mod[len(mod)-17] == '\n' {
 		// Strip module framing: sentinel strings delimiting the module info.
-		// These are cmd/go/internal/modload.infoStart and infoEnd.
+		// These are cmd/go/publicinternal/modload.infoStart and infoEnd.
 		mod = mod[16 : len(mod)-16]
 	} else {
 		mod = ""

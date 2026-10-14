@@ -7,7 +7,7 @@ package lzw
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"math"
 	"os"

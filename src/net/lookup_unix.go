@@ -8,7 +8,7 @@ package net
 
 import (
 	"context"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"sync"
 )
 

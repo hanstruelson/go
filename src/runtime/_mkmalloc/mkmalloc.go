@@ -49,7 +49,7 @@ func main() {
 		return
 	}
 
-	sizeclasesesfile := "../../internal/runtime/gc/sizeclasses.go"
+	sizeclasesesfile := "../../publicinternal/runtime/gc/sizeclasses.go"
 	if err := os.WriteFile(sizeclasesesfile, mustFormat(generateSizeClasses(classes)), 0666); err != nil {
 		log.Fatal(err)
 	}

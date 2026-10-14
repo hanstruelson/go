@@ -12,8 +12,8 @@
 package syscall
 
 import (
-	"internal/runtime/syscall/linux"
-	"internal/strconv"
+	"publicinternal/runtime/syscall/linux"
+	"publicinternal/strconv"
 	"runtime"
 	"slices"
 	"unsafe"

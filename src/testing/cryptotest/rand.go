@@ -7,19 +7,19 @@ package cryptotest
 
 import (
 	cryptorand "crypto/rand"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"io"
 	mathrand "math/rand/v2"
 	"sync"
 	"testing"
 
-	// Import unsafe and crypto/rand, which imports crypto/internal/rand,
-	// for the crypto/internal/rand.SetTestingReader go:linkname.
+	// Import unsafe and crypto/rand, which imports crypto/publicinternal/rand,
+	// for the crypto/publicinternal/rand.SetTestingReader go:linkname.
 	_ "crypto/rand"
 	_ "unsafe"
 )
 
-//go:linkname randSetTestingReader crypto/internal/rand.SetTestingReader
+//go:linkname randSetTestingReader crypto/publicinternal/rand.SetTestingReader
 func randSetTestingReader(r io.Reader)
 
 //go:linkname testingCheckParallel testing.checkParallel

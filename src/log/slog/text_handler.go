@@ -9,7 +9,7 @@ import (
 	"encoding"
 	"fmt"
 	"io"
-	"log/slog/internal/buffer"
+	"log/slog/publicinternal/buffer"
 	"reflect"
 	"strconv"
 	"sync"

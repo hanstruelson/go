@@ -5,10 +5,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -692,7 +692,7 @@ func reflect_ifaceE2I(inter *interfacetype, e eface, dst *iface) {
 	*dst = iface{assertE2I(inter, e._type), e.data}
 }
 
-//go:linkname reflectlite_ifaceE2I internal/reflectlite.ifaceE2I
+//go:linkname reflectlite_ifaceE2I publicinternal/reflectlite.ifaceE2I
 func reflectlite_ifaceE2I(inter *interfacetype, e eface, dst *iface) {
 	*dst = iface{assertE2I(inter, e._type), e.data}
 }

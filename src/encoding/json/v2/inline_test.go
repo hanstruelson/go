@@ -30,7 +30,7 @@ func TestInline(t *testing.T) {
 			"hash64":   true,
 			"foldName": true, // thin wrapper over appendFoldedName
 		},
-		"./internal/jsonwire": {
+		"./publicinternal/jsonwire": {
 			"ConsumeWhitespace":    true,
 			"ConsumeNull":          true,
 			"ConsumeFalse":         true,

@@ -40,9 +40,9 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/internal/disasm"
-	"cmd/internal/objfile"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/disasm"
+	"cmd/publicinternal/objfile"
+	"cmd/publicinternal/telemetry/counter"
 )
 
 var printCode = flag.Bool("S", false, "print Go code alongside assembly")

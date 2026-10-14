@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// derived & expanded from cmd/compile/internal/types2/testdata/fixedbugs/issue44688.go2
+// derived & expanded from cmd/compile/publicinternal/types2/testdata/fixedbugs/issue44688.go2
 
 package main
 

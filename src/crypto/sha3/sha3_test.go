@@ -6,7 +6,7 @@ package sha3_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	. "crypto/sha3"
 	"encoding/hex"
 	"hash"
@@ -402,7 +402,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 	})
 }
 
-// TODO(filippo): move this to crypto/internal/cryptotest.
+// TODO(filippo): move this to crypto/publicinternal/cryptotest.
 func testMarshalUnmarshal(t *testing.T, h *SHA3) {
 	buf := make([]byte, 200)
 	rand.Read(buf)
@@ -426,7 +426,7 @@ func testMarshalUnmarshal(t *testing.T, h *SHA3) {
 	}
 }
 
-// TODO(filippo): move this to crypto/internal/cryptotest.
+// TODO(filippo): move this to crypto/publicinternal/cryptotest.
 func testMarshalUnmarshalSHAKE(t *testing.T, h *SHAKE) {
 	buf := make([]byte, 200)
 	rand.Read(buf)

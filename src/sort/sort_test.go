@@ -7,7 +7,7 @@ package sort_test
 import (
 	"cmp"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math"
 	"math/rand/v2"
 	"slices"

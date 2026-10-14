@@ -7,7 +7,7 @@
 package runtime
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 )
 
@@ -15,7 +15,7 @@ import (
 
 func RaceRead(addr unsafe.Pointer)
 
-//go:linkname race_Read internal/race.Read
+//go:linkname race_Read publicinternal/race.Read
 //go:nosplit
 func race_Read(addr unsafe.Pointer) {
 	RaceRead(addr)
@@ -23,7 +23,7 @@ func race_Read(addr unsafe.Pointer) {
 
 func RaceWrite(addr unsafe.Pointer)
 
-//go:linkname race_Write internal/race.Write
+//go:linkname race_Write publicinternal/race.Write
 //go:nosplit
 func race_Write(addr unsafe.Pointer) {
 	RaceWrite(addr)
@@ -31,7 +31,7 @@ func race_Write(addr unsafe.Pointer) {
 
 func RaceReadRange(addr unsafe.Pointer, len int)
 
-//go:linkname race_ReadRange internal/race.ReadRange
+//go:linkname race_ReadRange publicinternal/race.ReadRange
 //go:nosplit
 func race_ReadRange(addr unsafe.Pointer, len int) {
 	RaceReadRange(addr, len)
@@ -39,7 +39,7 @@ func race_ReadRange(addr unsafe.Pointer, len int) {
 
 func RaceWriteRange(addr unsafe.Pointer, len int)
 
-//go:linkname race_WriteRange internal/race.WriteRange
+//go:linkname race_WriteRange publicinternal/race.WriteRange
 //go:nosplit
 func race_WriteRange(addr unsafe.Pointer, len int) {
 	RaceWriteRange(addr, len)
@@ -51,7 +51,7 @@ func RaceErrors() int {
 	return int(n)
 }
 
-//go:linkname race_Errors internal/race.Errors
+//go:linkname race_Errors publicinternal/race.Errors
 //go:nosplit
 func race_Errors() int {
 	return RaceErrors()
@@ -71,7 +71,7 @@ func RaceAcquire(addr unsafe.Pointer) {
 	raceacquire(addr)
 }
 
-//go:linkname race_Acquire internal/race.Acquire
+//go:linkname race_Acquire publicinternal/race.Acquire
 //go:nosplit
 func race_Acquire(addr unsafe.Pointer) {
 	RaceAcquire(addr)
@@ -88,7 +88,7 @@ func RaceRelease(addr unsafe.Pointer) {
 	racerelease(addr)
 }
 
-//go:linkname race_Release internal/race.Release
+//go:linkname race_Release publicinternal/race.Release
 //go:nosplit
 func race_Release(addr unsafe.Pointer) {
 	RaceRelease(addr)
@@ -105,7 +105,7 @@ func RaceReleaseMerge(addr unsafe.Pointer) {
 	racereleasemerge(addr)
 }
 
-//go:linkname race_ReleaseMerge internal/race.ReleaseMerge
+//go:linkname race_ReleaseMerge publicinternal/race.ReleaseMerge
 //go:nosplit
 func race_ReleaseMerge(addr unsafe.Pointer) {
 	RaceReleaseMerge(addr)
@@ -125,7 +125,7 @@ func RaceDisable() {
 	gp.raceignore++
 }
 
-//go:linkname race_Disable internal/race.Disable
+//go:linkname race_Disable publicinternal/race.Disable
 //go:nosplit
 func race_Disable() {
 	RaceDisable()
@@ -142,7 +142,7 @@ func RaceEnable() {
 	}
 }
 
-//go:linkname race_Enable internal/race.Enable
+//go:linkname race_Enable publicinternal/race.Enable
 //go:nosplit
 func race_Enable() {
 	RaceEnable()
@@ -168,7 +168,7 @@ func raceReadObjectPC(t *_type, addr unsafe.Pointer, callerpc, pc uintptr) {
 	}
 }
 
-//go:linkname race_ReadObjectPC internal/race.ReadObjectPC
+//go:linkname race_ReadObjectPC publicinternal/race.ReadObjectPC
 func race_ReadObjectPC(t *abi.Type, addr unsafe.Pointer, callerpc, pc uintptr) {
 	raceReadObjectPC(t, addr, callerpc, pc)
 }
@@ -186,7 +186,7 @@ func raceWriteObjectPC(t *_type, addr unsafe.Pointer, callerpc, pc uintptr) {
 	}
 }
 
-//go:linkname race_WriteObjectPC internal/race.WriteObjectPC
+//go:linkname race_WriteObjectPC publicinternal/race.WriteObjectPC
 func race_WriteObjectPC(t *abi.Type, addr unsafe.Pointer, callerpc, pc uintptr) {
 	raceWriteObjectPC(t, addr, callerpc, pc)
 }
@@ -197,12 +197,12 @@ func racereadpc(addr unsafe.Pointer, callpc, pc uintptr)
 //go:noescape
 func racewritepc(addr unsafe.Pointer, callpc, pc uintptr)
 
-//go:linkname race_ReadPC internal/race.ReadPC
+//go:linkname race_ReadPC publicinternal/race.ReadPC
 func race_ReadPC(addr unsafe.Pointer, callerpc, pc uintptr) {
 	racereadpc(addr, callerpc, pc)
 }
 
-//go:linkname race_WritePC internal/race.WritePC
+//go:linkname race_WritePC publicinternal/race.WritePC
 func race_WritePC(addr unsafe.Pointer, callerpc, pc uintptr) {
 	racewritepc(addr, callerpc, pc)
 }

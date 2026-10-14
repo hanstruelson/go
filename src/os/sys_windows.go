@@ -5,7 +5,7 @@
 package os
 
 import (
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"syscall"
 )
 

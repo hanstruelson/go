@@ -6,8 +6,8 @@ package rand_test
 
 import (
 	"fmt"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	. "math/rand"
 	"os"
 	"runtime"

@@ -624,7 +624,7 @@ the offsets being used to access them are correct.
 It is impractical to list all the instructions and other details for each machine.
 To see what instructions are defined for a given machine, say ARM,
 look in the source for the <code>obj</code> support library for
-that architecture, located in the directory <code>src/cmd/internal/obj/arm</code>.
+that architecture, located in the directory <code>src/cmd/publicinternal/obj/arm</code>.
 In that directory is a file <code>a.out.go</code>; it contains
 a long list of constants starting with <code>A</code>, like this:
 </p>
@@ -647,16 +647,16 @@ represents the bitwise and instruction,
 and is written in assembly source as <code>AND</code>.
 The enumeration is mostly in alphabetical order.
 (The architecture-independent <code>AXXX</code>, defined in the
-<code>cmd/internal/obj</code> package,
+<code>cmd/publicinternal/obj</code> package,
 represents an invalid instruction).
 The sequence of the <code>A</code> names has nothing to do with the actual
 encoding of the machine instructions.
-The <code>cmd/internal/obj</code> package takes care of that detail.
+The <code>cmd/publicinternal/obj</code> package takes care of that detail.
 </p>
 
 <p>
 The instructions for both the 386 and AMD64 architectures are listed in
-<code>cmd/internal/obj/x86/a.out.go</code>.
+<code>cmd/publicinternal/obj/x86/a.out.go</code>.
 </p>
 
 <p>
@@ -919,7 +919,7 @@ The other extensions include <code>SXTH</code> (16-bit), <code>SXTW</code> (32-b
 </ul>
 
 <p>
-Reference: <a href="/pkg/cmd/internal/obj/arm64">Go ARM64 Assembly Instructions Reference Manual</a>
+Reference: <a href="/pkg/cmd/publicinternal/obj/arm64">Go ARM64 Assembly Instructions Reference Manual</a>
 </p>
 
 <h3 id="ppc64">PPC64</h3>
@@ -929,7 +929,7 @@ This assembler is used by GOARCH values ppc64 and ppc64le.
 </p>
 
 <p>
-Reference: <a href="/pkg/cmd/internal/obj/ppc64">Go PPC64 Assembly Instructions Reference Manual</a>
+Reference: <a href="/pkg/cmd/publicinternal/obj/ppc64">Go PPC64 Assembly Instructions Reference Manual</a>
 </p>
 
 <h3 id="s390x">IBM z/Architecture, a.k.a. s390x</h3>
@@ -1043,7 +1043,7 @@ The value of <code>GOMIPS64</code> environment variable (<code>hardfloat</code> 
 <h3 id="riscv64">RISCV64</h3>
 
 <p>
-Reference: <a href="/pkg/cmd/internal/obj/riscv">Go RISCV64 Assembly Instructions Reference Manual</a>
+Reference: <a href="/pkg/cmd/publicinternal/obj/riscv">Go RISCV64 Assembly Instructions Reference Manual</a>
 </p>
 
 <h3 id="unsupported_opcodes">Unsupported opcodes</h3>

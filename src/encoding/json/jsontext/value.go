@@ -13,8 +13,8 @@ import (
 	"slices"
 	"sync"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // AppendFloat appends src to dst as a JSON number per RFC 8259, section 6.

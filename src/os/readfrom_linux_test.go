@@ -7,8 +7,8 @@ package os_test
 import (
 	"bytes"
 	"errors"
-	"internal/poll"
-	"internal/testpty"
+	"publicinternal/poll"
+	"publicinternal/testpty"
 	"io"
 	"math/rand"
 	"net"

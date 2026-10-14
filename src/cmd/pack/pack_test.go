@@ -7,9 +7,9 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"cmd/internal/archive"
+	"cmd/publicinternal/archive"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"os"

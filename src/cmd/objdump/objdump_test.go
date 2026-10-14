@@ -5,11 +5,11 @@
 package main
 
 import (
-	"cmd/internal/hash"
+	"cmd/publicinternal/hash"
 	"flag"
 	"fmt"
-	"internal/platform"
-	"internal/testenv"
+	"publicinternal/platform"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"runtime"

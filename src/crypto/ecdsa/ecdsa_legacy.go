@@ -6,7 +6,7 @@ package ecdsa
 
 import (
 	"crypto/elliptic"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140only"
 	"errors"
 	"io"
 	"math/big"

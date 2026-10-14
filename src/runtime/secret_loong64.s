@@ -16,9 +16,9 @@ TEXT ·secretEraseRegisters(SB),NOFRAME|NOSPLIT,$0-0
 // to spill the link register into. This function deliberately
 // doesn't clear R4 and R29, and Mcall uses R29 as a link register.
 TEXT ·secretEraseRegistersMcall(SB),NOFRAME|NOSPLIT,$0-0
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R5
 	BNE R5, eraseLasx
-	MOVBU internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
+	MOVBU publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R5
 	BNE R5, eraseLsx
 
 	// floating-point registers

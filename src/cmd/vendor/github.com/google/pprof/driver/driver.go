@@ -22,8 +22,8 @@ import (
 	"regexp"
 	"time"
 
-	internaldriver "github.com/google/pprof/internal/driver"
-	"github.com/google/pprof/internal/plugin"
+	internaldriver "github.com/google/pprof/publicinternal/driver"
+	"github.com/google/pprof/publicinternal/plugin"
 	"github.com/google/pprof/profile"
 )
 

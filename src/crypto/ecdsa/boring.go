@@ -7,9 +7,9 @@
 package ecdsa
 
 import (
-	"crypto/internal/boring"
-	"crypto/internal/boring/bbig"
-	"crypto/internal/boring/bcache"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/boring/bbig"
+	"crypto/publicinternal/boring/bcache"
 	"math/big"
 )
 

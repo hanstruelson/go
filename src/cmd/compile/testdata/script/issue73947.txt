@@ -68,7 +68,7 @@ module p
 
 go 1.24
 
--- internal/a/a.go --
+-- publicinternal/a/a.go --
 package a
 
 import "unsafe"
@@ -95,7 +95,7 @@ func Slice[To, From any](data []From) []To {
 -- b/b.go --
 package b
 
-import "p/internal/a"
+import "p/publicinternal/a"
 
 type Kind int32
 

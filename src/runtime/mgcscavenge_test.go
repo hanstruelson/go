@@ -6,8 +6,8 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/goos"
-	"internal/runtime/atomic"
+	"publicinternal/goos"
+	"publicinternal/runtime/atomic"
 	"math"
 	"math/rand"
 	. "runtime"

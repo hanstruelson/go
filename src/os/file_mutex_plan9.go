@@ -5,7 +5,7 @@
 package os
 
 // File locking support for Plan 9. This uses fdMutex from the
-// internal/poll package.
+// publicinternal/poll package.
 
 // incref adds a reference to the file. It returns an error if the file
 // is already closed. This method is on File so that we can incorporate

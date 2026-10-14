@@ -9,12 +9,12 @@ import (
 	"crypto"
 	"crypto/ecdh"
 	"crypto/fips140"
-	"crypto/internal/fips140/drbg"
-	"crypto/internal/rand"
+	"crypto/publicinternal/fips140/drbg"
+	"crypto/publicinternal/rand"
 	"crypto/mlkem"
 	"crypto/sha3"
 	"errors"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 var mlkem768X25519 = &hybridKEM{

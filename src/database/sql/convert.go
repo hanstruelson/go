@@ -9,7 +9,7 @@ package sql
 import (
 	"bytes"
 	"database/sql/driver"
-	"database/sql/internal"
+	"database/sql/publicinternal"
 	"errors"
 	"fmt"
 	"reflect"

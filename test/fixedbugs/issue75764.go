@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO: disable test for ppc64le/dynlink? See cmd/compile/internal/reader/noder.go:addTailCall.
+// TODO: disable test for ppc64le/dynlink? See cmd/compile/publicinternal/reader/noder.go:addTailCall.
 
 package main
 

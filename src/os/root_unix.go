@@ -8,7 +8,7 @@ package os
 
 import (
 	"errors"
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"runtime"
 	"syscall"
 	"time"

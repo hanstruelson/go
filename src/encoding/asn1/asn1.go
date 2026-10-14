@@ -22,7 +22,7 @@ package asn1
 import (
 	"errors"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"math"
 	"math/big"
 	"reflect"

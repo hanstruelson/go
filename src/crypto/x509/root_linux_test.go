@@ -9,7 +9,7 @@ package x509
 import (
 	"encoding/pem"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"syscall"
 	"testing"

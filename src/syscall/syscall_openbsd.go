@@ -13,7 +13,7 @@
 package syscall
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 )
 

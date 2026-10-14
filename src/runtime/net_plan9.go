@@ -8,7 +8,7 @@ import (
 	_ "unsafe"
 )
 
-//go:linkname runtime_ignoreHangup internal/poll.runtime_ignoreHangup
+//go:linkname runtime_ignoreHangup publicinternal/poll.runtime_ignoreHangup
 func runtime_ignoreHangup() {
 	getg().m.ignoreHangup = true
 }
@@ -16,7 +16,7 @@ func runtime_ignoreHangup() {
 // A note is delivered at the next kernel exit, so sleep once for each
 // one Cancel posted, or it arrives when nothing ignores it any more.
 //
-//go:linkname runtime_unignoreHangup internal/poll.runtime_unignoreHangup
+//go:linkname runtime_unignoreHangup publicinternal/poll.runtime_unignoreHangup
 func runtime_unignoreHangup(notes int) {
 	for ; notes > 0; notes-- {
 		sleep(0)

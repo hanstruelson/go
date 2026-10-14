@@ -62,7 +62,7 @@ func loadAndTypeCheck(ctx context, dir string) (*types.Package, *types.Info, []*
 		return nil, nil, nil
 	}
 	if len(bp.AllTags) > 0 {
-		ctx.errorf("internal/spec must be target-independent, but found build tags: %v", bp.AllTags)
+		ctx.errorf("publicinternal/spec must be target-independent, but found build tags: %v", bp.AllTags)
 		return nil, nil, nil
 	}
 
@@ -94,7 +94,7 @@ func loadAndTypeCheck(ctx context, dir string) (*types.Package, *types.Info, []*
 
 	// Note: Imported packages resolve against the running toolchain's standard
 	// library, not the dev tree's. For math and math/bits that is immaterial.
-	// Constraint: internal/spec may import only long-stable standard library packages.
+	// Constraint: publicinternal/spec may import only long-stable standard library packages.
 	conf := types.Config{
 		GoVersion: specGoVersion,
 		Importer:  importer.ForCompiler(&ctx.root.fset, "source", nil),
@@ -103,7 +103,7 @@ func loadAndTypeCheck(ctx context, dir string) (*types.Package, *types.Info, []*
 		},
 	}
 
-	typesPkg, err := conf.Check("simd/internal/spec", &ctx.root.fset, astFiles, info)
+	typesPkg, err := conf.Check("simd/publicinternal/spec", &ctx.root.fset, astFiles, info)
 	if err != nil && typesPkg == nil {
 		return nil, nil, nil
 	}

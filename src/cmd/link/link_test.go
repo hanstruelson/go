@@ -12,11 +12,11 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"errors"
-	"internal/abi"
-	"internal/buildcfg"
-	"internal/platform"
-	"internal/testenv"
-	"internal/xcoff"
+	"publicinternal/abi"
+	"publicinternal/buildcfg"
+	"publicinternal/platform"
+	"publicinternal/testenv"
+	"publicinternal/xcoff"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,9 +27,9 @@ import (
 	"testing"
 	"unsafe"
 
-	imacho "cmd/internal/macho"
-	"cmd/internal/objfile"
-	"cmd/internal/sys"
+	imacho "cmd/publicinternal/macho"
+	"cmd/publicinternal/objfile"
+	"cmd/publicinternal/sys"
 )
 
 // TestMain allows this test binary to run as a -toolexec wrapper for

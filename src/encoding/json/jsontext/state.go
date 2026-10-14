@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // ErrDuplicateName indicates that a JSON token could not be

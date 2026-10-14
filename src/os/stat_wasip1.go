@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/filepathlite"
+	"publicinternal/filepathlite"
 	"syscall"
 	"time"
 )

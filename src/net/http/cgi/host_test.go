@@ -9,7 +9,7 @@ package cgi
 import (
 	"bufio"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"net"
 	"net/http"

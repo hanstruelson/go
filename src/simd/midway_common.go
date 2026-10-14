@@ -8,8 +8,8 @@ package simd
 
 import (
 	"fmt"
-	"internal/godebug"
-	"internal/simd/variants"
+	"publicinternal/godebug"
+	"publicinternal/simd/variants"
 	"strconv"
 )
 

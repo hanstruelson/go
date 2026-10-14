@@ -7,7 +7,7 @@ package zlib
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"testing"

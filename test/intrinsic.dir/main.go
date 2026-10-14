@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	T "internal/runtime/sys"
+	T "publicinternal/runtime/sys"
 )
 
 var A = []uint64{0x0102030405060708, 0x1122334455667788}

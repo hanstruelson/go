@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/testlog"
+	"publicinternal/testlog"
 	"runtime"
 	"syscall"
 )

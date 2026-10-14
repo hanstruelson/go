@@ -45,9 +45,9 @@ package os
 
 import (
 	"errors"
-	"internal/filepathlite"
-	"internal/poll"
-	"internal/testlog"
+	"publicinternal/filepathlite"
+	"publicinternal/poll"
+	"publicinternal/testlog"
 	"io"
 	"io/fs"
 	"runtime"

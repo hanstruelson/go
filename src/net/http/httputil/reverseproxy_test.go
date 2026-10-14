@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/textproto"
 	"net/url"
 	"os"

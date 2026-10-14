@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"sync"
 	"syscall"

@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
-	"internal/runtime/syscall/windows"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
+	"publicinternal/runtime/syscall/windows"
 	"unsafe"
 )
 

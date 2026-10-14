@@ -7,7 +7,7 @@
 package coverage
 
 import (
-	"internal/coverage/cfile"
+	"publicinternal/coverage/cfile"
 	"io"
 )
 

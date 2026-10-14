@@ -2,4 +2,4 @@
 # 'go get' with multiple module-only arguments was racy.
 
 go mod init example.com
-go get golang.org/x/text@v0.3.0 golang.org/x/internal@v0.1.0 golang.org/x/exp@none
+go get golang.org/x/text@v0.3.0 golang.org/x/publicinternal@v0.1.0 golang.org/x/exp@none

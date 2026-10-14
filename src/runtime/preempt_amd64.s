@@ -37,9 +37,9 @@ TEXT ·asyncPreempt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVQ m_p(AX), AX
 	LEAQ (p_xRegs+xRegPerP_scratch)(AX), AX
 	#ifdef GOEXPERIMENT_simd
-	CMPB internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JE saveAVX512
-	CMPB internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JE saveAVX
 	#endif
 saveSSE:
@@ -127,9 +127,9 @@ preempt:
 	MOVQ m_p(AX), AX
 	MOVQ (p_xRegs+xRegPerP_cache)(AX), AX
 	#ifdef GOEXPERIMENT_simd
-	CMPB internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JE restoreAVX512
-	CMPB internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JE restoreAVX
 	#endif
 restoreSSE:

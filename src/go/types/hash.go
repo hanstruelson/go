@@ -100,7 +100,7 @@ func (hr hasher) hash(h *maphash.Hash, t Type) {
 
 		// Hash type restrictions.
 		// TODO(adonovan): call (fork of) InterfaceTermSet from
-		// golang.org/x/tools/internal/typeparams/normalize.go.
+		// golang.org/x/tools/publicinternal/typeparams/normalize.go.
 		// hr.hashTermSet(h, terms)
 
 	case *Map:
@@ -160,7 +160,7 @@ func (hr hasher) hash(h *maphash.Hash, t Type) {
 	case *Union:
 		h.WriteByte('U')
 		// TODO(adonovan): opt: call (fork of) UnionTermSet from
-		// golang.org/x/tools/internal/typeparams/normalize.go.
+		// golang.org/x/tools/publicinternal/typeparams/normalize.go.
 		// hr.hashTermSet(h, terms)
 
 	default:

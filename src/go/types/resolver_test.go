@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"slices"
 	"testing"
 

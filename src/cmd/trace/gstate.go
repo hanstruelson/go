@@ -6,9 +6,9 @@ package main
 
 import (
 	"fmt"
-	"internal/trace"
-	"internal/trace/traceviewer"
-	"internal/trace/traceviewer/format"
+	"publicinternal/trace"
+	"publicinternal/trace/traceviewer"
+	"publicinternal/trace/traceviewer/format"
 	"strings"
 )
 

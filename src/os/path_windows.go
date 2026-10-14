@@ -5,8 +5,8 @@
 package os
 
 import (
-	"internal/filepathlite"
-	"internal/syscall/windows"
+	"publicinternal/filepathlite"
+	"publicinternal/syscall/windows"
 	"syscall"
 )
 

@@ -7,7 +7,7 @@ package pe
 import (
 	"encoding/binary"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"strconv"
 )

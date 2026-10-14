@@ -6,7 +6,7 @@ package httptest
 
 import (
 	"bufio"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"net"
 	"net/http"

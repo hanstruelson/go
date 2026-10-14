@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Note: These tests are focused mainly on generating the right errors.
-// The extensive numerical tests are in ../internal/strconv.
+// The extensive numerical tests are in ../publicinternal/strconv.
 // Add new tests there instead of here whenever possible.
 
 package strconv_test

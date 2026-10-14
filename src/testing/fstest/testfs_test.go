@@ -6,7 +6,7 @@ package fstest
 
 import (
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"

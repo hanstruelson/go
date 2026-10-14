@@ -5,26 +5,26 @@
 package main
 
 import (
-	"cmd/internal/sys"
-	"cmd/link/internal/amd64"
-	"cmd/link/internal/arm"
-	"cmd/link/internal/arm64"
-	"cmd/link/internal/ld"
-	"cmd/link/internal/loong64"
-	"cmd/link/internal/mips"
-	"cmd/link/internal/mips64"
-	"cmd/link/internal/ppc64"
-	"cmd/link/internal/riscv64"
-	"cmd/link/internal/s390x"
-	"cmd/link/internal/wasm"
-	"cmd/link/internal/x86"
+	"cmd/publicinternal/sys"
+	"cmd/link/publicinternal/amd64"
+	"cmd/link/publicinternal/arm"
+	"cmd/link/publicinternal/arm64"
+	"cmd/link/publicinternal/ld"
+	"cmd/link/publicinternal/loong64"
+	"cmd/link/publicinternal/mips"
+	"cmd/link/publicinternal/mips64"
+	"cmd/link/publicinternal/ppc64"
+	"cmd/link/publicinternal/riscv64"
+	"cmd/link/publicinternal/s390x"
+	"cmd/link/publicinternal/wasm"
+	"cmd/link/publicinternal/x86"
 	"fmt"
-	"internal/buildcfg"
+	"publicinternal/buildcfg"
 	"os"
 )
 
-// The bulk of the linker implementation lives in cmd/link/internal/ld.
-// Architecture-specific code lives in cmd/link/internal/GOARCH.
+// The bulk of the linker implementation lives in cmd/link/publicinternal/ld.
+// Architecture-specific code lives in cmd/link/publicinternal/GOARCH.
 //
 // Program initialization:
 //

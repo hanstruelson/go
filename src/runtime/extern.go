@@ -42,7 +42,7 @@ It is a comma-separated list of name=val pairs setting these named variables:
 	cpu.*: cpu.all=off disables the use of all optional instruction set extensions.
 	cpu.extension=off disables use of instructions from the specified instruction set extension.
 	extension is the lower case name for the instruction set extension such as sse41 or avx
-	as listed in internal/cpu package. As an example cpu.avx=off disables runtime detection
+	as listed in publicinternal/cpu package. As an example cpu.avx=off disables runtime detection
 	and thereby use of AVX instructions.
 
 	cgocheck: setting cgocheck=0 disables all checks for packages
@@ -50,7 +50,7 @@ It is a comma-separated list of name=val pairs setting these named variables:
 	Setting cgocheck=1 (the default) enables relatively cheap
 	checks that may miss some errors. A more complete, but slow,
 	cgocheck mode can be enabled using GOEXPERIMENT (which
-	requires a rebuild), see https://pkg.go.dev/internal/goexperiment for details.
+	requires a rebuild), see https://pkg.go.dev/publicinternal/goexperiment for details.
 
 	checkfinalizers: setting checkfinalizers=1 causes the garbage collector to run
 	multiple partial non-parallel stop-the-world collections to identify common issues with
@@ -301,8 +301,8 @@ closed, they are opened pointing at /dev/null.
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/goos"
+	"publicinternal/goarch"
+	"publicinternal/goos"
 )
 
 // Caller reports file and line number information about function invocations on

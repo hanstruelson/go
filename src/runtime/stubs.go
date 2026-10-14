@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 )
 
@@ -152,7 +152,7 @@ func reflect_memmove(to, from unsafe.Pointer, n uintptr) {
 // exported value for testing
 const hashLoad = float32(loadFactorNum) / float32(loadFactorDen)
 
-// in internal/bytealg/equal_*.s
+// in publicinternal/bytealg/equal_*.s
 //
 // memequal should be an internal detail,
 // but widely used packages access it using linkname.
@@ -465,7 +465,7 @@ func sigpanic0()
 // It should be modified with care and are generally only
 // modified when testing this package.
 //
-// It should never be set higher than its internal/abi
+// It should never be set higher than its publicinternal/abi
 // constant counterparts, because the system relies on a
 // structure that is at least large enough to hold the
 // registers the system supports.

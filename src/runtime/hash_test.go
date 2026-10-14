@@ -7,9 +7,9 @@ package runtime_test
 import (
 	"encoding/binary"
 	"fmt"
-	"internal/byteorder"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/byteorder"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"math"
 	"math/rand"
 	"os"

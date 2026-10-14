@@ -91,9 +91,9 @@
 package runtime
 
 import (
-	"internal/goos"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/goos"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

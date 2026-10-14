@@ -8,8 +8,8 @@
 package strings
 
 import (
-	"internal/bytealg"
-	"internal/stringslite"
+	"publicinternal/bytealg"
+	"publicinternal/stringslite"
 	"math/bits"
 	"unicode"
 	"unicode/utf8"

@@ -9,7 +9,7 @@ package http
 import (
 	"errors"
 	"fmt"
-	"net/http/internal/http2"
+	"net/http/publicinternal/http2"
 	"testing"
 )
 

@@ -59,7 +59,7 @@ package context
 
 import (
 	"errors"
-	"internal/reflectlite"
+	"publicinternal/reflectlite"
 	"sync"
 	"sync/atomic"
 	"time"

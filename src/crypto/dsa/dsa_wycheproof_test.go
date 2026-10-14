@@ -5,7 +5,7 @@ package dsa_test
 
 import (
 	"crypto/dsa"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/x509"
 	"math/big"
 	"testing"

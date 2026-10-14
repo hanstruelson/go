@@ -16,9 +16,9 @@
 package reflect
 
 import (
-	"internal/abi"
-	"internal/bytealg"
-	"internal/goarch"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
+	"publicinternal/goarch"
 	"iter"
 	"runtime"
 	"strconv"
@@ -289,9 +289,9 @@ type Type interface {
 // See https://golang.org/issue/4876 for more details.
 
 /*
- * These data structures are known to the compiler (../cmd/compile/internal/reflectdata/reflect.go).
+ * These data structures are known to the compiler (../cmd/compile/publicinternal/reflectdata/reflect.go).
  * A few are known to ../runtime/type.go to convey to debuggers.
- * They are also known to ../internal/abi/type.go.
+ * They are also known to ../publicinternal/abi/type.go.
  */
 
 // A Kind represents the specific kind of type that a [Type] represents.
@@ -2226,7 +2226,7 @@ func isValidFieldName(fieldName string) bool {
 	return len(fieldName) > 0
 }
 
-// This must match cmd/compile/internal/compare.IsRegularMemory
+// This must match cmd/compile/publicinternal/compare.IsRegularMemory
 func isRegularMemory(t Type) bool {
 	switch t.Kind() {
 	case Array:
@@ -2647,7 +2647,7 @@ func runtimeStructField(field StructField) (structField, string) {
 
 // typeptrdata returns the length in bytes of the prefix of t
 // containing pointer data. Anything after this offset is scalar data.
-// keep in sync with ../cmd/compile/internal/reflectdata/reflect.go
+// keep in sync with ../cmd/compile/publicinternal/reflectdata/reflect.go
 func typeptrdata(t *abi.Type) uintptr {
 	switch t.Kind() {
 	case abi.Struct:

@@ -6,7 +6,7 @@ package fs
 
 import (
 	"errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"slices"
 )
 

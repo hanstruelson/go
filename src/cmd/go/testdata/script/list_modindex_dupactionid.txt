@@ -77,7 +77,7 @@ func main() {
 
 // objectid returns the object id that the given actionEntryFile points to.
 func objectid(actionEntryFile string) (string, error) {
-	// See cmd/go/internal/cache.(*DiskCache).get for the code that reads
+	// See cmd/go/publicinternal/cache.(*DiskCache).get for the code that reads
 	// from the action entry files. The following is based on that function.
 	const (
 		HashSize  = 32

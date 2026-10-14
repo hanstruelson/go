@@ -5,7 +5,7 @@ package rsa_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/rsa"
 	"crypto/x509"
 	"fmt"

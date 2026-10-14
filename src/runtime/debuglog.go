@@ -26,10 +26,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/byteorder"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/byteorder"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

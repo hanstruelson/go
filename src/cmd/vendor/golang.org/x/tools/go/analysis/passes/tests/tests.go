@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/typesinternal"
 )
 
 //go:embed doc.go
@@ -463,7 +463,7 @@ func checkTest(pass *analysis.Pass, fn *ast.FuncDecl, prefix string) {
 	}
 
 	if tparams := fn.Type.TypeParams; tparams != nil && len(tparams.List) > 0 {
-		// Note: cmd/go/internal/load also errors about TestXXX and BenchmarkXXX functions with type parameters.
+		// Note: cmd/go/publicinternal/load also errors about TestXXX and BenchmarkXXX functions with type parameters.
 		// We have currently decided to also warn before compilation/package loading. This can help users in IDEs.
 		pass.ReportRangef(astutil.RangeOf(tparams.Opening, tparams.Closing),
 			"%s has type parameters: it will not be run by go test as a %sXXX function",

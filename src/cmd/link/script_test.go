@@ -5,9 +5,9 @@
 package main
 
 import (
-	"cmd/internal/script/scripttest"
+	"cmd/publicinternal/script/scripttest"
 	"flag"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"runtime"
 	"testing"
 )

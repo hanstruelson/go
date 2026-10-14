@@ -14,7 +14,7 @@ import "unsafe"
 // Zero means not to use faketime.
 var faketime int64
 
-// Exported via linkname for use by time and internal/poll.
+// Exported via linkname for use by time and publicinternal/poll.
 //
 // Many external packages also linkname nanotime for a fast monotonic time.
 // Such code should be updated to use:

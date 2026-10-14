@@ -12,7 +12,7 @@
 package main
 
 import (
-	"cmd/internal/objabi"
+	"cmd/publicinternal/objabi"
 	"encoding/json"
 	"flag"
 	"fmt"

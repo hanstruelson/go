@@ -6,7 +6,7 @@ package trace
 
 import (
 	"fmt"
-	"internal/trace/tracev2"
+	"publicinternal/trace/tracev2"
 	"io"
 	"runtime"
 	"sync"

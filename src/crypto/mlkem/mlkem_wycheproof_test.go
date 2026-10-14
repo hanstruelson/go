@@ -6,8 +6,8 @@ package mlkem_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest/wycheproof"
-	"crypto/internal/fips140/mlkem"
+	"crypto/publicinternal/cryptotest/wycheproof"
+	"crypto/publicinternal/fips140/mlkem"
 	. "crypto/mlkem"
 	"crypto/mlkem/mlkemtest"
 	"testing"

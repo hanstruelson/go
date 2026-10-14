@@ -9,13 +9,13 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/cpu"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

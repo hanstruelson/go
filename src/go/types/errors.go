@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	. "internal/types/errors"
+	. "publicinternal/types/errors"
 	"runtime"
 	"strings"
 )

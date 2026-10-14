@@ -8,8 +8,8 @@ package maphash
 
 import (
 	"fmt"
-	"internal/runtime/maps"
-	"internal/testenv"
+	"publicinternal/runtime/maps"
+	"publicinternal/testenv"
 	"math"
 	"math/rand"
 	"runtime"

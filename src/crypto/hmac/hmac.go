@@ -22,10 +22,10 @@ timing side-channels:
 package hmac
 
 import (
-	"crypto/internal/boring"
-	"crypto/internal/fips140/hmac"
-	"crypto/internal/fips140hash"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/hmac"
+	"crypto/publicinternal/fips140hash"
+	"crypto/publicinternal/fips140only"
 	"crypto/subtle"
 	"hash"
 )

@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"internal/obscuretestdata"
+	"publicinternal/obscuretestdata"
 	"io"
 	"os"
 	"strings"

@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/goexperiment"
-	"internal/runtime/atomic"
-	"internal/runtime/math"
-	"internal/strconv"
+	"publicinternal/cpu"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/math"
+	"publicinternal/strconv"
 	_ "unsafe"
 )
 

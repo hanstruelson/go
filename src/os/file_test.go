@@ -5,7 +5,7 @@
 package os_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	. "os"
 	"path/filepath"

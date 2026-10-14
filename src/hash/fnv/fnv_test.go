@@ -9,7 +9,7 @@ import (
 	"encoding"
 	"encoding/binary"
 	"hash"
-	"internal/testhash"
+	"publicinternal/testhash"
 	"io"
 	"testing"
 )

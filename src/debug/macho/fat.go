@@ -7,7 +7,7 @@ package macho
 import (
 	"encoding/binary"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"os"
 )

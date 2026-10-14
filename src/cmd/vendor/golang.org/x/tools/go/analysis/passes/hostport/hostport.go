@@ -17,8 +17,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
-	"golang.org/x/tools/internal/typesinternal/typeindex"
+	typeindexanalyzer "golang.org/x/tools/publicinternal/analysis/typeindex"
+	"golang.org/x/tools/publicinternal/typesinternal/typeindex"
 )
 
 const Doc = `check format of addresses passed to net.Dial

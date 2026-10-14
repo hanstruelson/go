@@ -10,7 +10,7 @@ import (
 	"cmp"
 	"go/ast"
 	"go/token"
-	"internal/lazyregexp"
+	"publicinternal/lazyregexp"
 	"slices"
 	"strconv"
 	"strings"

@@ -6,7 +6,7 @@ package tls
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -15,8 +15,8 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"internal/byteorder"
-	"internal/testenv"
+	"publicinternal/byteorder"
+	"publicinternal/testenv"
 	"io"
 	"log"
 	"maps"

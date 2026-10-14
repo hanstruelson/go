@@ -7,15 +7,15 @@
 package rand
 
 import (
-	"crypto/internal/boring"
-	"crypto/internal/fips140/drbg"
-	"crypto/internal/rand"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/drbg"
+	"crypto/publicinternal/rand"
 	"io"
 	_ "unsafe"
 
 	// Ensure the go:linkname from testing/cryptotest to
-	// crypto/internal/rand.SetTestingReader works.
-	_ "crypto/internal/rand"
+	// crypto/publicinternal/rand.SetTestingReader works.
+	_ "crypto/publicinternal/rand"
 )
 
 // Reader is a global, shared instance of a cryptographically

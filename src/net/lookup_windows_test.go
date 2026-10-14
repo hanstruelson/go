@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os/exec"
 	"reflect"
 	"regexp"

@@ -8,8 +8,8 @@ package sha1
 
 import (
 	"bytes"
-	"crypto/internal/boring"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/cryptotest"
 	"encoding"
 	"fmt"
 	"hash"

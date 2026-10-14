@@ -5,8 +5,8 @@
 package main
 
 import (
-	"cmd/internal/objabi"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/telemetry/counter"
 
 	"golang.org/x/tools/go/analysis/suite/vet"
 	"golang.org/x/tools/go/analysis/unitchecker"

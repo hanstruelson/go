@@ -6,7 +6,7 @@ package main
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"strconv"

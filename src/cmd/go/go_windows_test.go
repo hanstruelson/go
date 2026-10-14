@@ -5,13 +5,13 @@
 package main_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"cmd/internal/robustio"
+	"cmd/publicinternal/robustio"
 )
 
 func TestAbsolutePath(t *testing.T) {

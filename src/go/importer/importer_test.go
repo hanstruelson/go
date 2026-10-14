@@ -7,7 +7,7 @@ package importer
 import (
 	"go/build"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"strings"

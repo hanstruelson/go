@@ -41,7 +41,7 @@ tail:
 	CMPQ	BX, $256
 	JBE	_129through256
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasERMS(SB), $1 // enhanced REP MOVSB/STOSB
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasERMS(SB), $1 // enhanced REP MOVSB/STOSB
 	JNE	skip_erms
 
 	// If the size is less than 2kb, do not use ERMS as it has a big start-up cost.
@@ -53,7 +53,7 @@ tail:
 
 skip_erms:
 #ifndef hasAVX2
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX2(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX2(SB), $1
 	JE	loop_preheader_avx2
 	// TODO: for really big clears, use MOVNTDQ, even without AVX2.
 
@@ -107,7 +107,7 @@ loop_avx2:
 
 loop_preheader_erms:
 #ifndef hasAVX2
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX2(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX2(SB), $1
 	JNE	loop_erms
 #endif
 

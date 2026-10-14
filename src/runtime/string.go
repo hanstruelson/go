@@ -5,17 +5,17 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/bytealg"
-	"internal/goarch"
-	"internal/goos"
-	"internal/runtime/math"
-	"internal/runtime/sys"
-	"internal/strconv"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
+	"publicinternal/goarch"
+	"publicinternal/goos"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
+	"publicinternal/strconv"
 	"unsafe"
 )
 
-// These constants are known to the compiler (see cmd/compile/internal/walk).
+// These constants are known to the compiler (see cmd/compile/publicinternal/walk).
 // tmpStringBufSize bounds the stack buffer for string results (concatenation
 // and []byte/[]rune->string). tmpRuneBufSize bounds the string->[]rune buffer;
 // it is kept smaller because rune buffers cost 4 bytes per element while
@@ -390,9 +390,9 @@ func gostring(p *byte) string {
 	return s
 }
 
-// internal_syscall_gostring is a version of gostring for internal/syscall/unix.
+// internal_syscall_gostring is a version of gostring for publicinternal/syscall/unix.
 //
-//go:linkname internal_syscall_gostring internal/syscall/unix.gostring
+//go:linkname internal_syscall_gostring publicinternal/syscall/unix.gostring
 func internal_syscall_gostring(p *byte) string {
 	return gostring(p)
 }

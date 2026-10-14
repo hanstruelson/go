@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/runtime/sys"
-	"internal/trace/tracev2"
+	"publicinternal/runtime/sys"
+	"publicinternal/trace/tracev2"
 	"unsafe"
 )
 

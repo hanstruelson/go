@@ -7,7 +7,7 @@ package main
 import (
 	"bytes"
 	"flag"
-	"internal/diff"
+	"publicinternal/diff"
 	"os"
 	"path/filepath"
 	"strings"

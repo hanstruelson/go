@@ -12,7 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"strings"
 	"testing"
 

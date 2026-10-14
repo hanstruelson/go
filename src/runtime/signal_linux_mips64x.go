@@ -7,7 +7,7 @@
 package runtime
 
 import (
-	"internal/goarch"
+	"publicinternal/goarch"
 	"unsafe"
 )
 

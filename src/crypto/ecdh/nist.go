@@ -6,10 +6,10 @@ package ecdh
 
 import (
 	"bytes"
-	"crypto/internal/boring"
-	"crypto/internal/fips140/ecdh"
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140/ecdh"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 	"errors"
 	"io"
 )

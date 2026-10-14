@@ -5,7 +5,7 @@
 package testing_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"regexp"
 	"strings"

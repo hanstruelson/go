@@ -22,10 +22,10 @@ import (
 	"strings"
 	"sync"
 
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonopts"
+	"encoding/json/publicinternal/jsonwire"
 	"encoding/json/jsontext"
 )
 
@@ -1038,7 +1038,7 @@ func makeMapMarshaler(t reflect.Type) *marshaler {
 				}
 				// TODO: If AllowDuplicateNames is enabled, then sort according
 				// to reflect.Value as well if the names are equal.
-				// See internal/fmtsort.
+				// See publicinternal/fmtsort.
 				slices.SortFunc(members, func(x, y member) int {
 					return strings.Compare(x.name, y.name)
 				})

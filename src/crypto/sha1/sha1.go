@@ -10,11 +10,11 @@ package sha1
 
 import (
 	"crypto"
-	"crypto/internal/boring"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140only"
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 func init() {

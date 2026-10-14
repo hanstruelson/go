@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/runtime/syscall/linux"
+	"publicinternal/runtime/syscall/linux"
 	"unsafe"
 )
 
@@ -20,7 +20,7 @@ type riscvHWProbePairs = struct {
 // supported on all cores, which is what we're doing here. However, as we're only calling
 // this syscall once, it may not be worth the added effort to implement the VDSO call.
 
-//go:linkname internal_cpu_riscvHWProbe internal/cpu.riscvHWProbe
+//go:linkname internal_cpu_riscvHWProbe publicinternal/cpu.riscvHWProbe
 func internal_cpu_riscvHWProbe(pairs []riscvHWProbePairs, flags uint) bool {
 	// sys_RISCV_HWPROBE is copied from golang.org/x/sys/unix/zsysnum_linux_riscv64.go.
 	const sys_RISCV_HWPROBE uintptr = 258
@@ -29,7 +29,7 @@ func internal_cpu_riscvHWProbe(pairs []riscvHWProbePairs, flags uint) bool {
 		return false
 	}
 	// Passing in a cpuCount of 0 and a cpu of nil ensures that only extensions supported by all the
-	// cores are returned, which is the behaviour we want in internal/cpu.
+	// cores are returned, which is the behaviour we want in publicinternal/cpu.
 	_, _, e1 := linux.Syscall6(sys_RISCV_HWPROBE, uintptr(unsafe.Pointer(&pairs[0])), uintptr(len(pairs)), uintptr(0), uintptr(unsafe.Pointer(nil)), uintptr(flags), 0)
 	return e1 == 0
 }

@@ -7,7 +7,7 @@ package debug_test
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"os/exec"

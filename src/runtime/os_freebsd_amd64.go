@@ -4,7 +4,7 @@
 
 package runtime
 
-import "internal/abi"
+import "publicinternal/abi"
 
 func cgoSigtramp()
 

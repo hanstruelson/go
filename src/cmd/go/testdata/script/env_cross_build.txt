@@ -8,13 +8,13 @@ env GOARCH=
 env GOEXPERIMENT=
 
 env GOENV=windows-amd64
-go build internal/abi
+go build publicinternal/abi
 
 env GOENV=ios-arm64
-go build internal/abi
+go build publicinternal/abi
 
 env GOENV=linux-mips
-go build internal/abi
+go build publicinternal/abi
 
 -- windows-amd64 --
 GOOS=windows

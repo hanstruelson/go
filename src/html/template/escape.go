@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"maps"
 	"regexp"

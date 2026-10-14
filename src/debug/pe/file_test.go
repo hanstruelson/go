@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"debug/dwarf"
 	"encoding/binary"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

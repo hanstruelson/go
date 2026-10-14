@@ -5,7 +5,7 @@
 package race_test
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"testing"
 	"time"
 )

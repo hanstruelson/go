@@ -15,8 +15,8 @@ import (
 	"context"
 	_ "embed"
 	"flag"
-	"internal/testenv"
-	"internal/txtar"
+	"publicinternal/testenv"
+	"publicinternal/txtar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,11 +25,11 @@ import (
 	"testing"
 	"time"
 
-	"cmd/go/internal/cfg"
-	"cmd/go/internal/gover"
-	"cmd/go/internal/vcweb/vcstest"
-	"cmd/internal/script"
-	"cmd/internal/script/scripttest"
+	"cmd/go/publicinternal/cfg"
+	"cmd/go/publicinternal/gover"
+	"cmd/go/publicinternal/vcweb/vcstest"
+	"cmd/publicinternal/script"
+	"cmd/publicinternal/script/scripttest"
 
 	"golang.org/x/telemetry/counter/countertest"
 )

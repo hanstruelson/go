@@ -264,7 +264,7 @@
 package synctest
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"testing"
 	"time"
 	_ "unsafe" // for linkname

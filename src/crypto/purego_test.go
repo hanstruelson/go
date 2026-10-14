@@ -6,7 +6,7 @@ package crypto_test
 
 import (
 	"go/build"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"strings"

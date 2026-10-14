@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/maps"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/maps"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -56,7 +56,7 @@ import (
 //     this to verify the iterator is initialized.
 //   - github.com/segmentio/encoding and github.com/RomiChan/protobuf check if h
 //     is non-nil, but the code has no effect. Thus the value of h does not
-//     matter. See internal/runtime_reflect/map.go.
+//     matter. See publicinternal/runtime_reflect/map.go.
 type linknameIter struct {
 	// Fields from hiter.
 	key  unsafe.Pointer

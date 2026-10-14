@@ -14,7 +14,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"os/exec"

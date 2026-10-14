@@ -9,8 +9,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/versions"
 )
 
 var AnyAnalyzer = &analysis.Analyzer{

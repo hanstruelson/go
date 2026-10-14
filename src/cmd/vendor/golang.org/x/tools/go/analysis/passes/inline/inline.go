@@ -15,19 +15,19 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/gofixdirective"
+	"golang.org/x/tools/go/analysis/passes/publicinternal/gofixdirective"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/moreiters"
-	"golang.org/x/tools/internal/packagepath"
-	"golang.org/x/tools/internal/refactor"
-	"golang.org/x/tools/internal/refactor/inline"
-	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	typeindexanalyzer "golang.org/x/tools/publicinternal/analysis/typeindex"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/moreiters"
+	"golang.org/x/tools/publicinternal/packagepath"
+	"golang.org/x/tools/publicinternal/refactor"
+	"golang.org/x/tools/publicinternal/refactor/inline"
+	"golang.org/x/tools/publicinternal/typesinternal"
+	"golang.org/x/tools/publicinternal/typesinternal/typeindex"
 )
 
 //go:embed doc.go
@@ -243,7 +243,7 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 			Pos:      call.Pos(),
 			End:      call.End(),
 			Message:  fmt.Sprintf("Call of %v should be inlined", callee),
-			Category: "inline_call", // keep consistent with gopls/internal/golang.fixInlineCall
+			Category: "inline_call", // keep consistent with gopls/publicinternal/golang.fixInlineCall
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message:   fmt.Sprintf("Inline call of %v", callee),
 				TextEdits: edits, // within gopls, this is nil => compute fix's edits lazily

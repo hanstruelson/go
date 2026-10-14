@@ -41,7 +41,7 @@ var (
 
 // fuzzWorkerExitCode is used as an exit code by fuzz worker processes after an
 // internal error. This distinguishes internal errors from uncontrolled panics
-// and other failures. Keep in sync with internal/fuzz.workerExitCode.
+// and other failures. Keep in sync with publicinternal/fuzz.workerExitCode.
 const fuzzWorkerExitCode = 70
 
 // InternalFuzzTarget is an internal type but exported because it is
@@ -85,9 +85,9 @@ type F struct {
 
 var _ TB = (*F)(nil)
 
-// corpusEntry is an alias to the same type as internal/fuzz.CorpusEntry.
+// corpusEntry is an alias to the same type as publicinternal/fuzz.CorpusEntry.
 // We use a type alias because we don't want to export this type, and we can't
-// import internal/fuzz from testing.
+// import publicinternal/fuzz from testing.
 type corpusEntry = struct {
 	Parent     string
 	Path       string

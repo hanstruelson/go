@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"runtime"
 	"runtime/metrics"
 	"sync/atomic"

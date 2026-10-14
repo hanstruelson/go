@@ -14,7 +14,7 @@
 // do statically, as user code has explicit references (reads and
 // writes) to stack variables. The compiler can do a simple dataflow
 // analysis to determine liveness of stack variables at every point in
-// the code. See cmd/compile/internal/gc/plive.go for that analysis.
+// the code. See cmd/compile/publicinternal/gc/plive.go for that analysis.
 //
 // However, when we take the address of a stack variable, determining
 // whether that variable is still live is less clear. We can still
@@ -95,8 +95,8 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/runtime/sys"
+	"publicinternal/goarch"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

@@ -9,7 +9,7 @@
 package runtime
 
 import (
-	"internal/runtime/sys"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -27,7 +27,7 @@ import (
 // smashed by freeing and reallocating.
 //
 // Consider marking fixalloc'd types not in heap by embedding
-// internal/runtime/sys.NotInHeap.
+// publicinternal/runtime/sys.NotInHeap.
 type fixalloc struct {
 	size   uintptr
 	first  func(arg, p unsafe.Pointer) // called first time p is returned

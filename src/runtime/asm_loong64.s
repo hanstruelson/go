@@ -408,7 +408,7 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48;		\
 	ADDV	$8, R12;			\
 	BLT	R5, R13, check8;		\
 	/* copy 16 bytes a time */		\
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R16;	\
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R16;	\
 	BEQ	R16, copy16_again;		\
 loop16:;					\
 	VMOVQ	(R4), V0;			\
@@ -801,7 +801,7 @@ TEXT runtime·addmoduledata(SB),NOSPLIT,$0-0
 	ADDV	$0x10, R3
 	RET
 
-// spillArgs stores return values from registers to a *internal/abi.RegArgs in R25.
+// spillArgs stores return values from registers to a *publicinternal/abi.RegArgs in R25.
 TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVV	R4, (0*8)(R25)
 	MOVV	R5, (1*8)(R25)
@@ -837,7 +837,7 @@ TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVD	F15, (31*8)(R25)
 	RET
 
-// unspillArgs loads args into registers from a *internal/abi.RegArgs in R25.
+// unspillArgs loads args into registers from a *publicinternal/abi.RegArgs in R25.
 TEXT ·unspillArgs(SB),NOSPLIT,$0-0
 	MOVV	(0*8)(R25), R4
 	MOVV	(1*8)(R25), R5

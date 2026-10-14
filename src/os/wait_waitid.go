@@ -10,7 +10,7 @@
 package os
 
 import (
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"runtime"
 	"syscall"
 )

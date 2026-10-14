@@ -9,7 +9,7 @@ import (
 	"golang.org/x/exp/rand"
 
 	"gonum.org/v1/gonum/graph/community"
-	"gonum.org/v1/gonum/graph/internal/ordered"
+	"gonum.org/v1/gonum/graph/publicinternal/ordered"
 	"gonum.org/v1/gonum/graph/simple"
 )
 
@@ -98,7 +98,7 @@ import (
 	"golang.org/x/exp/rand"
 
 	"gonum.org/v1/gonum/graph/community"
-	"gonum.org/v1/gonum/graph/internal/ordered"
+	"gonum.org/v1/gonum/graph/publicinternal/ordered"
 	"gonum.org/v1/gonum/graph/simple"
 )
 

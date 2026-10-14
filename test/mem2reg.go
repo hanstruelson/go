@@ -9,7 +9,7 @@
 
 package main
 
-// The following functions are ported from src/cmd/compile/internal/ssa/mem2reg_test.go.
+// The following functions are ported from src/cmd/compile/publicinternal/ssa/mem2reg_test.go.
 
 // Single-block mem2reg test
 

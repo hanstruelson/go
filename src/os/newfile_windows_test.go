@@ -6,8 +6,8 @@ package os_test
 
 import (
 	"errors"
-	"internal/poll"
-	"internal/syscall/windows"
+	"publicinternal/poll"
+	"publicinternal/syscall/windows"
 	"io"
 	"os"
 	"path/filepath"

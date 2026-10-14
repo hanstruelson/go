@@ -6,7 +6,7 @@ package simd
 
 import (
 	"simd/archsimd"
-	"simd/internal/bridge"
+	"simd/publicinternal/bridge"
 )
 
 func (x Int8s) ToArch() any

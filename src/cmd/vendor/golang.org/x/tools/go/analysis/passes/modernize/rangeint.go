@@ -14,13 +14,13 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/typeparams"
-	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/typesinternal/typeindex"
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	typeindexanalyzer "golang.org/x/tools/publicinternal/analysis/typeindex"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/typeparams"
+	"golang.org/x/tools/publicinternal/typesinternal"
+	"golang.org/x/tools/publicinternal/typesinternal/typeindex"
+	"golang.org/x/tools/publicinternal/versions"
 )
 
 var RangeIntAnalyzer = &analysis.Analyzer{

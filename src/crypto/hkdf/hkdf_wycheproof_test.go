@@ -6,7 +6,7 @@ package hkdf_test
 import (
 	"bytes"
 	"crypto/hkdf"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"

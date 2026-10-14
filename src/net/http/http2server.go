@@ -12,12 +12,12 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http/internal/http2"
+	"net/http/publicinternal/http2"
 	"time"
 )
 
 // This file connects the net/http Server to the HTTP/2 server
-// in the net/http/internal/http2 package. It is omitted when
+// in the net/http/publicinternal/http2 package. It is omitted when
 // the nethttpomithttp2 or nethttpomithttp2server build tag is set.
 
 const omitHTTP2Server = false

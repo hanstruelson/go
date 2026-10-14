@@ -48,7 +48,7 @@ import (
 	"iter"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/publicinternal/typeparams"
 )
 
 // A Constraint records the fact that the RHS type does and must

@@ -53,8 +53,8 @@ const (
 	O_ASYNC        = 0x02000
 	o_DIRECTORY    = 0x04000
 	O_CLOEXEC      = 0x80000
-	o_NOFOLLOW_ANY = 0x200000000 // used by internal/syscall/windows
-	o_WRITE_ATTRS  = 0x800000000 // used by internal/syscall/windows
+	o_NOFOLLOW_ANY = 0x200000000 // used by publicinternal/syscall/windows
+	o_WRITE_ATTRS  = 0x800000000 // used by publicinternal/syscall/windows
 )
 
 const (

@@ -312,7 +312,7 @@ TEXT runtime·sigtramp(SB),NOSPLIT|TOPFRAME|NOFRAME,$0
 	PXOR	X15, X15
 #ifndef GOAMD64_v3
 #ifndef GOAMD64_v4
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	2(PC)
 #endif
 #endif

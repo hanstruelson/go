@@ -8,7 +8,7 @@ import (
 	. "context"
 	"errors"
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"math/rand"
 	"runtime"
 	"strings"

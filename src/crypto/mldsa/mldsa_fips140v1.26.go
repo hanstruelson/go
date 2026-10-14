@@ -8,7 +8,7 @@ package mldsa
 
 import (
 	"crypto"
-	"crypto/internal/fips140/mldsa"
+	"crypto/publicinternal/fips140/mldsa"
 	"errors"
 	"io"
 )

@@ -16,5 +16,5 @@ convert() {
 }
 
 convert race_darwin_arm64.syso >race_darwin_arm64.go
-convert internal/amd64v1/race_darwin.syso >race_darwin_amd64.go
+convert publicinternal/amd64v1/race_darwin.syso >race_darwin_amd64.go
 

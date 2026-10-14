@@ -7,7 +7,7 @@
 package reflect_test
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"math"
 	"math/rand"
 	"reflect"

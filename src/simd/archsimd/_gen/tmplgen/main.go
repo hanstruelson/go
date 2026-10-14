@@ -389,8 +389,8 @@ func ssaPrologue(s string, out io.Writer) {
 package ssacompile
 
 import (
-	"cmd/compile/internal/ssa/ssaop"
-	"cmd/compile/internal/ssa"
+	"cmd/compile/publicinternal/ssa/ssaop"
+	"cmd/compile/publicinternal/ssa"
 )
 
 `, s)
@@ -1358,8 +1358,8 @@ func (x Mask{{.WxC}}) String() string {
 // File paths
 const (
 	SIMD = "simd/archsimd/"
-	TD   = "simd/archsimd/internal/simd_test/"
-	SSA  = "cmd/compile/internal/ssacompile/"
+	TD   = "simd/archsimd/publicinternal/simd_test/"
+	SSA  = "cmd/compile/publicinternal/ssacompile/"
 )
 
 var files gentools.Files

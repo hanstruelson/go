@@ -179,7 +179,7 @@ TEXT runtime·sigtramp(SB),NOSPLIT|TOPFRAME|NOFRAME,$0
 	PXOR	X15, X15
 #ifndef GOAMD64_v3
 #ifndef GOAMD64_v4
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	2(PC)
 #endif
 #endif
@@ -401,7 +401,7 @@ TEXT runtime·mstart_stub(SB),NOSPLIT|NOFRAME,$0
 	MOVQ	m_g0(DI), DX // g
 
 	// Initialize TLS entry.
-	// See cmd/link/internal/ld/sym.go:computeTLSOffset.
+	// See cmd/link/publicinternal/ld/sym.go:computeTLSOffset.
 	MOVQ	DX, 0x30(GS)
 
 	CALL	runtime·mstart(SB)

@@ -47,7 +47,7 @@
 //
 // Trace events themselves are simple. They consist of a single byte for the event type,
 // followed by zero or more LEB128-encoded unsigned varints. They are decoded using
-// a pre-determined table for each trace version: internal/trace/tracev2.specs.
+// a pre-determined table for each trace version: publicinternal/trace/tracev2.specs.
 //
 // To avoid relying on timestamps for correctness and validation, each G and P have
 // sequence counters that are written into trace events to encode a partial order.
@@ -182,8 +182,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/trace/tracev2"
+	"publicinternal/runtime/atomic"
+	"publicinternal/trace/tracev2"
 	"unsafe"
 )
 

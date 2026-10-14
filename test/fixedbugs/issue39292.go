@@ -28,7 +28,7 @@ func z() {
 	z()
 }
 
-// Should match cmd/compile/internal/ir/cfg.go:MaxStackVarSize.
+// Should match cmd/compile/publicinternal/ir/cfg.go:MaxStackVarSize.
 const maxStack = 128 * 1024
 
 func w(i int) byte {

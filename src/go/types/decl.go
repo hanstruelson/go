@@ -9,7 +9,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
-	. "internal/types/errors"
+	. "publicinternal/types/errors"
 	"slices"
 )
 

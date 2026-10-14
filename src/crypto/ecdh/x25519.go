@@ -6,10 +6,10 @@ package ecdh
 
 import (
 	"bytes"
-	"crypto/internal/fips140/edwards25519"
-	"crypto/internal/fips140/edwards25519/field"
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/fips140/edwards25519"
+	"crypto/publicinternal/fips140/edwards25519/field"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 	"errors"
 	"io"
 )

@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"unsafe"
 )
 
@@ -168,7 +168,7 @@ func printcomplex64(c complex64) {
 func printuint(v uint64) {
 	// Note: Avoiding strconv.AppendUint so that it's clearer
 	// that there are no allocations in this routine.
-	// cmd/link/internal/ld.TestAbstractOriginSanity
+	// cmd/link/publicinternal/ld.TestAbstractOriginSanity
 	// sees the append and doesn't realize it doesn't allocate.
 	var buf [20]byte
 	i := strconv.RuntimeFormatBase10(buf[:], v)
@@ -178,7 +178,7 @@ func printuint(v uint64) {
 func printint(v int64) {
 	// Note: Avoiding strconv.AppendUint so that it's clearer
 	// that there are no allocations in this routine.
-	// cmd/link/internal/ld.TestAbstractOriginSanity
+	// cmd/link/publicinternal/ld.TestAbstractOriginSanity
 	// sees the append and doesn't realize it doesn't allocate.
 	neg := v < 0
 	u := uint64(v)

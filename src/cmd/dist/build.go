@@ -426,15 +426,15 @@ func findgoversion() string {
 	// so that it's possible to use go/version.Lang, Compare and so on.
 	// See go.dev/issue/73372.
 	//
-	// Note that we lightly parse internal/goversion/goversion.go to
+	// Note that we lightly parse publicinternal/goversion/goversion.go to
 	// obtain the base version. We can't just import the package,
 	// because cmd/dist is built with a bootstrap GOROOT which could
 	// be an entirely different version of Go. We assume
 	// that the file contains "const Version = <Integer>".
-	goversionSource := readfile(pathf("%s/src/internal/goversion/goversion.go", goroot))
+	goversionSource := readfile(pathf("%s/src/publicinternal/goversion/goversion.go", goroot))
 	m := regexp.MustCompile(`(?m)^const Version = (\d+)`).FindStringSubmatch(goversionSource)
 	if m == nil {
-		fatalf("internal/goversion/goversion.go does not contain 'const Version = ...'")
+		fatalf("publicinternal/goversion/goversion.go does not contain 'const Version = ...'")
 	}
 	version := fmt.Sprintf("go1.%s-devel_", m[1])
 	switch {
@@ -626,7 +626,7 @@ func setup() {
  * Tool building
  */
 
-// mustLinkExternal is a copy of internal/platform.MustLinkExternal,
+// mustLinkExternal is a copy of publicinternal/platform.MustLinkExternal,
 // duplicated here to avoid version skew in the MustLinkExternal function
 // during bootstrapping.
 func mustLinkExternal(goos, goarch string, cgoEnabled bool) bool {
@@ -674,8 +674,8 @@ var gentab = []struct {
 	file string
 	gen  func(dir, file string)
 }{
-	{"cmd/go/internal/cfg", "zdefaultcc.go", mkzdefaultcc},
-	{"internal/runtime/sys", "zversion.go", mkzversion},
+	{"cmd/go/publicinternal/cfg", "zdefaultcc.go", mkzdefaultcc},
+	{"publicinternal/runtime/sys", "zversion.go", mkzversion},
 	{"time/tzdata", "zzipdata.go", mktzdata},
 }
 
@@ -1267,7 +1267,7 @@ func checkNotStale(env []string, goBinary string, targets ...string) {
 	out := runEnv(workdir, CheckExit, env, append(goCmd, targets...)...)
 	if strings.Contains(out, "\tSTALE ") {
 		os.Setenv("GODEBUG", "gocachehash=1")
-		for _, target := range []string{"internal/runtime/sys", "cmd/dist", "cmd/link"} {
+		for _, target := range []string{"publicinternal/runtime/sys", "cmd/dist", "cmd/link"} {
 			if strings.Contains(out, "STALE "+target) {
 				run(workdir, ShowOutput|CheckExit, goBinary, "list", "-f={{.ImportPath}} {{.Stale}}", target)
 				break

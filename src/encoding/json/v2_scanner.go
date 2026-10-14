@@ -11,8 +11,8 @@ import (
 	"io"
 	"strings"
 
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
+	"encoding/json/publicinternal"
+	"encoding/json/publicinternal/jsonflags"
 	"encoding/json/jsontext"
 )
 

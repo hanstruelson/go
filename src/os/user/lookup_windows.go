@@ -7,8 +7,8 @@ package user
 import (
 	"errors"
 	"fmt"
-	"internal/syscall/windows"
-	"internal/syscall/windows/registry"
+	"publicinternal/syscall/windows"
+	"publicinternal/syscall/windows/registry"
 	"runtime"
 	"syscall"
 	"unsafe"

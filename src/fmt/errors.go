@@ -6,7 +6,7 @@ package fmt
 
 import (
 	"errors"
-	"internal/stringslite"
+	"publicinternal/stringslite"
 	"slices"
 )
 

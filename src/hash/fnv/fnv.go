@@ -15,7 +15,7 @@ package fnv
 import (
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"math/bits"
 )
 

@@ -5,8 +5,8 @@
 package unique
 
 import (
-	"internal/abi"
-	isync "internal/sync"
+	"publicinternal/abi"
+	isync "publicinternal/sync"
 	"unsafe"
 )
 

@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"internal/nettest"
+	"publicinternal/nettest"
 	"io"
 	"net/http"
 	"net/http/httptest"

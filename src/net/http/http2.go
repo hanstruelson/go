@@ -6,14 +6,14 @@
 
 package http
 
-import "net/http/internal/http2"
+import "net/http/publicinternal/http2"
 
 // net/http supports HTTP/2 by default, but this support is removed when
 // the nethttpomithttp2 build tag is set. The nethttpomithttp2server and
 // nethttpomithttp2client build tags remove only HTTP/2 server or client
 // support, respectively. Setting both is equivalent to nethttpomithttp2.
 //
-// HTTP/2 support is provided by the net/http/internal/http2 package.
+// HTTP/2 support is provided by the net/http/publicinternal/http2 package.
 //
 // This file (http2.go), along with http2server.go and http2client.go,
 // connects net/http to the http2 package.
@@ -30,7 +30,7 @@ func init() {
 	// NoBody and LocalAddrContextKey need to have the same value
 	// in the http and http2 packages.
 	//
-	// We can't define these values in net/http/internal,
+	// We can't define these values in net/http/publicinternal,
 	// because their concrete types are part of the net/http API and
 	// moving them causes API checker failures.
 	// Override the http2 package versions at init time instead.

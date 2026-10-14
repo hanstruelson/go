@@ -27,8 +27,8 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/internal/objfile"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/objfile"
+	"cmd/publicinternal/telemetry/counter"
 )
 
 func printUsage(w *os.File) {

@@ -1,0 +1,521 @@
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package walk
+
+import (
+	"fmt"
+	"publicinternal/abi"
+
+	"cmd/compile/publicinternal/base"
+	"cmd/compile/publicinternal/ir"
+	"cmd/compile/publicinternal/rttype"
+	"cmd/compile/publicinternal/ssagen"
+	"cmd/compile/publicinternal/typecheck"
+	"cmd/compile/publicinternal/types"
+	"cmd/publicinternal/src"
+)
+
+// These constants are known to runtime (see runtime.tmpStringBufSize).
+const (
+	tmpstringbufsize = 64
+	tmprunebufsize   = 32
+)
+
+type walkState struct {
+	curfunc *ir.Func
+
+	// staticValues is a cache of static values for use by staticValue.
+	staticValues map[ir.Node]ir.Node
+
+	// shapeConvSources maps an *ir.Name (a PAUTO interface variable) to
+	// the shape type of the OCONVIFACE expression that is its single
+	// static value, if any.
+	shapeConvSources map[*ir.Name]*types.Type
+}
+
+// autoLabel generates a new Name node for use with
+// an automatically generated label.
+// prefix is a short mnemonic (e.g. ".s" for switch)
+// to help with debugging.
+// It should begin with "." to avoid conflicts with
+// user labels.
+// This is a version of typecheck.AutoLabel that takes the function
+// being walked from the walk state.
+func (w *walkState) autoLabel(prefix string) *types.Sym {
+	if prefix[0] != '.' {
+		base.Fatalf("autolabel prefix must start with '.', have %q", prefix)
+	}
+	n := w.curfunc.Label
+	w.curfunc.Label++
+	return typecheck.LookupNum(w.curfunc.Target, prefix, int(n))
+}
+
+func Walk(fn *ir.Func) {
+	walkstate := &walkState{curfunc: fn}
+
+	// Build pre-walk analysis caches with a single AST traversal.
+	walkstate.analyzePreWalk(fn)
+
+	errorsBefore := base.Errors()
+	walkstate.order(fn)
+	if base.Errors() > errorsBefore {
+		return
+	}
+
+	if fn.Target.Flags.W != 0 {
+		s := fmt.Sprintf("\nbefore walk %v", walkstate.curfunc.Sym())
+		ir.DumpList(s, walkstate.curfunc.Body)
+	}
+
+	walkstate.walkStmtList(walkstate.curfunc.Body)
+	if fn.Target.Flags.W != 0 {
+		s := fmt.Sprintf("after walk %v", walkstate.curfunc.Sym())
+		ir.DumpList(s, walkstate.curfunc.Body)
+	}
+
+	// Eagerly compute sizes of all variables for SSA.
+	for _, n := range fn.Dcl {
+		types.CalcSize(n.Type())
+	}
+}
+
+// walkRecv walks an ORECV node.
+func (w *walkState) walkRecv(n *ir.UnaryExpr) ir.Node {
+	if n.Typecheck() == 0 {
+		base.Fatalf("missing typecheck: %+v", n)
+	}
+	init := ir.TakeInit(n)
+
+	n.X = w.walkExpr(n.X, &init)
+	call := w.walkExpr(w.mkcall1(chanfn(w.curfunc.Target, "chanrecv1", 2, n.X.Type()), nil, &init, n.X, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)), &init)
+	return ir.InitExpr(init, call)
+}
+
+func (w *walkState) convas(n *ir.AssignStmt, init *ir.Nodes) *ir.AssignStmt {
+	if n.Op() != ir.OAS {
+		base.Fatalf("convas: not OAS %v", n.Op())
+	}
+	n.SetTypecheck(1)
+
+	if n.X == nil || n.Y == nil {
+		return n
+	}
+
+	lt := n.X.Type()
+	rt := n.Y.Type()
+	if lt == nil || rt == nil {
+		return n
+	}
+
+	if ir.IsBlank(n.X) {
+		n.Y = typecheck.DefaultLitFor(w.curfunc.Target, n.Y, nil)
+		return n
+	}
+
+	if !types.Identical(lt, rt) {
+		n.Y = typecheck.AssignConv(n.Y, lt, "assignment")
+		n.Y = w.walkExpr(n.Y, init)
+	}
+	types.CalcSize(n.Y.Type())
+
+	return n
+}
+
+func (w *walkState) vmkcall(fn ir.Node, t *types.Type, init *ir.Nodes, va []ir.Node) *ir.CallExpr {
+	if init == nil {
+		base.Fatalf("mkcall with nil init: %v", fn)
+	}
+	if fn.Type() == nil || fn.Type().Kind() != types.TFUNC {
+		base.Fatalf("mkcall %v %v", fn, fn.Type())
+	}
+
+	n := fn.Type().NumParams()
+	if n != len(va) {
+		base.Fatalf("vmkcall %v needs %v args got %v", fn, n, len(va))
+	}
+
+	call := typecheck.Call(w.curfunc, w.curfunc.Target.Pos, fn, va, false).(*ir.CallExpr)
+	call.SetType(t)
+	return w.walkExpr(call, init).(*ir.CallExpr)
+}
+
+func (w *walkState) mkcall(name string, t *types.Type, init *ir.Nodes, args ...ir.Node) *ir.CallExpr {
+	return w.vmkcall(typecheck.LookupRuntime(w.curfunc.Target, name), t, init, args)
+}
+
+func (w *walkState) mkcallstmt(name string, args ...ir.Node) ir.Node {
+	return w.mkcallstmt1(typecheck.LookupRuntime(w.curfunc.Target, name), args...)
+}
+
+func (w *walkState) mkcall1(fn ir.Node, t *types.Type, init *ir.Nodes, args ...ir.Node) *ir.CallExpr {
+	return w.vmkcall(fn, t, init, args)
+}
+
+func (w *walkState) mkcallstmt1(fn ir.Node, args ...ir.Node) ir.Node {
+	var init ir.Nodes
+	n := w.vmkcall(fn, nil, &init, args)
+	if len(init) == 0 {
+		return n
+	}
+	init.Append(n)
+	return ir.NewBlockStmt(n.Pos(), init)
+}
+
+func chanfn(target *ir.Package, name string, n int, t *types.Type) ir.Node {
+	if !t.IsChan() {
+		base.Fatalf("chanfn %v", t)
+	}
+	switch n {
+	case 1:
+		return typecheck.LookupRuntime(target, name, t.Elem())
+	case 2:
+		return typecheck.LookupRuntime(target, name, t.Elem(), t.Elem())
+	}
+	base.Fatalf("chanfn %d", n)
+	return nil
+}
+
+func mapfn(target *ir.Package, name string, t *types.Type, isfat bool) ir.Node {
+	if !t.IsMap() {
+		base.Fatalf("mapfn %v", t)
+	}
+	if mapfast(target, t) == mapslow || isfat {
+		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key(), t.Elem())
+	}
+	return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Elem())
+}
+
+func mapfndel(target *ir.Package, name string, t *types.Type) ir.Node {
+	if !t.IsMap() {
+		base.Fatalf("mapfn %v", t)
+	}
+	if mapfast(target, t) == mapslow {
+		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key())
+	}
+	return typecheck.LookupRuntime(target, name, t.Key(), t.Elem())
+}
+
+const (
+	mapslow = iota
+	mapfast32
+	mapfast32ptr
+	mapfast64
+	mapfast64ptr
+	mapfaststr
+	nmapfast
+)
+
+type mapnames [nmapfast]string
+
+func mkmapnames(base string, ptr string) mapnames {
+	return mapnames{base, base + "_fast32", base + "_fast32" + ptr, base + "_fast64", base + "_fast64" + ptr, base + "_faststr"}
+}
+
+var mapaccess1 = mkmapnames("mapaccess1", "")
+var mapaccess2 = mkmapnames("mapaccess2", "")
+var mapassign = mkmapnames("mapassign", "ptr")
+var mapdelete = mkmapnames("mapdelete", "")
+
+func mapfast(target *ir.Package, t *types.Type) int {
+	if t.Elem().Size() > abi.MapMaxElemBytes {
+		return mapslow
+	}
+	switch algType(target, t.Key()) {
+	case types.AMEM32:
+		if !t.Key().HasPointers() {
+			return mapfast32
+		}
+		if target.PtrSize == 4 {
+			return mapfast32ptr
+		}
+		base.Fatalf("small pointer %v", t.Key())
+	case types.AMEM64:
+		if !t.Key().HasPointers() {
+			return mapfast64
+		}
+		if target.PtrSize == 8 {
+			return mapfast64ptr
+		}
+		// Two-word object, at least one of which is a pointer.
+		// Use the slow path.
+	case types.ASTRING:
+		return mapfaststr
+	}
+	return mapslow
+}
+
+// algType returns the fixed-width AMEMxx variants instead of the general
+// AMEM kind when possible.
+func algType(target *ir.Package, t *types.Type) types.AlgKind {
+	a := types.AlgType(t)
+	if a == types.AMEM {
+		if t.Alignment() < int64(target.Ctxt.Arch.Alignment) && t.Alignment() < t.Size() {
+			// For example, we can't treat [2]int16 as an int32 if int32s require
+			// 4-byte alignment. See issue 46283.
+			return a
+		}
+		switch t.Size() {
+		case 0:
+			return types.AMEM0
+		case 1:
+			return types.AMEM8
+		case 2:
+			return types.AMEM16
+		case 4:
+			return types.AMEM32
+		case 8:
+			return types.AMEM64
+		case 16:
+			return types.AMEM128
+		}
+	}
+
+	return a
+}
+
+func (w *walkState) walkAppendArgs(n *ir.CallExpr, init *ir.Nodes) {
+	w.walkExprListSafe(n.Args, init)
+
+	// walkExprListSafe will leave OINDEX (s[n]) alone if both s
+	// and n are name or literal, but those may index the slice we're
+	// modifying here. Fix explicitly.
+	ls := n.Args
+	for i1, n1 := range ls {
+		ls[i1] = w.cheapExpr(n1, init)
+	}
+}
+
+// appendWalkStmt typechecks and walks stmt and then appends it to init.
+func (w *walkState) appendWalkStmt(init *ir.Nodes, stmt ir.Node) {
+	op := stmt.Op()
+	n := typecheck.Stmt(w.curfunc, stmt)
+	if op == ir.OAS || op == ir.OAS2 {
+		// If the assignment has side effects, walkExpr will append them
+		// directly to init for us, while walkStmt will wrap it in an OBLOCK.
+		// We need to append them directly.
+		// TODO(rsc): Clean this up.
+		n = w.walkExpr(n, init)
+	} else {
+		n = w.walkStmt(n)
+	}
+	init.Append(n)
+}
+
+// The max number of defers in a function using open-coded defers. We enforce this
+// limit because the deferBits bitmask is currently a single byte (to minimize code size)
+const maxOpenDefers = 8
+
+// backingArrayPtrLen extracts the pointer and length from a slice or string.
+// This constructs two nodes referring to n, so n must be a cheapExpr.
+func (w *walkState) backingArrayPtrLen(n ir.Node) (ptr, length ir.Node) {
+	var init ir.Nodes
+	c := w.cheapExpr(n, &init)
+	if c != n || len(init) != 0 {
+		base.Fatalf("backingArrayPtrLen not cheap: %v", n)
+	}
+	ptr = ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, n)
+	if n.Type().IsString() {
+		ptr.SetType(w.curfunc.Target.Type(types.TUINT8).PtrTo())
+	} else {
+		ptr.SetType(n.Type().Elem().PtrTo())
+	}
+	ptr.SetTypecheck(1)
+	length = ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, n)
+	length.SetType(w.curfunc.Target.Type(types.TINT))
+	length.SetTypecheck(1)
+	return ptr, length
+}
+
+// mayCall reports whether evaluating expression n may require
+// function calls, which could clobber function call arguments/results
+// currently on the stack.
+func mayCall(target *ir.Package, n ir.Node) bool {
+	// This is intended to avoid putting constants
+	// into temporaries with the race detector (or other
+	// instrumentation) which interferes with simple
+	// "this is a constant" tests in ssagen.
+	// Also, it will generally lead to better code.
+	if n.Op() == ir.OLITERAL {
+		return false
+	}
+
+	// When instrumenting, any expression might require function calls.
+	if target.Flags.Cfg.Instrumenting {
+		return true
+	}
+
+	isSoftFloat := func(typ *types.Type) bool {
+		return types.IsFloat[typ.Kind()] || types.IsComplex[typ.Kind()]
+	}
+
+	return ir.Any(n, func(n ir.Node) bool {
+		// walk should have already moved any Init blocks off of
+		// expressions.
+		if len(n.Init()) != 0 {
+			base.FatalfAt(n.Pos(), "mayCall %+v", n)
+		}
+
+		switch n.Op() {
+		default:
+			base.FatalfAt(n.Pos(), "mayCall %+v", n)
+
+		case ir.OCALLFUNC, ir.OCALLINTER,
+			ir.OUNSAFEADD, ir.OUNSAFESLICE:
+			return true
+
+		case ir.OINDEX, ir.OSLICE, ir.OSLICEARR, ir.OSLICE3, ir.OSLICE3ARR, ir.OSLICESTR,
+			ir.ODEREF, ir.ODOTPTR, ir.ODOTTYPE, ir.ODYNAMICDOTTYPE, ir.OMOD,
+			ir.OSLICE2ARR, ir.OSLICE2ARRPTR:
+			// These ops might panic, make sure they are done
+			// before we start marshaling args for a call. See issue 16760.
+			return true
+		case ir.ODIV:
+			n := n.(*ir.BinaryExpr)
+			if types.IsFloat[n.X.Type().Kind()] {
+				return ssagen.ArchInfoFor(target).SoftFloat
+			}
+			return true
+
+		case ir.OANDAND, ir.OOROR:
+			n := n.(*ir.LogicalExpr)
+			// The RHS expression may have init statements that
+			// should only execute conditionally, and so cannot be
+			// pulled out to the top-level init list. We could try
+			// to be more precise here.
+			return len(n.Y.Init()) != 0
+
+		// When using soft-float, these ops might be rewritten to function calls
+		// so we ensure they are evaluated first.
+		case ir.OADD, ir.OSUB, ir.OMUL, ir.ONEG:
+			return ssagen.ArchInfoFor(target).SoftFloat && isSoftFloat(n.Type())
+		case ir.OLT, ir.OEQ, ir.ONE, ir.OLE, ir.OGE, ir.OGT:
+			n := n.(*ir.BinaryExpr)
+			return ssagen.ArchInfoFor(target).SoftFloat && isSoftFloat(n.X.Type())
+		case ir.OCONV:
+			n := n.(*ir.ConvExpr)
+			return ssagen.ArchInfoFor(target).SoftFloat && (isSoftFloat(n.Type()) || isSoftFloat(n.X.Type()))
+
+		case ir.OMIN, ir.OMAX:
+			// string or float requires runtime call, see (*ssagen.state).minmax method.
+			return n.Type().IsString() || n.Type().IsFloat()
+
+		case ir.OLITERAL, ir.ONIL, ir.ONAME, ir.OLINKSYMOFFSET, ir.OMETHEXPR,
+			ir.OAND, ir.OANDNOT, ir.OLSH, ir.OOR, ir.ORSH, ir.OXOR, ir.OCOMPLEX, ir.OMAKEFACE,
+			ir.OADDR, ir.OBITNOT, ir.ONOT, ir.OPLUS,
+			ir.OCAP, ir.OIMAG, ir.OLEN, ir.OREAL,
+			ir.OCONVNOP, ir.ODOT,
+			ir.OCFUNC, ir.OIDATA, ir.OITAB, ir.OSPTR,
+			ir.OBYTES2STRTMP, ir.OGETG, ir.OGETCALLERSP, ir.OSLICEHEADER, ir.OSTRINGHEADER:
+			// ok: operations that don't require function calls.
+			// Expand as needed.
+		}
+
+		return false
+	})
+}
+
+// itabType loads the _type field from a runtime.itab struct.
+func itabType(target *ir.Package, itab ir.Node) ir.Node {
+	if target.ItabTypeField == nil {
+		// publicinternal/abi.ITab's Type field
+		target.ItabTypeField = runtimeField(target, "Type", rttype.For(target).ITab.OffsetOf("Type"), types.NewPtr(target.Type(types.TUINT8)))
+	}
+	return boundedDotPtr(target.Pos, itab, target.ItabTypeField)
+}
+
+// boundedDotPtr returns a selector expression representing ptr.field
+// and omits nil-pointer checks for ptr.
+func boundedDotPtr(pos src.XPos, ptr ir.Node, field *types.Field) *ir.SelectorExpr {
+	sel := ir.NewSelectorExpr(pos, ir.ODOTPTR, ptr, field.Sym)
+	sel.Selection = field
+	sel.SetType(field.Type)
+	sel.SetTypecheck(1)
+	sel.SetBounded(true) // guaranteed not to fault
+	return sel
+}
+
+func runtimeField(target *ir.Package, name string, offset int64, typ *types.Type) *types.Field {
+	f := types.NewField(src.NoXPos, target.RuntimePkg.Lookup(name), typ)
+	f.Offset = offset
+	return f
+}
+
+// ifaceData loads the data field from an interface.
+// The concrete type must be known to have type t.
+// It follows the pointer if !IsDirectIface(t).
+func ifaceData(pos src.XPos, n ir.Node, t *types.Type) ir.Node {
+	if t.IsInterface() {
+		base.Fatalf("ifaceData interface: %v", t)
+	}
+	ptr := ir.NewUnaryExpr(pos, ir.OIDATA, n)
+	if types.IsDirectIface(t) {
+		ptr.SetType(t)
+		ptr.SetTypecheck(1)
+		return ptr
+	}
+	ptr.SetType(types.NewPtr(t))
+	ptr.SetTypecheck(1)
+	ind := ir.NewStarExpr(pos, ptr)
+	ind.SetType(t)
+	ind.SetTypecheck(1)
+	ind.SetBounded(true)
+	return ind
+}
+
+// staticValue returns the earliest expression it can find that always
+// evaluates to n, with similar semantics to [ir.StaticValue].
+//
+// It only returns results for the function being processed in [Walk],
+// including its closures, and uses a cache to reduce duplicative work.
+// It can return n or nil if it does not find an earlier expression.
+//
+// The current use case is reducing OCONVIFACE allocations, and hence
+// staticValue is currently only useful when given an *ir.ConvExpr.X as n.
+func (w *walkState) staticValue(n ir.Node) ir.Node {
+	if w.staticValues == nil {
+		base.Fatalf("staticValues is nil. staticValue called outside of walk.Walk?")
+	}
+	return w.staticValues[n]
+}
+
+// analyzePreWalk populates staticValues and shapeConvSources using a
+// single AST traversal. We can't use an ir.ReassignOracle or
+// ir.StaticValue in the middle of walk because they don't currently
+// handle transformed assignments (e.g., will complain about
+// 'RHS == nil'). So we build these maps before walk begins.
+func (w *walkState) analyzePreWalk(fn *ir.Func) {
+	ro := &ir.ReassignOracle{}
+	ro.Init(fn)
+	sv := make(map[ir.Node]ir.Node)
+	scs := make(map[*ir.Name]*types.Type)
+	var numNodes int32
+	ir.Visit(fn, func(n ir.Node) {
+		numNodes++
+		switch n.Op() {
+		case ir.OCONVIFACE:
+			x := n.(*ir.ConvExpr).X
+			v := ro.StaticValue(x)
+			if v != nil && v != x {
+				sv[x] = v
+			}
+		case ir.ONAME:
+			name := n.(*ir.Name).Canonical()
+			if name.Class != ir.PAUTO || name.Type() == nil || !name.Type().IsInterface() {
+				return
+			}
+			val := ro.StaticValue(name)
+			if val == nil || val.Op() != ir.OCONVIFACE {
+				return
+			}
+			srcType := val.(*ir.ConvExpr).X.Type()
+			if srcType != nil && !srcType.IsInterface() && srcType.IsShape() {
+				scs[name] = srcType
+			}
+		}
+	})
+	w.staticValues = sv
+	w.shapeConvSources = scs
+	fn.NumPreWalkNodes = numNodes
+}

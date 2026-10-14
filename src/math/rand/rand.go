@@ -18,7 +18,7 @@
 package rand
 
 import (
-	"internal/godebug"
+	"publicinternal/godebug"
 	"sync"
 	"sync/atomic"
 	_ "unsafe" // for go:linkname

@@ -16,7 +16,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"log"
 	"math/rand"

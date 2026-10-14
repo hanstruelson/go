@@ -5,12 +5,12 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/cpu"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/math"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

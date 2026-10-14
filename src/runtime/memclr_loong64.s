@@ -69,9 +69,9 @@ tail:
 	SGTU	$17, R5, R7
 	BNE	R7, clr_9through16
 
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R7
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R7
 	BNE	R7, lasx_tail
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R7
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R7
 	BNE	R7, lsx_tail
 
 	SGTU	$33, R5, R7

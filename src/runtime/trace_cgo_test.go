@@ -9,9 +9,9 @@ package runtime_test
 import (
 	"bytes"
 	"fmt"
-	"internal/race"
-	"internal/testenv"
-	"internal/trace"
+	"publicinternal/race"
+	"publicinternal/testenv"
+	"publicinternal/trace"
 	"io"
 	"os"
 	"runtime"

@@ -5,7 +5,7 @@
 package pprof
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"os"
 	"unsafe"
 )

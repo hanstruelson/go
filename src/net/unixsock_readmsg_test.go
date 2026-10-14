@@ -7,7 +7,7 @@
 package net
 
 import (
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"os"
 	"syscall"
 	"testing"

@@ -63,11 +63,11 @@ func writeSIMDIntrinsics(buffer *bytes.Buffer, ops []Operation, typeMap simdType
 	var header = templateNamed("header", `package ssagen
 
 import (
-	"cmd/compile/internal/ir"
-	"cmd/compile/internal/ssa"
-	"cmd/compile/internal/ssa/ssaop"
-	"cmd/compile/internal/types"
-	"cmd/internal/sys"
+	"cmd/compile/publicinternal/ir"
+	"cmd/compile/publicinternal/ssa"
+	"cmd/compile/publicinternal/ssa/ssaop"
+	"cmd/compile/publicinternal/types"
+	"cmd/publicinternal/sys"
 )
 
 func simd{{GetSIMDTag}}Intrinsics(addF func(pkg, fn string, b intrinsicBuilder, archFamilies ...sys.ArchFamily)) {

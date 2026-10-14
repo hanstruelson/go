@@ -6,7 +6,7 @@ package os_test
 
 import (
 	"bytes"
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"net"
 	. "os"

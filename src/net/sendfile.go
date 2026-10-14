@@ -7,7 +7,7 @@
 package net
 
 import (
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"syscall"
 )

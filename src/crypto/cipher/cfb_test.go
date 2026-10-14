@@ -9,7 +9,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"

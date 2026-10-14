@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 
@@ -59,7 +59,7 @@ func panicCheck1(pc uintptr, msg string) {
 		throw(msg)
 	}
 	// TODO: is this redundant? How could we be in malloc
-	// but not in the runtime? internal/runtime/*, maybe?
+	// but not in the runtime? publicinternal/runtime/*, maybe?
 	gp := getg()
 	if gp != nil && gp.m != nil && gp.m.mallocing != 0 {
 		throw(msg)
@@ -454,7 +454,7 @@ func panicrangestate(state int) {
 // more general catch of loop body misuse, though, this
 // might not be worth worrying about in addition.
 //
-// See also ../cmd/compile/internal/rangefunc/rewrite.go.
+// See also ../cmd/compile/publicinternal/rangefunc/rewrite.go.
 func deferrangefunc() any {
 	gp := getg()
 	if gp.m.curg != gp {
@@ -1096,7 +1096,7 @@ func gorecover() any {
 // while the frame is the current one, and returns the panic the body may recover,
 // or nil if a recover in the body does not take effect.
 //
-// See also ../cmd/compile/internal/rangefunc/rewrite.go.
+// See also ../cmd/compile/publicinternal/rangefunc/rewrite.go.
 func recoverrangefunc() any {
 	p := recoverablePanic(3) // skip systemstack_switch, recoverablePanic, recoverrangefunc
 	if p == nil {
@@ -1250,32 +1250,32 @@ func rand_fatal(s string) {
 	fatal(s)
 }
 
-//go:linkname sysrand_fatal crypto/internal/sysrand.fatal
+//go:linkname sysrand_fatal crypto/publicinternal/sysrand.fatal
 func sysrand_fatal(s string) {
 	fatal(s)
 }
 
-//go:linkname fips_fatal crypto/internal/fips140.fatal
+//go:linkname fips_fatal crypto/publicinternal/fips140.fatal
 func fips_fatal(s string) {
 	fatal(s)
 }
 
-//go:linkname maps_fatal internal/runtime/maps.fatal
+//go:linkname maps_fatal publicinternal/runtime/maps.fatal
 func maps_fatal(s string) {
 	fatal(s)
 }
 
-//go:linkname internal_sync_throw internal/sync.throw
+//go:linkname internal_sync_throw publicinternal/sync.throw
 func internal_sync_throw(s string) {
 	throw(s)
 }
 
-//go:linkname internal_sync_fatal internal/sync.fatal
+//go:linkname internal_sync_fatal publicinternal/sync.fatal
 func internal_sync_fatal(s string) {
 	fatal(s)
 }
 
-//go:linkname cgroup_throw internal/runtime/cgroup.throw
+//go:linkname cgroup_throw publicinternal/runtime/cgroup.throw
 func cgroup_throw(s string) {
 	throw(s)
 }

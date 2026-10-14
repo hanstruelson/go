@@ -4,7 +4,7 @@
 package runtime_test
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"runtime"
 	"testing"
 )

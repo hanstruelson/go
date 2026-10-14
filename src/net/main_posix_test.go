@@ -8,7 +8,7 @@ package net
 
 import (
 	"errors"
-	"net/internal/socktest"
+	"net/publicinternal/socktest"
 	"strings"
 	"syscall"
 )

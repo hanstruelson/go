@@ -7,10 +7,10 @@ package rand
 import (
 	"bytes"
 	"compress/flate"
-	"crypto/internal/cryptotest"
-	"crypto/internal/rand"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/rand"
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"reflect"
@@ -19,7 +19,7 @@ import (
 	"testing/synctest"
 )
 
-// These tests are mostly duplicates of the tests in crypto/internal/sysrand,
+// These tests are mostly duplicates of the tests in crypto/publicinternal/sysrand,
 // and testing both the Reader and Read is pretty redundant when one calls the
 // other, but better safe than sorry.
 

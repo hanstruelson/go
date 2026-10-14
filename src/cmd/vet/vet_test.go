@@ -12,7 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"os/exec"

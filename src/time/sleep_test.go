@@ -7,7 +7,7 @@ package time_test
 import (
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math/rand"
 	"runtime"
 	"slices"

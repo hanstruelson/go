@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os/exec"
 	"path/filepath"
 	"runtime"

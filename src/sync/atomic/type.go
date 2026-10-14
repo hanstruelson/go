@@ -38,7 +38,7 @@ func b32(b bool) uint32 {
 }
 
 // For testing *Pointer[T]'s methods can be inlined.
-// Keep in sync with cmd/compile/internal/test/inl_test.go:TestIntendedInlining.
+// Keep in sync with cmd/compile/publicinternal/test/inl_test.go:TestIntendedInlining.
 var _ = &Pointer[int]{}
 
 // A Pointer is an atomic pointer of type *T. The zero value is a nil *T.

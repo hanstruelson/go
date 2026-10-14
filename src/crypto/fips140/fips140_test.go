@@ -5,8 +5,8 @@
 package fips140
 
 import (
-	"internal/godebug"
-	"internal/testenv"
+	"publicinternal/godebug"
+	"publicinternal/testenv"
 	"testing"
 )
 

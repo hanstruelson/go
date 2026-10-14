@@ -11,14 +11,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
-	"net/http/internal/http2"
+	"net/http/publicinternal/http2"
 	"time"
 
 	_ "unsafe" // for go:linkname
 )
 
 // This file connects the net/http Transport to the HTTP/2 client
-// in the net/http/internal/http2 package. It is omitted when
+// in the net/http/publicinternal/http2 package. It is omitted when
 // the nethttpomithttp2 or nethttpomithttp2client build tag is set.
 
 const omitHTTP2Client = false
@@ -286,7 +286,7 @@ func (t transportConfig) HTTP2Config() http2.Config {
 // transportFromH1Transport provides a way for HTTP/2 tests to extract
 // the http2.Transport from an http.Transport.
 //
-//go:linkname transportFromH1Transport net/http/internal/http2_test.transportFromH1Transport
+//go:linkname transportFromH1Transport net/http/publicinternal/http2_test.transportFromH1Transport
 func transportFromH1Transport(t *Transport) any {
 	t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	return t.h2Transport

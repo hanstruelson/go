@@ -6,9 +6,9 @@ package os
 
 import (
 	"errors"
-	"internal/bytealg"
-	"internal/stringslite"
-	"internal/testlog"
+	"publicinternal/bytealg"
+	"publicinternal/stringslite"
+	"publicinternal/testlog"
 	"io/fs"
 	"runtime"
 	"slices"

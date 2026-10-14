@@ -6,7 +6,7 @@ package path
 
 import (
 	"errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"unicode/utf8"
 )
 

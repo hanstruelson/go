@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -238,7 +238,7 @@ func (frame *stkframe) getStackMap(debug bool) (locals, args bitvector, objs []s
 		unsafe.Sizeof(abi.RegArgs{}) > 0 && isReflect {
 		// For reflect.makeFuncStub and reflect.methodValueCall,
 		// we need to fake the stack object record.
-		// These frames contain an internal/abi.RegArgs at a hard-coded offset.
+		// These frames contain an publicinternal/abi.RegArgs at a hard-coded offset.
 		// This offset matches the assembly code on amd64 and arm64.
 		objs = methodValueCallFrameObjs[:]
 	} else {

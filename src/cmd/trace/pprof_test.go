@@ -14,8 +14,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	itrace "internal/trace"
-	"internal/trace/testtrace"
+	itrace "publicinternal/trace"
+	"publicinternal/trace/testtrace"
 )
 
 // Regression test for go.dev/issue/74850.

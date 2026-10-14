@@ -13,14 +13,14 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
-	"internal/dag"
+	"publicinternal/dag"
 	"io"
 	"log"
 	"os"
 	"strings"
 )
 
-// ranks describes the lock rank graph. See "go doc internal/dag" for
+// ranks describes the lock rank graph. See "go doc publicinternal/dag" for
 // the syntax.
 //
 // "a < b" means a must be acquired before b if both are held

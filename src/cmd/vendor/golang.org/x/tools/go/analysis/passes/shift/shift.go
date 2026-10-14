@@ -20,8 +20,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/typeparams"
 )
 
 const Doc = "check for shifts that equal or exceed the width of the integer"

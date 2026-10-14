@@ -193,7 +193,7 @@ move_33through64_dispatch:
 	OR	R4, R5, R9
 	AND	$7, R9
 	BEQ	R9, move_33through64
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R9
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R9
 	BEQ	R9, move_33through64
 	JMP	lsx_move_33through64
 
@@ -308,7 +308,7 @@ backward_move_64loop:
 // use simd 128 instructions to implement memmove
 // n >= 256 bytes, check 16-byte alignment
 lsx_move_large:
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R9
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLSX(SB), R9
 	BEQ	R9, move_large
 
 	// if (dst > src) && (dst < (src + count))
@@ -438,7 +438,7 @@ lsx_backward_move_tail:
 // use simd 256 instructions to implement memmove
 // n >= 256 bytes, check 32-byte alignment
 lasx_move_large:
-	MOVBU	internal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R9
+	MOVBU	publicinternal∕cpu·Loong64+const_offsetLOONG64HasLASX(SB), R9
 	BEQ	R9, lsx_move_large
 
 	// if (dst > src) && (dst < (src + count))

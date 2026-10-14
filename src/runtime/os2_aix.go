@@ -11,7 +11,7 @@
 package runtime
 
 import (
-	"internal/runtime/sys"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -531,7 +531,7 @@ func sigaltstack(new, old *stackt) {
 }
 
 //go:nosplit
-//go:linkname internal_cpu_getsystemcfg internal/cpu.getsystemcfg
+//go:linkname internal_cpu_getsystemcfg publicinternal/cpu.getsystemcfg
 func internal_cpu_getsystemcfg(label uint) uint {
 	r, _ := syscall1(&libc_getsystemcfg, uintptr(label))
 	return uint(r)

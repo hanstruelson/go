@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -167,7 +167,7 @@ func (bubble *synctestBubble) raceaddr() unsafe.Pointer {
 
 var bubbleGen atomic.Uint64 // bubble ID counter
 
-//go:linkname synctestRun internal/synctest.Run
+//go:linkname synctestRun publicinternal/synctest.Run
 func synctestRun(f func()) {
 	gp := getg()
 	if gp.bubble != nil {
@@ -277,7 +277,7 @@ func synctestidle_c(gp *g, _ unsafe.Pointer) bool {
 	return canIdle
 }
 
-//go:linkname synctestWait internal/synctest.Wait
+//go:linkname synctestWait publicinternal/synctest.Wait
 func synctestWait() {
 	gp := getg()
 	if gp.bubble == nil {
@@ -322,12 +322,12 @@ func synctestwait_c(gp *g, _ unsafe.Pointer) bool {
 	return true
 }
 
-//go:linkname synctest_isInBubble internal/synctest.IsInBubble
+//go:linkname synctest_isInBubble publicinternal/synctest.IsInBubble
 func synctest_isInBubble() bool {
 	return getg().bubble != nil
 }
 
-//go:linkname synctest_acquire internal/synctest.acquire
+//go:linkname synctest_acquire publicinternal/synctest.acquire
 func synctest_acquire() any {
 	if bubble := getg().bubble; bubble != nil {
 		bubble.incActive()
@@ -336,12 +336,12 @@ func synctest_acquire() any {
 	return nil
 }
 
-//go:linkname synctest_release internal/synctest.release
+//go:linkname synctest_release publicinternal/synctest.release
 func synctest_release(bubble any) {
 	bubble.(*synctestBubble).decActive()
 }
 
-//go:linkname synctest_inBubble internal/synctest.inBubble
+//go:linkname synctest_inBubble publicinternal/synctest.inBubble
 func synctest_inBubble(bubble any, f func()) {
 	gp := getg()
 	if gp.bubble != nil {
@@ -361,7 +361,7 @@ type specialBubble struct {
 	bubbleid uint64
 }
 
-// Keep these in sync with internal/synctest.
+// Keep these in sync with publicinternal/synctest.
 const (
 	bubbleAssocUnbubbled     = iota // not associated with any bubble
 	bubbleAssocCurrentBubble        // associated with the current bubble
@@ -432,21 +432,21 @@ func getOrSetBubbleSpecial(p unsafe.Pointer, bubbleid uint64, add bool) (assoc i
 // synctest_associate associates p with the current bubble.
 // It returns false if p is already associated with a different bubble.
 //
-//go:linkname synctest_associate internal/synctest.associate
+//go:linkname synctest_associate publicinternal/synctest.associate
 func synctest_associate(p unsafe.Pointer) int {
 	return getOrSetBubbleSpecial(p, getg().bubble.id, true)
 }
 
 // synctest_disassociate disassociates p from its bubble.
 //
-//go:linkname synctest_disassociate internal/synctest.disassociate
+//go:linkname synctest_disassociate publicinternal/synctest.disassociate
 func synctest_disassociate(p unsafe.Pointer) {
 	removespecial(p, _KindSpecialBubble)
 }
 
 // synctest_isAssociated reports whether p is associated with the current bubble.
 //
-//go:linkname synctest_isAssociated internal/synctest.isAssociated
+//go:linkname synctest_isAssociated publicinternal/synctest.isAssociated
 func synctest_isAssociated(p unsafe.Pointer) bool {
 	return getOrSetBubbleSpecial(p, getg().bubble.id, false) == bubbleAssocCurrentBubble
 }

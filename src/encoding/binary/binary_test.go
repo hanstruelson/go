@@ -7,7 +7,7 @@ package binary
 import (
 	"bytes"
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"io"
 	"math"
 	"reflect"

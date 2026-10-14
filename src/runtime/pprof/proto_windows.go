@@ -6,7 +6,7 @@ package pprof
 
 import (
 	"errors"
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"os"
 	"syscall"
 )

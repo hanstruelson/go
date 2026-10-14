@@ -13,9 +13,9 @@ package cipher
 
 import (
 	"bytes"
-	"crypto/internal/fips140/aes"
-	"crypto/internal/fips140/alias"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140/aes"
+	"crypto/publicinternal/fips140/alias"
+	"crypto/publicinternal/fips140only"
 	"crypto/subtle"
 )
 

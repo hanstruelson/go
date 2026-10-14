@@ -5,12 +5,12 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/maps"
+	"publicinternal/abi"
+	"publicinternal/runtime/maps"
 	"unsafe"
 )
 
-// Functions below pushed from internal/runtime/maps.
+// Functions below pushed from publicinternal/runtime/maps.
 
 //go:linkname mapaccess1_faststr
 func mapaccess1_faststr(t *abi.MapType, m *maps.Map, ky string) unsafe.Pointer

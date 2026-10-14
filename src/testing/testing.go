@@ -404,7 +404,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"internal/race"
+	"publicinternal/race"
 	"io"
 	"math/rand"
 	"os"
@@ -2459,7 +2459,7 @@ type M struct {
 // testDeps is an internal interface of functionality that is
 // passed into this package by a test's generated main package.
 // The canonical implementation of this interface is
-// testing/internal/testdeps's TestDeps.
+// testing/publicinternal/testdeps's TestDeps.
 type testDeps interface {
 	ImportPath() string
 	ModulePath() string

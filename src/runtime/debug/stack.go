@@ -7,7 +7,7 @@
 package debug
 
 import (
-	"internal/poll"
+	"publicinternal/poll"
 	"os"
 	"runtime"
 	_ "unsafe" // for linkname

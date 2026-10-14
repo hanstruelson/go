@@ -5,10 +5,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/byteorder"
-	"internal/runtime/atomic"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/byteorder"
+	"publicinternal/runtime/atomic"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 

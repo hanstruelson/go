@@ -14,10 +14,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -226,12 +226,12 @@ func reflect_typedmemmove(typ *_type, dst, src unsafe.Pointer) {
 	typedmemmove(typ, dst, src)
 }
 
-//go:linkname reflectlite_typedmemmove internal/reflectlite.typedmemmove
+//go:linkname reflectlite_typedmemmove publicinternal/reflectlite.typedmemmove
 func reflectlite_typedmemmove(typ *_type, dst, src unsafe.Pointer) {
 	reflect_typedmemmove(typ, dst, src)
 }
 
-//go:linkname maps_typedmemmove internal/runtime/maps.typedmemmove
+//go:linkname maps_typedmemmove publicinternal/runtime/maps.typedmemmove
 func maps_typedmemmove(typ *_type, dst, src unsafe.Pointer) {
 	typedmemmove(typ, dst, src)
 }
@@ -381,7 +381,7 @@ func reflect_typedmemclr(typ *_type, ptr unsafe.Pointer) {
 	typedmemclr(typ, ptr)
 }
 
-//go:linkname maps_typedmemclr internal/runtime/maps.typedmemclr
+//go:linkname maps_typedmemclr publicinternal/runtime/maps.typedmemclr
 func maps_typedmemclr(typ *_type, ptr unsafe.Pointer) {
 	typedmemclr(typ, ptr)
 }

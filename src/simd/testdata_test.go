@@ -7,7 +7,7 @@
 package simd_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"runtime"
 	"strings"

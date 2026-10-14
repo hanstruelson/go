@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 )
 

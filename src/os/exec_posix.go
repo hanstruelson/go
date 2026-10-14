@@ -7,8 +7,8 @@
 package os
 
 import (
-	"internal/strconv"
-	"internal/syscall/execenv"
+	"publicinternal/strconv"
+	"publicinternal/syscall/execenv"
 	"runtime"
 	"syscall"
 )

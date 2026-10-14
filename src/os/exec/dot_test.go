@@ -6,7 +6,7 @@ package exec_test
 
 import (
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	. "os/exec"
 	"path/filepath"

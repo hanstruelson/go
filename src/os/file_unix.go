@@ -7,8 +7,8 @@
 package os
 
 import (
-	"internal/poll"
-	"internal/syscall/unix"
+	"publicinternal/poll"
+	"publicinternal/syscall/unix"
 	"io/fs"
 	"runtime"
 	"sync/atomic"

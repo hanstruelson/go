@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/trace/tracev2"
+	"publicinternal/goarch"
+	"publicinternal/trace/tracev2"
 	_ "unsafe"
 )
 

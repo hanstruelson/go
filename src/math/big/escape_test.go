@@ -5,7 +5,7 @@
 package big
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math/rand"
 	"os/exec"
 	"strings"

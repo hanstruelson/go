@@ -7,7 +7,7 @@
 package syscall
 
 import (
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"runtime"
 	"slices"
 	"sync"

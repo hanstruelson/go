@@ -13,8 +13,8 @@ package syscall
 
 import (
 	"errors"
-	"internal/oserror"
-	"internal/strconv"
+	"publicinternal/oserror"
+	"publicinternal/strconv"
 	"runtime"
 	"unsafe"
 )

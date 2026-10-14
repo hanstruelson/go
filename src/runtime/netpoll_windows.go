@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/syscall/windows"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/syscall/windows"
 	"unsafe"
 )
 
@@ -52,7 +52,7 @@ func unpackNetpollSource(key uintptr) uint8 {
 	return uint8(taggedPointer(key).tag())
 }
 
-// pollOperation must be the same as beginning of internal/poll.operation.
+// pollOperation must be the same as beginning of publicinternal/poll.operation.
 // Keep these in sync.
 type pollOperation struct {
 	// used by windows
@@ -63,7 +63,7 @@ type pollOperation struct {
 }
 
 // pollOperationFromOverlappedEntry returns the pollOperation contained in
-// e. It can return nil if the entry is not from internal/poll.
+// e. It can return nil if the entry is not from publicinternal/poll.
 // See go.dev/issue/58870
 func pollOperationFromOverlappedEntry(e *overlappedEntry) *pollOperation {
 	if e.ov == nil {
@@ -211,10 +211,10 @@ func netpoll(delay int64) (gList, int32) {
 		case netpollSourceReady:
 			op := pollOperationFromOverlappedEntry(e)
 			if op == nil {
-				// Entry from outside the Go runtime and internal/poll, ignore.
+				// Entry from outside the Go runtime and publicinternal/poll, ignore.
 				continue
 			}
-			// Entry from internal/poll.
+			// Entry from publicinternal/poll.
 			mode := op.mode
 			if mode != 'r' && mode != 'w' {
 				println("runtime: GetQueuedCompletionStatusEx returned net_op with invalid mode=", mode)

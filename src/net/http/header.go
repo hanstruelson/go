@@ -7,7 +7,7 @@ package http
 import (
 	"io"
 	"net/http/httptrace"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/textproto"
 	"slices"
 	"strings"

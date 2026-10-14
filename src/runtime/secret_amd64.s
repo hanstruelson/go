@@ -40,7 +40,7 @@ TEXT ·secretEraseRegistersMcall(SB),NOSPLIT|NOFRAME,$0-0
 	XORL	R15, R15
 
 	// floating-point registers
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JEQ	avx
 
 	PXOR	X0, X0
@@ -67,7 +67,7 @@ avx:
 	VZEROALL
 
 	// Clear all the avx512 state.
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JNE	noavx512
 
 	// Zero X16-X31

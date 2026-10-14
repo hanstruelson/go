@@ -5,10 +5,10 @@
 package os
 
 import (
-	"internal/bytealg"
-	"internal/poll"
-	"internal/stringslite"
-	"internal/testlog"
+	"publicinternal/bytealg"
+	"publicinternal/poll"
+	"publicinternal/stringslite"
+	"publicinternal/testlog"
 	"io"
 	"runtime"
 	"sync"

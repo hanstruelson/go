@@ -6,7 +6,7 @@ package net
 
 import (
 	"errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"io/fs"
 	"net/netip"
 	"os"

@@ -10,7 +10,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"mime"

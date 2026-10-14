@@ -24,7 +24,7 @@ package expvar
 
 import (
 	"encoding/json"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"log"
 	"math"
 	"net/http"

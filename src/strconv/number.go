@@ -6,8 +6,8 @@ package strconv
 
 import (
 	"errors"
-	"internal/strconv"
-	"internal/stringslite"
+	"publicinternal/strconv"
+	"publicinternal/stringslite"
 )
 
 // IntSize is the size in bits of an int or uint value.
@@ -227,7 +227,7 @@ func AppendUint(dst []byte, i uint64, base int) []byte {
 	return strconv.AppendUint(dst, i, base)
 }
 
-// toError converts from internal/strconv.Error to the error guaranteed by this package's APIs.
+// toError converts from publicinternal/strconv.Error to the error guaranteed by this package's APIs.
 func toError(fn, s string, base, bitSize int, err error) error {
 	switch err {
 	case strconv.ErrSyntax:

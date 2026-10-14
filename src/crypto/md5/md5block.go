@@ -7,7 +7,7 @@
 package md5
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"math/bits"
 )
 

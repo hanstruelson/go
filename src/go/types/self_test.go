@@ -8,9 +8,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"internal/testenv"
 	"path"
 	"path/filepath"
+	"publicinternal/testenv"
 	"testing"
 	"time"
 
@@ -41,7 +41,7 @@ func BenchmarkCheck(b *testing.B) {
 		"go/parser",
 		"go/constant",
 		"runtime",
-		filepath.Join("go", "internal", "gcimporter"),
+		filepath.Join("go", "publicinternal", "gcimporter"),
 	} {
 		b.Run(path.Base(p), func(b *testing.B) {
 			path := filepath.Join("..", "..", p)

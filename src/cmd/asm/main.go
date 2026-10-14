@@ -8,19 +8,19 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"internal/buildcfg"
+	"publicinternal/buildcfg"
 	"log"
 	"os"
 
-	"cmd/asm/internal/arch"
-	"cmd/asm/internal/asm"
-	"cmd/asm/internal/flags"
-	"cmd/asm/internal/lex"
+	"cmd/asm/publicinternal/arch"
+	"cmd/asm/publicinternal/asm"
+	"cmd/asm/publicinternal/flags"
+	"cmd/asm/publicinternal/lex"
 
-	"cmd/internal/bio"
-	"cmd/internal/obj"
-	"cmd/internal/objabi"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/bio"
+	"cmd/publicinternal/obj"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/telemetry/counter"
 )
 
 func main() {

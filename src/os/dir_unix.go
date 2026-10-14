@@ -7,8 +7,8 @@
 package os
 
 import (
-	"internal/byteorder"
-	"internal/goarch"
+	"publicinternal/byteorder"
+	"publicinternal/goarch"
 	"io"
 	"runtime"
 	"sync"

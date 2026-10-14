@@ -10,7 +10,7 @@ go 1.23
 module golang.org/x/pkgsite
 
 go 1.23
--- cmd/internal/doc/main.go --
+-- cmd/publicinternal/doc/main.go --
 package main
 
 import "fmt"

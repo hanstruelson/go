@@ -40,7 +40,7 @@ package driver
 
 import (
 	"context"
-	"database/sql/internal"
+	"database/sql/publicinternal"
 	"errors"
 	"reflect"
 )

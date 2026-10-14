@@ -9,8 +9,8 @@ package pprof
 import (
 	"bytes"
 	"fmt"
-	"internal/asan"
-	"internal/profile"
+	"publicinternal/asan"
+	"publicinternal/profile"
 	"reflect"
 	"regexp"
 	"runtime"

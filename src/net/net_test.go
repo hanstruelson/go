@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/internal/socktest"
+	"net/publicinternal/socktest"
 	"os"
 	"runtime"
 	"sync"

@@ -99,7 +99,7 @@ package net
 import (
 	"context"
 	"errors"
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"os"
 	"sync"

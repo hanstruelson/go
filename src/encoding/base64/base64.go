@@ -6,7 +6,7 @@
 package base64
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"io"
 	"math"
 	"slices"

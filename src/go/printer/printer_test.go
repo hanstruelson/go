@@ -12,7 +12,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"internal/diff"
+	"publicinternal/diff"
 	"io"
 	"os"
 	"path/filepath"

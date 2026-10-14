@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"os"
 	"path/filepath"

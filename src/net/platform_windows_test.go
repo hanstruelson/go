@@ -4,7 +4,7 @@
 
 package net
 
-import "internal/syscall/windows"
+import "publicinternal/syscall/windows"
 
 func supportsUnixSocket() bool {
 	return windows.SupportUnixSocket()

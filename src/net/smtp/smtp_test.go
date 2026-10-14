@@ -10,7 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"net"
 	"net/textproto"

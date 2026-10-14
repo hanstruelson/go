@@ -26,7 +26,7 @@ func asmcgocall_no_g(fn, arg unsafe.Pointer)
 
 // Used by reflectcall and the reflect package.
 //
-// Spills/loads arguments in registers to/from an internal/abi.RegArgs
+// Spills/loads arguments in registers to/from an publicinternal/abi.RegArgs
 // respectively. Does not follow the Go ABI.
 //
 //go:linknamestd spillArgs

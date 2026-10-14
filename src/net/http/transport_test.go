@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"go/token"
-	"internal/nettest"
-	"internal/nettrace"
+	"publicinternal/nettest"
+	"publicinternal/nettrace"
 	"io"
 	"log"
 	mrand "math/rand"
@@ -32,7 +32,7 @@ import (
 	"net/http/httptest"
 	"net/http/httptrace"
 	"net/http/httputil"
-	"net/http/internal/testcert"
+	"net/http/publicinternal/testcert"
 	"net/textproto"
 	"net/url"
 	"os"
@@ -7306,7 +7306,7 @@ func TestTransportReqCancelerCleanupOnRequestBodyWriteError(t *testing.T) {
 
 		clientConn, netConn := tt.newClientConn("http", "example.tld:80")
 
-		// TODO: We've got a useful testRequestBody type in internal/http2,
+		// TODO: We've got a useful testRequestBody type in publicinternal/http2,
 		// either make a copy of it in net/http or put it someplace common.
 		bodyr, bodyw := io.Pipe()
 		t.Cleanup(func() {

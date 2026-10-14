@@ -6,7 +6,7 @@
 
 package runtime
 
-import "internal/abi"
+import "publicinternal/abi"
 
 //go:nosplit
 //go:nowritebarrierrec

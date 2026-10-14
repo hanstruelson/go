@@ -5,17 +5,17 @@
 package counter
 
 // The implementation of this package and tests are located in
-// internal/counter, which can be shared with the upload package.
+// publicinternal/counter, which can be shared with the upload package.
 // TODO(hyangah): use of type aliases prevents nice documentation
 // rendering in go doc or pkgsite. Fix this either by avoiding
-// type aliasing or restructuring the internal/counter package.
+// type aliasing or restructuring the publicinternal/counter package.
 import (
 	"flag"
 	"path"
 	"runtime/debug"
 
-	"golang.org/x/telemetry/internal/counter"
-	"golang.org/x/telemetry/internal/telemetry"
+	"golang.org/x/telemetry/publicinternal/counter"
+	"golang.org/x/telemetry/publicinternal/telemetry"
 )
 
 // Inc increments the counter with the given name.

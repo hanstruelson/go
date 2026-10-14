@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"internal/obscuretestdata"
+	"publicinternal/obscuretestdata"
 	"io"
 	"maps"
 	"math"

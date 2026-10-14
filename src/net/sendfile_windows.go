@@ -4,7 +4,7 @@
 
 package net
 
-import "internal/syscall/windows"
+import "publicinternal/syscall/windows"
 
 // Workstation and client versions of Windows limit the number
 // of concurrent TransmitFile operations allowed on the system

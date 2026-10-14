@@ -11,7 +11,7 @@ stdout ^cmd/vendor/golang\.org/x/arch/x86/x86asm
 
 # The dependencies of those packages should also be vendored.
 go list -deps vendor/golang.org/x/crypto/chacha20
-stdout ^vendor/golang\.org/x/crypto/internal/alias
+stdout ^vendor/golang\.org/x/crypto/publicinternal/alias
 
 # cmd/... should match the same packages it used to match in GOPATH mode.
 go list cmd/...
@@ -44,7 +44,7 @@ stdout ^vendor/golang.org/x/net/http2/hpack
 # The dependencies of packages with an explicit 'vendor/' prefix should
 # still themselves resolve to vendored packages.
 go list -deps vendor/golang.org/x/crypto/chacha20
-stdout ^vendor/golang.org/x/crypto/internal/alias
+stdout ^vendor/golang.org/x/crypto/publicinternal/alias
 ! stdout ^golang\.org/x
 
 # Within the std module, the dependencies of the non-vendored packages within

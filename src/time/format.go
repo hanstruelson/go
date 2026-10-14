@@ -6,7 +6,7 @@ package time
 
 import (
 	"errors"
-	"internal/stringslite"
+	"publicinternal/stringslite"
 	_ "unsafe" // for linkname
 )
 

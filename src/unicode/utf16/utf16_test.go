@@ -5,7 +5,7 @@
 package utf16_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"slices"
 	"testing"
 	"unicode"

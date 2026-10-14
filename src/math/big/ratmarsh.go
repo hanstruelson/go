@@ -9,7 +9,7 @@ package big
 import (
 	"errors"
 	"fmt"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"math"
 )
 

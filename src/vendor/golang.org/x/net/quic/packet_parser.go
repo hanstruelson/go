@@ -5,7 +5,7 @@
 package quic
 
 import (
-	"golang.org/x/net/internal/quic/quicwire"
+	"golang.org/x/net/publicinternal/quic/quicwire"
 )
 
 // parseLongHeaderPacket parses a QUIC long header packet.

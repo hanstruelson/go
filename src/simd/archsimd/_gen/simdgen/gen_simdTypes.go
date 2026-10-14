@@ -417,7 +417,7 @@ func (x {{.Name}}) String() string {
 `
 
 const simdFeaturesTemplate = `
-import "internal/cpu"
+import "publicinternal/cpu"
 
 type X86Features struct {}
 
@@ -1015,7 +1015,7 @@ type featureInfo struct {
 	// true, it must also be true that the CPU has feature Baz.
 	Implies []string
 
-	// Virtual means this feature is not represented directly in internal/cpu,
+	// Virtual means this feature is not represented directly in publicinternal/cpu,
 	// but is instead the logical AND of the features in Implies.
 	Virtual bool
 }
@@ -1079,7 +1079,7 @@ func writeSIMDFeatures(buffer *bytes.Buffer, ops []Operation) {
 		return compareNatural(a.Feature, b.Feature)
 	})
 
-	// TODO: internal/cpu doesn't enforce these at all. You can even do
+	// TODO: publicinternal/cpu doesn't enforce these at all. You can even do
 	// GODEBUG=cpu.avx=off and it will happily turn off AVX without turning off
 	// AVX2. We need to push these dependencies into it somehow.
 	type feature struct {

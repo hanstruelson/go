@@ -6,11 +6,11 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/abi"
-	"internal/asan"
-	"internal/msan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/abi"
+	"publicinternal/asan"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"math/bits"
 	"math/rand"
 	"os"

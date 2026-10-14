@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/cfg"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/publicinternal/typesinternal"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -263,13 +263,13 @@ func knownIntrinsic(fn *types.Func) (noreturn, known bool) {
 	//
 	// Not all such intrinsics must be listed here: ctrlflow
 	// considers any function called for its value--such as
-	// crypto/internal/constanttime.bool2Uint8--to potentially
+	// crypto/publicinternal/constanttime.bool2Uint8--to potentially
 	// return; only functions called as a statement, for effects,
 	// are no-return candidates.
 	//
 	// Unfortunately this does sometimes mean peering into internals.
 	// Where possible, use the nearest enclosing public API function.
-	if typesinternal.IsFunctionNamed(fn, "internal/abi", "EscapeNonString") ||
+	if typesinternal.IsFunctionNamed(fn, "publicinternal/abi", "EscapeNonString") ||
 		typesinternal.IsFunctionNamed(fn, "hash/maphash", "Comparable") {
 		return false, true
 	}

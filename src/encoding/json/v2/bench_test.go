@@ -22,7 +22,7 @@ import (
 	jsonv1 "encoding/json"
 
 	jsonv1in2 "encoding/json"
-	"encoding/json/internal/jsontest"
+	"encoding/json/publicinternal/jsontest"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 )

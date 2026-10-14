@@ -173,8 +173,8 @@ package json
 import (
 	"encoding"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonopts"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 )

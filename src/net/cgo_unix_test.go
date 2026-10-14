@@ -8,7 +8,7 @@ package net
 
 import (
 	"context"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"testing"
 )
 

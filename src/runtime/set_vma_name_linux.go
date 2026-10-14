@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/syscall/linux"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/syscall/linux"
 	"unsafe"
 )
 

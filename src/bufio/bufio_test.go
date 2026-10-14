@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"io"
 	"math/rand"
 	"strconv"

@@ -5,9 +5,9 @@
 package main
 
 import (
-	"cmd/internal/cov"
-	"cmd/internal/pkgpattern"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/cov"
+	"cmd/publicinternal/pkgpattern"
+	"cmd/publicinternal/telemetry/counter"
 	"flag"
 	"fmt"
 	"os"

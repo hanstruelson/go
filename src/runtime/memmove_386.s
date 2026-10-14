@@ -76,7 +76,7 @@ nosse2:
  */
 forward:
 	// If REP MOVSB isn't fast, don't use it
-	CMPB	internal∕cpu·X86+const_offsetX86HasERMS(SB), $1 // enhanced REP MOVSB/STOSB
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasERMS(SB), $1 // enhanced REP MOVSB/STOSB
 	JNE	fwdBy4
 
 	// Check alignment

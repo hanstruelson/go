@@ -10,7 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"internal/obscuretestdata"
+	"publicinternal/obscuretestdata"
 	"io"
 	"io/fs"
 	"os"

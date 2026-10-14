@@ -7,9 +7,9 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/runtime/gc"
-	"internal/runtime/sys"
+	"publicinternal/goarch"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

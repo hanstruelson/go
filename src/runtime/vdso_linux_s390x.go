@@ -8,7 +8,7 @@ package runtime
 
 const (
 	// vdsoArrayMax is the byte-size of a maximally sized array on this architecture.
-	// See cmd/compile/internal/s390x/galign.go arch.MAXWIDTH initialization.
+	// See cmd/compile/publicinternal/s390x/galign.go arch.MAXWIDTH initialization.
 	vdsoArrayMax = 1<<50 - 1
 )
 

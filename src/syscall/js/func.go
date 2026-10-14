@@ -7,7 +7,7 @@
 package js
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"sync"
 )
 

@@ -6,11 +6,11 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/asan"
-	"internal/goexperiment"
-	"internal/msan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/goexperiment"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"runtime"
 	"testing"
 )

@@ -36,83 +36,84 @@ import (
 var bootstrapDirs = []string{
 	"cmp",
 	"cmd/asm",
-	"cmd/asm/internal/...",
+	"cmd/asm/publicinternal/...",
 	"cmd/cgo",
 	"cmd/compile",
-	"cmd/compile/internal/...",
+	"cmd/compile/publicinternal/...",
 	"cmd/go",
-	"cmd/go/internal/base",
-	"cmd/go/internal/bug",
-	"cmd/go/internal/cache",
-	"cmd/go/internal/cacheprog",
-	"cmd/go/internal/cfg",
-	"cmd/go/internal/clean",
-	"cmd/go/internal/cmdflag",
-	"cmd/go/internal/doc",
-	"cmd/go/internal/envcmd",
-	"cmd/go/internal/fips140",
-	"cmd/go/internal/fmtcmd",
-	"cmd/go/internal/fsys",
-	"cmd/go/internal/generate",
-	"cmd/go/internal/gover",
-	"cmd/go/internal/help",
-	"cmd/go/internal/imports",
-	"cmd/go/internal/list",
-	"cmd/go/internal/load",
-	"cmd/go/internal/lockedfile",
-	"cmd/go/internal/lockedfile/internal/filelock",
-	"cmd/go/internal/mmap",
-	"cmd/go/internal/modcmd",
-	"cmd/go/internal/modfetch",
-	"cmd/go/internal/modfetch/codehost",
-	"cmd/go/internal/modget",
-	"cmd/go/internal/modindex",
-	"cmd/go/internal/modinfo",
-	"cmd/go/internal/modload",
-	"cmd/go/internal/mvs",
-	"cmd/go/internal/run",
-	"cmd/go/internal/search",
-	"cmd/go/internal/str",
-	"cmd/go/internal/telemetrycmd",
-	"cmd/go/internal/telemetrystats",
-	"cmd/go/internal/test",
-	"cmd/go/internal/tool",
-	"cmd/go/internal/toolchain",
-	"cmd/go/internal/trace",
-	"cmd/go/internal/vcs",
-	"cmd/go/internal/version",
-	"cmd/go/internal/vet",
-	"cmd/go/internal/web",
-	"cmd/go/internal/work",
-	"cmd/go/internal/workcmd",
-	"cmd/internal/archive",
-	"cmd/internal/bio",
-	"cmd/internal/buildid",
-	"cmd/internal/codesign",
-	"cmd/internal/dwarf",
-	"cmd/internal/edit",
-	"cmd/internal/gcprog",
-	"cmd/internal/goobj",
-	"cmd/internal/hash",
-	"cmd/internal/macho",
-	"cmd/internal/obj/...",
-	"cmd/internal/objabi",
-	"cmd/internal/par",
-	"cmd/internal/pathcache",
-	"cmd/internal/pgo",
-	"cmd/internal/pkgpath",
-	"cmd/internal/pkgpattern",
-	"cmd/internal/quoted",
-	"cmd/internal/robustio",
-	"cmd/internal/src",
-	"cmd/internal/sys",
-	"cmd/internal/telemetry",
-	"cmd/internal/telemetry/counter",
-	"cmd/internal/test2json",
+	"cmd/go/publicinternal/jitbundle",
+	"cmd/go/publicinternal/base",
+	"cmd/go/publicinternal/bug",
+	"cmd/go/publicinternal/cache",
+	"cmd/go/publicinternal/cacheprog",
+	"cmd/go/publicinternal/cfg",
+	"cmd/go/publicinternal/clean",
+	"cmd/go/publicinternal/cmdflag",
+	"cmd/go/publicinternal/doc",
+	"cmd/go/publicinternal/envcmd",
+	"cmd/go/publicinternal/fips140",
+	"cmd/go/publicinternal/fmtcmd",
+	"cmd/go/publicinternal/fsys",
+	"cmd/go/publicinternal/generate",
+	"cmd/go/publicinternal/gover",
+	"cmd/go/publicinternal/help",
+	"cmd/go/publicinternal/imports",
+	"cmd/go/publicinternal/list",
+	"cmd/go/publicinternal/load",
+	"cmd/go/publicinternal/lockedfile",
+	"cmd/go/publicinternal/lockedfile/publicinternal/filelock",
+	"cmd/go/publicinternal/mmap",
+	"cmd/go/publicinternal/modcmd",
+	"cmd/go/publicinternal/modfetch",
+	"cmd/go/publicinternal/modfetch/codehost",
+	"cmd/go/publicinternal/modget",
+	"cmd/go/publicinternal/modindex",
+	"cmd/go/publicinternal/modinfo",
+	"cmd/go/publicinternal/modload",
+	"cmd/go/publicinternal/mvs",
+	"cmd/go/publicinternal/run",
+	"cmd/go/publicinternal/search",
+	"cmd/go/publicinternal/str",
+	"cmd/go/publicinternal/telemetrycmd",
+	"cmd/go/publicinternal/telemetrystats",
+	"cmd/go/publicinternal/test",
+	"cmd/go/publicinternal/tool",
+	"cmd/go/publicinternal/toolchain",
+	"cmd/go/publicinternal/trace",
+	"cmd/go/publicinternal/vcs",
+	"cmd/go/publicinternal/version",
+	"cmd/go/publicinternal/vet",
+	"cmd/go/publicinternal/web",
+	"cmd/go/publicinternal/work",
+	"cmd/go/publicinternal/workcmd",
+	"cmd/publicinternal/archive",
+	"cmd/publicinternal/bio",
+	"cmd/publicinternal/buildid",
+	"cmd/publicinternal/codesign",
+	"cmd/publicinternal/dwarf",
+	"cmd/publicinternal/edit",
+	"cmd/publicinternal/gcprog",
+	"cmd/publicinternal/goobj",
+	"cmd/publicinternal/hash",
+	"cmd/publicinternal/macho",
+	"cmd/publicinternal/obj/...",
+	"cmd/publicinternal/objabi",
+	"cmd/publicinternal/par",
+	"cmd/publicinternal/pathcache",
+	"cmd/publicinternal/pgo",
+	"cmd/publicinternal/pkgpath",
+	"cmd/publicinternal/pkgpattern",
+	"cmd/publicinternal/quoted",
+	"cmd/publicinternal/robustio",
+	"cmd/publicinternal/src",
+	"cmd/publicinternal/sys",
+	"cmd/publicinternal/telemetry",
+	"cmd/publicinternal/telemetry/counter",
+	"cmd/publicinternal/test2json",
 	"cmd/link",
-	"cmd/link/internal/...",
+	"cmd/link/publicinternal/...",
 	"cmd/preprofile",
-	"cmd/vendor/golang.org/x/mod/internal/lazyregexp",
+	"cmd/vendor/golang.org/x/mod/publicinternal/lazyregexp",
 	"cmd/vendor/golang.org/x/mod/modfile",
 	"cmd/vendor/golang.org/x/mod/module",
 	"cmd/vendor/golang.org/x/mod/semver",
@@ -131,42 +132,42 @@ var bootstrapDirs = []string{
 	"go/build/constraint",
 	"go/constant",
 	"go/version",
-	"internal/abi",
-	"internal/coverage",
-	"cmd/internal/cov/covcmd",
-	"internal/bisect",
-	"internal/buildcfg",
-	"internal/cfg",
-	"internal/diff",
-	"internal/exportdata",
-	"internal/goarch",
-	"internal/godebugs",
-	"internal/goexperiment",
-	"internal/goroot",
-	"internal/gover",
-	"internal/goversion",
-	// internal/lazyregexp is provided by Go 1.17, which permits it to
+	"publicinternal/abi",
+	"publicinternal/coverage",
+	"cmd/publicinternal/cov/covcmd",
+	"publicinternal/bisect",
+	"publicinternal/buildcfg",
+	"publicinternal/cfg",
+	"publicinternal/diff",
+	"publicinternal/exportdata",
+	"publicinternal/goarch",
+	"publicinternal/godebugs",
+	"publicinternal/goexperiment",
+	"publicinternal/goroot",
+	"publicinternal/gover",
+	"publicinternal/goversion",
+	// publicinternal/lazyregexp is provided by Go 1.17, which permits it to
 	// be imported by other packages in this list, but is not provided
 	// by the Go 1.17 version of gccgo. It's on this list only to
 	// support gccgo, and can be removed if we require gccgo 14 or later.
-	"internal/lazyregexp",
-	"internal/lazytemplate",
-	"internal/oserror",
-	"internal/pkgbits",
-	"internal/platform",
-	"internal/profile",
-	"internal/race",
-	"internal/runtime/gc",
-	"internal/saferio",
-	"internal/simd/variants",
-	"internal/singleflight",
-	"internal/strconv",
-	"internal/syslist",
-	"internal/trace/traceviewer/format",
-	"internal/types/errors",
-	"internal/unsafeheader",
-	"internal/xcoff",
-	"internal/zstd",
+	"publicinternal/lazyregexp",
+	"publicinternal/lazytemplate",
+	"publicinternal/oserror",
+	"publicinternal/pkgbits",
+	"publicinternal/platform",
+	"publicinternal/profile",
+	"publicinternal/race",
+	"publicinternal/runtime/gc",
+	"publicinternal/saferio",
+	"publicinternal/simd/variants",
+	"publicinternal/singleflight",
+	"publicinternal/strconv",
+	"publicinternal/syslist",
+	"publicinternal/trace/traceviewer/format",
+	"publicinternal/types/errors",
+	"publicinternal/unsafeheader",
+	"publicinternal/xcoff",
+	"publicinternal/zstd",
 	"math/bits",
 	"sort",
 }
@@ -222,8 +223,8 @@ func bootstrapBuildTools() {
 
 	xprintf("Building Go toolchain1 and bootstrap cmd/go (go_bootstrap) using %s.\n", goroot_bootstrap)
 
-	mkbuildcfg(pathf("%s/src/internal/buildcfg/zbootstrap.go", goroot))
-	mkobjabi(pathf("%s/src/cmd/internal/objabi/zbootstrap.go", goroot))
+	mkbuildcfg(pathf("%s/src/publicinternal/buildcfg/zbootstrap.go", goroot))
+	mkobjabi(pathf("%s/src/cmd/publicinternal/objabi/zbootstrap.go", goroot))
 
 	// Use $GOROOT/pkg/bootstrap as the bootstrap workspace root.
 	// We use a subdirectory of $GOROOT/pkg because that's the
@@ -356,17 +357,17 @@ func bootstrapBuildTools() {
 	}
 }
 
-var ssaRewriteFileSubstring = filepath.FromSlash("src/cmd/compile/internal/ssacompile/rewrite")
+var ssaRewriteFileSubstring = filepath.FromSlash("src/cmd/compile/publicinternal/ssacompile/rewrite")
 
 func init() {
 	if ssaRewriteSplitPackages {
-		ssaRewriteFileSubstring = filepath.FromSlash("src/cmd/compile/internal/ssa/rewrite")
+		ssaRewriteFileSubstring = filepath.FromSlash("src/cmd/compile/publicinternal/ssa/rewrite")
 	}
 }
 
 // isUnneededSSARewriteFile reports whether srcFile is a
-// src/cmd/compile/internal/ssa/rewrite/ARCH/rewriteARCHNAME.go file or a
-// src/cmd/compile/internal/ssacompile/rewriteARCHNAME.go file for an
+// src/cmd/compile/publicinternal/ssa/rewrite/ARCH/rewriteARCHNAME.go file or a
+// src/cmd/compile/publicinternal/ssacompile/rewriteARCHNAME.go file for an
 // architecture that isn't for the given GOARCH.
 //
 // When unneeded is true archCaps is the rewrite base filename without
@@ -416,7 +417,7 @@ func bootstrapRewriteFile(srcFile string) string {
 		pkg := filepath.Base(filepath.Dir(srcFile))
 		return fmt.Sprintf(`%spackage %s
 
-import "bootstrap/cmd/compile/internal/ssa"
+import "bootstrap/cmd/compile/publicinternal/ssa"
 
 func %sValue%s(v *ssa.Value) bool { panic("unused during bootstrap") }
 func %sBlock%s(b *ssa.Block) bool { panic("unused during bootstrap") }
@@ -497,13 +498,15 @@ func bootstrapFixImports(srcFile string) string {
 		// Ignore imports of cmd/go internal dependencies that have linknames.
 		// Their behavior won't affect anything meaningful in the bootstrap toolchain.
 		// TODO(matloob): it would be even better to stub out their imports.
-		if path == "internal/godebug" || path == "internal/syscall/unix" || path == "internal/syscall/windows" {
+		if path == "publicinternal/godebug" || path == "publicinternal/syscall/unix" || path == "publicinternal/syscall/windows" {
+			oldPath := strings.TrimPrefix(path, "public")
+			lines[i] = strings.ReplaceAll(line, `"`+m[2]+`"`, `"`+oldPath+`"`)
 			continue
 		}
 
-		// Rewrite use of internal/reflectlite to be plain reflect.
-		if path == "internal/reflectlite" {
-			lines[i] = strings.ReplaceAll(line, `"reflect"`, `reflectlite "reflect"`)
+		// Rewrite use of publicinternal/reflectlite to be plain reflect.
+		if path == "publicinternal/reflectlite" {
+			lines[i] = strings.ReplaceAll(line, `"`+m[2]+`"`, `reflectlite "reflect"`)
 			continue
 		}
 
@@ -514,7 +517,7 @@ func bootstrapFixImports(srcFile string) string {
 		// bootstrapDirs and made into bootstrap copies based on the
 		// current repo's source code. Those are fine; this is catching
 		// references to internal packages in the older bootstrap toolchain.
-		if strings.HasPrefix(path, "internal/") {
+		if strings.HasPrefix(path, "publicinternal/") {
 			fatalf("%s:%d: bootstrap-copied source file cannot import %s", srcFile, i+1, path)
 		}
 		if path != m[2] {

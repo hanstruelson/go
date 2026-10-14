@@ -6,8 +6,8 @@ package os
 
 import (
 	"errors"
-	"internal/filepathlite"
-	"internal/syscall/windows"
+	"publicinternal/filepathlite"
+	"publicinternal/syscall/windows"
 	"syscall"
 	"unsafe"
 )

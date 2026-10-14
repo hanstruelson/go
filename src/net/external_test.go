@@ -6,7 +6,7 @@ package net
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"strings"
 	"testing"

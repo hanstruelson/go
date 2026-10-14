@@ -6,7 +6,7 @@ package testing_test
 
 import (
 	"flag"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"testing"

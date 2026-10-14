@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"runtime"
 )
 

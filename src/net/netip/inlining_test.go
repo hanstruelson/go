@@ -5,7 +5,7 @@
 package netip
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os/exec"
 	"regexp"
 	"runtime"

@@ -15,7 +15,7 @@ package http
 // Do not modify this file, it should remain frozen.
 
 import (
-	"internal/godebug"
+	"publicinternal/godebug"
 	"net/url"
 	"sort"
 	"strings"

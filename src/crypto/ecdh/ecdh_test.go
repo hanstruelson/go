@@ -13,7 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"path/filepath"

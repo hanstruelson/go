@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	"internal/abi"
+	"publicinternal/abi"
 	"runtime"
 	"unsafe"
 )

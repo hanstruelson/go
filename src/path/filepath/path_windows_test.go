@@ -7,8 +7,8 @@ package filepath_test
 import (
 	"flag"
 	"fmt"
-	"internal/godebug"
-	"internal/testenv"
+	"publicinternal/godebug"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"os/exec"

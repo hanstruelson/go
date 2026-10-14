@@ -8,7 +8,7 @@
 package net
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"runtime"
 	"testing"

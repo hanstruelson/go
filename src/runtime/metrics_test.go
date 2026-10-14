@@ -6,10 +6,10 @@ package runtime_test
 
 import (
 	"bytes"
-	"internal/abi"
-	"internal/goexperiment"
-	"internal/profile"
-	"internal/testenv"
+	"publicinternal/abi"
+	"publicinternal/goexperiment"
+	"publicinternal/profile"
+	"publicinternal/testenv"
 	"os"
 	"reflect"
 	"runtime"
@@ -1016,7 +1016,7 @@ func TestRuntimeLockMetricsAndProfile(t *testing.T) {
 		metricGrowth = afterMetrics[0].Value.Float64() - beforeMetrics[0].Value.Float64()
 		profileGrowth = float64(sumSamples(afterProfile, 1)-sumSamples(beforeProfile, 1)) * time.Nanosecond.Seconds()
 
-		// The internal/profile package does not support compaction; this delta
+		// The publicinternal/profile package does not support compaction; this delta
 		// profile will include separate positive and negative entries.
 		p = afterProfile.Copy()
 		if len(beforeProfile.Sample) > 0 {

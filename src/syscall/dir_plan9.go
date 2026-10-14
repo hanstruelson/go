@@ -8,7 +8,7 @@ package syscall
 
 import (
 	"errors"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 var (

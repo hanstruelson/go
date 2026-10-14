@@ -6,7 +6,7 @@ package hmac_test
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha3"

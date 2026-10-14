@@ -5,21 +5,21 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/cpu"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/goos"
-	"internal/runtime/atomic"
-	"internal/runtime/exithook"
-	"internal/runtime/maps"
-	"internal/runtime/sys"
-	"internal/strconv"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/goos"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/exithook"
+	"publicinternal/runtime/maps"
+	"publicinternal/runtime/sys"
+	"publicinternal/strconv"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 
-// set using cmd/go/internal/modload.ModInfoProg
+// set using cmd/go/publicinternal/modload.ModInfoProg
 var modinfo string
 
 // Goroutine scheduler
@@ -767,7 +767,7 @@ const (
 	_GoidCacheBatch = 16
 )
 
-// cpuinit sets up CPU feature flags and calls internal/cpu.Initialize. env should be the complete
+// cpuinit sets up CPU feature flags and calls publicinternal/cpu.Initialize. env should be the complete
 // value of the GODEBUG environment variable.
 func cpuinit(env string) {
 	cpu.Initialize(env)
@@ -1488,7 +1488,7 @@ func (r stwReason) isGC() bool {
 	return r == stwGCMarkTerm || r == stwGCSweepTerm
 }
 
-// If you add to this list, also add it to src/internal/trace/parser.go.
+// If you add to this list, also add it to src/publicinternal/trace/parser.go.
 // If you change the values of any of the stw* constants, bump the trace
 // version number and make a copy of this.
 var stwReasonStrings = [...]string{
@@ -5816,22 +5816,22 @@ func sigprof(pc, sp, lr uintptr, gp *g, mp *m) {
 	}
 
 	// On mips{,le}/arm, 64bit atomics are emulated with spinlocks, in
-	// internal/runtime/atomic. If SIGPROF arrives while the program is inside
+	// publicinternal/runtime/atomic. If SIGPROF arrives while the program is inside
 	// the critical section, it creates a deadlock (when writing the sample).
 	// As a workaround, create a counter of SIGPROFs while in critical section
 	// to store the count, and pass it to sigprof.add() later when SIGPROF is
 	// received from somewhere else (with _LostSIGPROFDuringAtomic64 as pc).
 	if GOARCH == "mips" || GOARCH == "mipsle" || GOARCH == "arm" {
 		if f := findfunc(pc); f.valid() {
-			if stringslite.HasPrefix(funcname(f), "internal/runtime/atomic") {
+			if stringslite.HasPrefix(funcname(f), "publicinternal/runtime/atomic") {
 				cpuprof.lostAtomic++
 				return
 			}
 		}
 		if GOARCH == "arm" && goarm < 7 && GOOS == "linux" && pc&0xffff0000 == 0xffff0000 {
-			// internal/runtime/atomic functions call into kernel
+			// publicinternal/runtime/atomic functions call into kernel
 			// helpers on arm < 7. See
-			// internal/runtime/atomic/sys_linux_arm.s.
+			// publicinternal/runtime/atomic/sys_linux_arm.s.
 			cpuprof.lostAtomic++
 			return
 		}
@@ -8010,7 +8010,7 @@ func sync_atomic_runtime_procUnpin() {
 
 // Active spinning for sync.Mutex.
 //
-//go:linkname internal_sync_runtime_canSpin internal/sync.runtime_canSpin
+//go:linkname internal_sync_runtime_canSpin publicinternal/sync.runtime_canSpin
 //go:nosplit
 func internal_sync_runtime_canSpin(i int) bool {
 	// sync.Mutex is cooperative, so we are conservative with spinning.
@@ -8027,7 +8027,7 @@ func internal_sync_runtime_canSpin(i int) bool {
 	return true
 }
 
-//go:linkname internal_sync_runtime_doSpin internal/sync.runtime_doSpin
+//go:linkname internal_sync_runtime_doSpin publicinternal/sync.runtime_doSpin
 //go:nosplit
 func internal_sync_runtime_doSpin() {
 	procyield(active_spin_cnt)

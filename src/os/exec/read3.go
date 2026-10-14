@@ -14,11 +14,11 @@ package main
 
 import (
 	"fmt"
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"os"
 	"os/exec"
-	"os/exec/internal/fdtest"
+	"os/exec/publicinternal/fdtest"
 	"runtime"
 )
 

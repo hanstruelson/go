@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/trace"
+	"publicinternal/trace"
 )
 
 var _ generator = &goroutineGenerator{}

@@ -64,7 +64,7 @@ func initOptions() {
 
 func archInit() {
 
-	// From internal/cpu
+	// From publicinternal/cpu
 	const (
 		// eax bits
 		cpuid_AVXVNNI = 1 << 4
@@ -113,7 +113,7 @@ func archInit() {
 		// edx bits for CPUID 0x80000001
 		cpuid_RDTSCP = 1 << 27
 	)
-	// Additional constants not in internal/cpu
+	// Additional constants not in publicinternal/cpu
 	const (
 		// eax=1: edx
 		cpuid_SSE2 = 1 << 26

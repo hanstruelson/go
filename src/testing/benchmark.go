@@ -8,7 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"internal/sysinfo"
+	"publicinternal/sysinfo"
 	"io"
 	"math"
 	"os"

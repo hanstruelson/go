@@ -15,7 +15,7 @@ package crc32
 import (
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"sync"
 	"sync/atomic"
 )

@@ -10,7 +10,7 @@ In general script files should have short names: a few words,
 The first word should be the general category of behavior being tested,
 often the name of a go subcommand (build, link, compile, ...) or concept (vendor, pattern).
 
-Each script is a text archive (go doc internal/txtar).
+Each script is a text archive (go doc publicinternal/txtar).
 The script begins with an actual command script to run
 followed by the content of zero or more supporting files to
 create in the script's temporary file system before it starts executing.
@@ -40,7 +40,7 @@ On Windows, the variables $USERPROFILE and $TMP are set instead of
 $HOME and $TMPDIR.
 
 The lines at the top of the script are a sequence of commands to be executed by
-a small script engine configured in .../cmd/internal/script/scripttest/run.go (not the system shell).
+a small script engine configured in .../cmd/publicinternal/script/scripttest/run.go (not the system shell).
 
 Each line of a script is parsed into a sequence of space-separated command
 words, with environment variable expansion within each word and # marking

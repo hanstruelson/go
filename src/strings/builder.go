@@ -5,8 +5,8 @@
 package strings
 
 import (
-	"internal/abi"
-	"internal/bytealg"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
 	"unicode/utf8"
 	"unsafe"
 )

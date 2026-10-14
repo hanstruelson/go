@@ -17,7 +17,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"math"
 	"math/big"
 	"net"

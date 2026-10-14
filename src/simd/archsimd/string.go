@@ -7,7 +7,7 @@
 package archsimd
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 )
 
 type number interface {

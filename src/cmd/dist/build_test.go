@@ -5,12 +5,12 @@
 package main
 
 import (
-	"internal/platform"
+	"publicinternal/platform"
 	"testing"
 )
 
 // TestMustLinkExternal verifies that the mustLinkExternal helper
-// function matches internal/platform.MustLinkExternal.
+// function matches publicinternal/platform.MustLinkExternal.
 func TestMustLinkExternal(t *testing.T) {
 	for _, goos := range okgoos {
 		for _, goarch := range okgoarch {

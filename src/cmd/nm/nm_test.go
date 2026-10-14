@@ -5,9 +5,9 @@
 package main
 
 import (
-	"internal/obscuretestdata"
-	"internal/platform"
-	"internal/testenv"
+	"publicinternal/obscuretestdata"
+	"publicinternal/platform"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +39,7 @@ func TestNonGoExecs(t *testing.T) {
 		"debug/pe/testdata/gcc-386-mingw-exec",
 		"debug/plan9obj/testdata/amd64-plan9-exec",
 		"debug/plan9obj/testdata/386-plan9-exec",
-		"internal/xcoff/testdata/gcc-ppc64-aix-dwarf2-exec",
+		"publicinternal/xcoff/testdata/gcc-ppc64-aix-dwarf2-exec",
 	}
 	for _, f := range testfiles {
 		exepath := filepath.Join(testenv.GOROOT(t), "src", f)

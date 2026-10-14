@@ -7,9 +7,9 @@ package net
 import (
 	"errors"
 	"fmt"
-	"internal/asan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"net/netip"
 	"os"
 	"reflect"

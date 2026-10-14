@@ -8,7 +8,7 @@ package net
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"path/filepath"

@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/filepathlite"
+	"publicinternal/filepathlite"
 )
 
 func checkPathEscapes(r *Root, name string) error {

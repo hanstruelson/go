@@ -164,7 +164,7 @@ class MapTypePrinter:
 		return str(self.val.type)
 
 	def children(self):
-		MapGroupSlots = 8 # see internal/abi:MapGroupSlots
+		MapGroupSlots = 8 # see publicinternal/abi:MapGroupSlots
 
 		cnt = 0
 		# Yield keys and elements in group.
@@ -194,7 +194,7 @@ class MapTypePrinter:
 					yield str(cnt+1), group['elems'][i]
 
 		# The linker DWARF generation
-		# (cmd/link/internal/ld.(*dwctxt).synthesizemaptypes) records
+		# (cmd/link/publicinternal/ld.(*dwctxt).synthesizemaptypes) records
 		# dirPtr as a **table[K,V], but it may actually be two different types:
 		#
 		# For "full size" maps (dirLen > 0), dirPtr is actually a pointer to
@@ -257,7 +257,7 @@ class MapTypePrinter:
 			length = table['groups']['lengthMask'] + 1
 
 			# The linker DWARF generation
-			# (cmd/link/internal/ld.(*dwctxt).synthesizemaptypes) records
+			# (cmd/link/publicinternal/ld.(*dwctxt).synthesizemaptypes) records
 			# groups.data as a *group[K,V], but it is actually a pointer to
 			# variable length array *[length]group[K,V].
 			#

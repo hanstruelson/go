@@ -11,7 +11,7 @@
 package version // import "go/version"
 
 import (
-	"internal/gover"
+	"publicinternal/gover"
 	"strings"
 )
 

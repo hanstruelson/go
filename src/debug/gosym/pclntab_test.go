@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"debug/elf"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

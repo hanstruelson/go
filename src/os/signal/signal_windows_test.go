@@ -7,7 +7,7 @@ package signal
 import (
 	"bufio"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"strings"

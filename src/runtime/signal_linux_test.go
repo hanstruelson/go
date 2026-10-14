@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

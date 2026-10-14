@@ -14,7 +14,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"testing"
 )
 

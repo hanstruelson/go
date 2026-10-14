@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"io/fs"
 	"os"

@@ -9,7 +9,7 @@ import (
 	"crypto/ecdh"
 	"crypto/fips140"
 	"crypto/hmac"
-	"crypto/internal/fips140/tls13"
+	"crypto/publicinternal/fips140/tls13"
 	"crypto/mlkem"
 	"errors"
 	"hash"

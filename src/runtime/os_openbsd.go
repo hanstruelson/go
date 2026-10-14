@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 
@@ -58,7 +58,7 @@ func sysctlUint64(mib []uint32) (uint64, bool) {
 	return out, true
 }
 
-//go:linkname internal_cpu_sysctlUint64 internal/cpu.sysctlUint64
+//go:linkname internal_cpu_sysctlUint64 publicinternal/cpu.sysctlUint64
 func internal_cpu_sysctlUint64(mib []uint32) (uint64, bool) {
 	return sysctlUint64(mib)
 }

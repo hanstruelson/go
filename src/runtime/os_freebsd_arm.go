@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/cpu"
+	"publicinternal/cpu"
 	"unsafe"
 )
 

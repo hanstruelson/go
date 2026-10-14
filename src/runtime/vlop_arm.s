@@ -42,7 +42,7 @@
 // Be careful: Ra == R11 will be used by the linker for synthesized instructions.
 // Note: this function does not have a frame.
 TEXT runtime·udiv(SB),NOSPLIT|NOFRAME,$0
-	MOVBU	internal∕cpu·ARM+const_offsetARMHasIDIVA(SB), Ra
+	MOVBU	publicinternal∕cpu·ARM+const_offsetARMHasIDIVA(SB), Ra
 	CMP	$0, Ra
 	BNE	udiv_hardware
 

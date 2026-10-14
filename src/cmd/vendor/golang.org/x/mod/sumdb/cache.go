@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Parallel cache.
-// This file is copied from cmd/go/internal/par.
+// This file is copied from cmd/go/publicinternal/par.
 
 package sumdb
 

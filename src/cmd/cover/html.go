@@ -6,7 +6,7 @@ package main
 
 import (
 	"bufio"
-	"cmd/internal/browser"
+	"cmd/publicinternal/browser"
 	"fmt"
 	"html/template"
 	"io"

@@ -8,11 +8,11 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/profilerecord"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/profilerecord"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -937,7 +937,7 @@ func MemProfile(p []MemProfileRecord, inuseZero bool) (n int, ok bool) {
 // The linker set disableMemoryProfiling to true to disable memory profiling
 // if this function is not reachable. Mark it noinline to ensure the symbol exists.
 // (This function is big and normally not inlined anyway.)
-// See also disableMemoryProfiling above and cmd/link/internal/ld/lib.go:linksetup.
+// See also disableMemoryProfiling above and cmd/link/publicinternal/ld/lib.go:linksetup.
 //
 //go:noinline
 func memProfileInternal(size int, inuseZero bool, copyFn func(profilerecord.MemProfileRecord)) (n int, ok bool) {

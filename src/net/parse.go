@@ -8,7 +8,7 @@
 package net
 
 import (
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"io"
 	"io/fs"
 	"os"

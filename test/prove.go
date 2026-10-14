@@ -254,7 +254,7 @@ func f9(a, b bool) int {
 func f10(a string) int {
 	n := len(a)
 	b := a[:n>>1] // ERROR "(Proved IsSliceInBounds|Proved Rsh64x64 is unsigned)$"
-	// We optimize comparisons with small constant strings (see cmd/compile/internal/gc/walk.go),
+	// We optimize comparisons with small constant strings (see cmd/compile/publicinternal/gc/walk.go),
 	// so this string literal must be long.
 	if b == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		return 0

@@ -7,10 +7,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/gc"
-	"internal/runtime/sys"
-	"internal/trace/tracev2"
+	"publicinternal/abi"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/sys"
+	"publicinternal/trace/tracev2"
 )
 
 // Batch type values for the alloc/free experiment.

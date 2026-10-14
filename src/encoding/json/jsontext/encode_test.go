@@ -14,9 +14,9 @@ import (
 	"slices"
 	"testing"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsontest"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsontest"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // TestEncoder tests whether we can produce JSON with either tokens or raw values.

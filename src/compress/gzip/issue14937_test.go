@@ -5,7 +5,7 @@
 package gzip
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"

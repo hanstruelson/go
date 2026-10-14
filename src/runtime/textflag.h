@@ -6,7 +6,7 @@
 // and data objects. The compilers, assemblers, and linker must
 // all agree on these values.
 //
-// Keep in sync with src/cmd/internal/obj/textflag.go.
+// Keep in sync with src/cmd/publicinternal/obj/textflag.go.
 
 // Don't profile the marked routine. This flag is deprecated.
 #define NOPROF	1

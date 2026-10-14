@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
-	"internal/runtime/sys"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

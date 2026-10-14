@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/internal/cryptotest"
-	"crypto/internal/cryptotest/wycheproof"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/cryptotest/wycheproof"
 	"testing"
 )
 

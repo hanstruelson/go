@@ -7,7 +7,7 @@ package net
 import (
 	"bytes"
 	"fmt"
-	"internal/poll"
+	"publicinternal/poll"
 	"io"
 	"reflect"
 	"runtime"

@@ -211,7 +211,7 @@ And then a client could delete boring values from the tree using:
 package iter
 
 import (
-	"internal/race"
+	"publicinternal/race"
 	"runtime"
 	"unsafe"
 )

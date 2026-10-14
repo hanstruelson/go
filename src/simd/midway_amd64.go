@@ -7,7 +7,7 @@
 package simd
 
 import (
-	"internal/cpu"
+	"publicinternal/cpu"
 	"simd/archsimd"
 )
 

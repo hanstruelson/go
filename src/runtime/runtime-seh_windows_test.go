@@ -5,9 +5,9 @@
 package runtime_test
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
-	"internal/syscall/windows"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"slices"
 	"testing"

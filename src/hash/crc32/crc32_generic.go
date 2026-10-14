@@ -12,7 +12,7 @@
 
 package crc32
 
-import "internal/byteorder"
+import "publicinternal/byteorder"
 
 // simpleMakeTable allocates and constructs a Table for the specified
 // polynomial. The table is suitable for use with the simple algorithm

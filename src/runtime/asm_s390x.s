@@ -786,7 +786,7 @@ TEXT runtime·cputicks(SB),NOSPLIT,$0-8
 	MOVD	R3, ret+0(FP)
 	RET
 
-// spillArgs stores return values from registers to a *internal/abi.RegArgs in R10.
+// spillArgs stores return values from registers to a *publicinternal/abi.RegArgs in R10.
 TEXT runtime·spillArgs(SB),NOSPLIT,$0-0
 	MOVD	R2, 0(R10)
 	MOVD	R3, 8(R10)
@@ -814,7 +814,7 @@ TEXT runtime·spillArgs(SB),NOSPLIT,$0-0
 	FMOVD	F15, 184(R10)
 	RET
 
-// unspillArgs loads args into registers from a *internal/abi.RegArgs in R10.
+// unspillArgs loads args into registers from a *publicinternal/abi.RegArgs in R10.
 TEXT runtime·unspillArgs(SB),NOSPLIT,$0-0
 	MOVD	0(R10), R2
 	MOVD	8(R10), R3

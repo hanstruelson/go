@@ -6,7 +6,7 @@ package big
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

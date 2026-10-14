@@ -5,7 +5,7 @@
 package build
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"runtime"
 	"strings"
 	"testing"

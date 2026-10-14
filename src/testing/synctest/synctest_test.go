@@ -6,7 +6,7 @@ package synctest_test
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"regexp"
 	"testing"
@@ -15,7 +15,7 @@ import (
 )
 
 // Tests for interactions between synctest bubbles and the testing package.
-// Other bubble behaviors are tested in internal/synctest.
+// Other bubble behaviors are tested in publicinternal/synctest.
 
 func TestSuccess(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

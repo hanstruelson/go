@@ -9,7 +9,7 @@ package syscall_test
 import (
 	"bufio"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

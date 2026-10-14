@@ -10,10 +10,10 @@ import (
 	"bytes"
 	"debug/elf"
 	"fmt"
-	"internal/asan"
-	"internal/msan"
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"
@@ -190,7 +190,7 @@ type violation struct {
 // The first byte of the secret is variable, to track
 // different instances of it.
 //
-// If this value is changed, update ./internal/crashsecret/main.go
+// If this value is changed, update ./publicinternal/crashsecret/main.go
 // TODO: this is little-endian specific.
 var secretStore = [8]byte{
 	0x00,

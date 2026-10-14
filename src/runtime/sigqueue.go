@@ -33,7 +33,7 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
+	"publicinternal/runtime/atomic"
 	_ "unsafe" // for go:linkname
 )
 

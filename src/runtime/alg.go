@@ -5,16 +5,16 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/byteorder"
-	"internal/goarch"
-	"internal/runtime/maps"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/byteorder"
+	"publicinternal/goarch"
+	"publicinternal/runtime/maps"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
 const (
-	// We use 32-bit hash on Wasm, see internal/runtime/maps/runtime_hash32.go.
+	// We use 32-bit hash on Wasm, see publicinternal/runtime/maps/runtime_hash32.go.
 	hashSize = (1-goarch.IsWasm)*goarch.PtrSize + goarch.IsWasm*4
 	c0       = uintptr((8-hashSize)/4*2860486313 + (hashSize-4)/4*33054211828000289)
 	c1       = uintptr((8-hashSize)/4*3267000013 + (hashSize-4)/4*23344194077549503)
@@ -24,7 +24,7 @@ func trimHash(h uintptr) uintptr {
 	if goarch.IsWasm != 0 {
 		// On Wasm, we use 32-bit hash, despite that uintptr is 64-bit.
 		// memhash* always returns a uintptr with high 32-bit being 0
-		// (see internal/runtime/maps/runtime_hash32.go).
+		// (see publicinternal/runtime/maps/runtime_hash32.go).
 		// We trim the hash in other places where we compute the hash manually, e.g. in interhash.
 		return uintptr(uint32(h))
 	}

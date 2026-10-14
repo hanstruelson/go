@@ -5,7 +5,7 @@
 package signal
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"os"
 	"runtime"
 	"syscall"

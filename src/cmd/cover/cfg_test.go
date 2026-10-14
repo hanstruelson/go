@@ -5,10 +5,10 @@
 package main_test
 
 import (
-	"cmd/internal/cov/covcmd"
+	"cmd/publicinternal/cov/covcmd"
 	"encoding/json"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"strings"

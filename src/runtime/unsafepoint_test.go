@@ -5,8 +5,8 @@
 package runtime_test
 
 import (
-	"internal/abi"
-	"internal/testenv"
+	"publicinternal/abi"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"reflect"
@@ -41,7 +41,7 @@ func TestUnsafePoint(t *testing.T) {
 	// Disassemble the test function.
 	// Note that normally "go test runtime" would strip symbols
 	// and prevent this step from working. So there's a hack in
-	// cmd/go/internal/test that exempts runtime tests from
+	// cmd/go/publicinternal/test that exempts runtime tests from
 	// symbol stripping.
 	cmd := exec.Command(testenv.GoToolPath(t), "tool", "objdump", "-s", "setGlobalPointer", os.Args[0])
 	out, err := cmd.CombinedOutput()

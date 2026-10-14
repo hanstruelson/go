@@ -10,7 +10,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/fips140"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	. "crypto/mldsa"
 	"crypto/sha3"
 	"encoding/hex"

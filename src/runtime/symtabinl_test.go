@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
+	"publicinternal/stringslite"
 )
 
 func XTestInlineUnwinder(t TestingT) {

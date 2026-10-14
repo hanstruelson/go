@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"golang.org/x/telemetry/counter"
-	ic "golang.org/x/telemetry/internal/counter"
-	"golang.org/x/telemetry/internal/telemetry"
+	ic "golang.org/x/telemetry/publicinternal/counter"
+	"golang.org/x/telemetry/publicinternal/telemetry"
 )
 
 var (

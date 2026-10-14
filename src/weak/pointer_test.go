@@ -6,7 +6,7 @@ package weak_test
 
 import (
 	"context"
-	"internal/goarch"
+	"publicinternal/goarch"
 	"runtime"
 	"sync"
 	"testing"

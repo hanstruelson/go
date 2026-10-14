@@ -111,8 +111,8 @@ import (
 	"os/exec"
 	"os/signal"
 
-	"cmd/internal/telemetry/counter"
-	"cmd/internal/test2json"
+	"cmd/publicinternal/telemetry/counter"
+	"cmd/publicinternal/test2json"
 )
 
 var (

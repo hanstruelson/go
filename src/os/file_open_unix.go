@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/poll"
+	"publicinternal/poll"
 	"syscall"
 )
 

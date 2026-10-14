@@ -53,10 +53,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/stringslite"
 )
 
 type suspendGState struct {
@@ -457,7 +457,7 @@ func isAsyncSafePoint(gp *g, pc, sp, lr uintptr) (bool, uintptr) {
 	u, uf := newInlineUnwinder(f, pc)
 	name := u.srcFunc(uf).name()
 	if stringslite.HasPrefix(name, "runtime.") ||
-		stringslite.HasPrefix(name, "internal/runtime/") ||
+		stringslite.HasPrefix(name, "publicinternal/runtime/") ||
 		stringslite.HasPrefix(name, "reflect.") {
 		// For now we never async preempt the runtime or
 		// anything closely tied to the runtime. Known issues
@@ -465,7 +465,7 @@ func isAsyncSafePoint(gp *g, pc, sp, lr uintptr) (bool, uintptr) {
 		// preempt between here and here"), much of the defer
 		// implementation (untyped info on stack), bulk write
 		// barriers (write barrier check), atomic functions in
-		// internal/runtime/atomic, reflect.{makeFuncStub,methodValueCall}.
+		// publicinternal/runtime/atomic, reflect.{makeFuncStub,methodValueCall}.
 		//
 		// Note that this is a subset of the runtimePkgs in pkgspecial.go
 		// and these checks are theoretically redundant because the compiler

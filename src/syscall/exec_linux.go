@@ -8,7 +8,7 @@ package syscall
 
 import (
 	errpkg "errors"
-	"internal/strconv"
+	"publicinternal/strconv"
 	"runtime"
 	"unsafe"
 )

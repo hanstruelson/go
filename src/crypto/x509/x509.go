@@ -38,7 +38,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"math/big"
 	"net"

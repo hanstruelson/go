@@ -6,10 +6,10 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/maps"
-	"internal/testenv"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/maps"
+	"publicinternal/testenv"
 	"math"
 	"os"
 	"reflect"
@@ -1143,8 +1143,8 @@ func TestMapIterDeleteReplace(t *testing.T) {
 }
 
 func TestHmapSize(t *testing.T) {
-	// The structure of Map is defined in internal/runtime/maps/map.go
-	// and in cmd/compile/internal/reflectdata/map.go and must be in sync.
+	// The structure of Map is defined in publicinternal/runtime/maps/map.go
+	// and in cmd/compile/publicinternal/reflectdata/map.go and must be in sync.
 	// The size of Map should be 48 bytes on 64 bit and 32 bytes on 32 bit platforms.
 	wantSize := uintptr(2*8 + 4*goarch.PtrSize)
 	gotSize := unsafe.Sizeof(maps.Map{})
@@ -1159,7 +1159,7 @@ func TestGroupSizeZero(t *testing.T) {
 	mTyp := abi.TypeOf(m)
 	mt := (*abi.MapType)(unsafe.Pointer(mTyp))
 
-	// internal/runtime/maps when create pointers to slots, even if slots
+	// publicinternal/runtime/maps when create pointers to slots, even if slots
 	// are size 0. The compiler should have reserved an extra word to
 	// ensure that pointers to the zero-size type at the end of group are
 	// valid.

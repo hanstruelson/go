@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"compress/bzip2"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"path/filepath"

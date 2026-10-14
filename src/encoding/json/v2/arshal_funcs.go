@@ -13,9 +13,9 @@ import (
 	"reflect"
 	"sync"
 
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
+	"encoding/json/publicinternal"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonopts"
 	"encoding/json/jsontext"
 )
 

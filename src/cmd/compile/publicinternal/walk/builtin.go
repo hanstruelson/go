@@ -1,0 +1,985 @@
+// Copyright 2009 The Go Authors. All rights reserved.walk/bui
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package walk
+
+import (
+	"fmt"
+	"go/constant"
+	"go/token"
+	"publicinternal/abi"
+	"strings"
+
+	"cmd/compile/publicinternal/base"
+	"cmd/compile/publicinternal/escape"
+	"cmd/compile/publicinternal/ir"
+	"cmd/compile/publicinternal/reflectdata"
+	"cmd/compile/publicinternal/typecheck"
+	"cmd/compile/publicinternal/types"
+)
+
+// Rewrite append(src, x, y, z) so that any side effects in
+// x, y, z (including runtime panics) are evaluated in
+// initialization statements before the append.
+// For normal code generation, stop there and leave the
+// rest to ssagen.
+//
+// For race detector, expand append(src, a [, b]* ) to
+//
+//	init {
+//	  s := src
+//	  const argc = len(args) - 1
+//	  newLen := s.len + argc
+//	  if uint(newLen) <= uint(s.cap) {
+//	    s = s[:newLen]
+//	  } else {
+//	    s = growslice(s.ptr, newLen, s.cap, argc, elemType)
+//	  }
+//	  s[s.len - argc] = a
+//	  s[s.len - argc + 1] = b
+//	  ...
+//	}
+//	s
+func (w *walkState) walkAppend(n *ir.CallExpr, init *ir.Nodes, dst ir.Node) ir.Node {
+	if !ir.SameSafeExpr(dst, n.Args[0]) {
+		n.Args[0] = w.safeExpr(n.Args[0], init)
+		n.Args[0] = w.walkExpr(n.Args[0], init)
+	}
+	w.walkExprListSafe(n.Args[1:], init)
+
+	nsrc := n.Args[0]
+
+	// walkExprListSafe will leave OINDEX (s[n]) alone if both s
+	// and n are name or literal, but those may index the slice we're
+	// modifying here. Fix explicitly.
+	// Using cheapExpr also makes sure that the evaluation
+	// of all arguments (and especially any panics) happen
+	// before we begin to modify the slice in a visible way.
+	ls := n.Args[1:]
+	for i, n := range ls {
+		n = w.cheapExpr(n, init)
+		if !types.Identical(n.Type(), nsrc.Type().Elem()) {
+			n = typecheck.AssignConv(n, nsrc.Type().Elem(), "append")
+			n = w.walkExpr(n, init)
+		}
+		ls[i] = n
+	}
+
+	argc := len(n.Args) - 1
+	if argc < 1 {
+		return nsrc
+	}
+
+	// General case, with no function calls left as arguments.
+	// Leave for ssagen, except that instrumentation requires the old form.
+	if !w.curfunc.Target.Flags.Cfg.Instrumenting || w.curfunc.Target.Flags.CompilingRuntime {
+		return n
+	}
+
+	var l []ir.Node
+
+	// s = slice to append to
+	s := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, nsrc.Type())
+	l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, s, nsrc))
+
+	// num = number of things to append
+	num := ir.NewInt(w.curfunc.Target.Pos, int64(argc))
+
+	// newLen := s.len + num
+	newLen := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+	l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, newLen, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OADD, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, s), num)))
+
+	// if uint(newLen) <= uint(s.cap)
+	nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+	nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLE, typecheck.Conv(w.curfunc, newLen, w.curfunc.Target.Type(types.TUINT)), typecheck.Conv(w.curfunc, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCAP, s), w.curfunc.Target.Type(types.TUINT)))
+	nif.Likely = true
+
+	// then { s = s[:n] }
+	slice := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, s, nil, newLen, nil)
+	slice.SetBounded(true)
+	nif.Body = []ir.Node{
+		ir.NewAssignStmt(w.curfunc.Target.Pos, s, slice),
+	}
+
+	// else { s = growslice(s.ptr, n, s.cap, a, T) }
+	nif.Else = []ir.Node{
+		ir.NewAssignStmt(w.curfunc.Target.Pos, s, w.walkGrowslice(s, nif.PtrInit(),
+			ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, s),
+			newLen,
+			ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OCAP, s),
+			num)),
+	}
+
+	l = append(l, nif)
+
+	ls = n.Args[1:]
+	for i, n := range ls {
+		// s[s.len-argc+i] = arg
+		ix := ir.NewIndexExpr(w.curfunc.Target.Pos, s, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OSUB, newLen, ir.NewInt(w.curfunc.Target.Pos, int64(argc-i))))
+		ix.SetBounded(true)
+		l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, ix, n))
+	}
+
+	typecheck.Stmts(w.curfunc, l)
+	w.walkStmtList(l)
+	init.Append(l...)
+	return s
+}
+
+// growslice(ptr *T, newLen, oldCap, num int, <type>) (ret []T)
+func (w *walkState) walkGrowslice(slice *ir.Name, init *ir.Nodes, oldPtr, newLen, oldCap, num ir.Node) *ir.CallExpr {
+	elemtype := slice.Type().Elem()
+	fn := typecheck.LookupRuntime(w.curfunc.Target, "growslice", elemtype, elemtype)
+	elemtypeptr := reflectdata.TypePtrAt(w.curfunc, w.curfunc.Target.Pos, elemtype)
+	return w.mkcall1(fn, slice.Type(), init, oldPtr, newLen, oldCap, num, elemtypeptr)
+}
+
+// walkClear walks an OCLEAR node.
+func (w *walkState) walkClear(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	x := w.walkExpr(n.X, init)
+	typ := n.X.Type()
+	switch {
+	case typ.IsSlice():
+		if n := w.arrayClear(x.Pos(), x, nil); n != nil {
+			return n
+		}
+		// If n == nil, we are clearing an array which takes zero memory, do nothing.
+		return ir.NewBlockStmt(n.Pos(), nil)
+	case typ.IsMap():
+		return w.mapClear(x, reflectdata.TypePtrAt(w.curfunc, x.Pos(), typ))
+	}
+	panic("unreachable")
+}
+
+// walkClose walks an OCLOSE node.
+func (w *walkState) walkClose(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	return w.mkcall1(chanfn(w.curfunc.Target, "closechan", 1, n.X.Type()), nil, init, n.X)
+}
+
+// Lower copy(a, b) to a memmove call or a runtime call.
+//
+//	init {
+//	  n := len(a)
+//	  if n > len(b) { n = len(b) }
+//	  if a.ptr != b.ptr { memmove(a.ptr, b.ptr, n*sizeof(elem(a))) }
+//	}
+//	n;
+//
+// Also works if b is a string.
+func (w *walkState) walkCopy(n *ir.BinaryExpr, init *ir.Nodes, runtimecall bool) ir.Node {
+	if n.X.Type().Elem().HasPointers() {
+		w.curfunc.SetWBPos(n.Pos())
+		fn := writebarrierfn(w.curfunc.Target, "typedslicecopy", n.X.Type().Elem(), n.Y.Type().Elem())
+		n.X = w.cheapExpr(n.X, init)
+		ptrL, lenL := w.backingArrayPtrLen(n.X)
+		n.Y = w.cheapExpr(n.Y, init)
+		ptrR, lenR := w.backingArrayPtrLen(n.Y)
+		return w.mkcall1(fn, n.Type(), init, reflectdata.CopyElemRType(w.curfunc, w.curfunc.Target.Pos, n), ptrL, lenL, ptrR, lenR)
+	}
+
+	if runtimecall {
+		// rely on runtime to instrument:
+		//  copy(n.Left, n.Right)
+		// n.Right can be a slice or string.
+
+		n.X = w.cheapExpr(n.X, init)
+		ptrL, lenL := w.backingArrayPtrLen(n.X)
+		n.Y = w.cheapExpr(n.Y, init)
+		ptrR, lenR := w.backingArrayPtrLen(n.Y)
+
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "slicecopy", ptrL.Type().Elem(), ptrR.Type().Elem())
+
+		return w.mkcall1(fn, n.Type(), init, ptrL, lenL, ptrR, lenR, ir.NewInt(w.curfunc.Target.Pos, n.X.Type().Elem().Size()))
+	}
+
+	n.X = w.walkExpr(n.X, init)
+	n.Y = w.walkExpr(n.Y, init)
+	nl := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, n.X.Type())
+	nr := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, n.Y.Type())
+	var l []ir.Node
+	l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, nl, n.X))
+	l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, nr, n.Y))
+
+	nfrm := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, nr)
+	nto := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, nl)
+
+	nlen := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TINT))
+
+	// n = len(to)
+	l = append(l, ir.NewAssignStmt(w.curfunc.Target.Pos, nlen, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, nl)))
+
+	// if n > len(frm) { n = len(frm) }
+	nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+
+	nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, nlen, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, nr))
+	nif.Body.Append(ir.NewAssignStmt(w.curfunc.Target.Pos, nlen, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, nr)))
+	l = append(l, nif)
+
+	// if to.ptr != frm.ptr { memmove( ... ) }
+	ne := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.ONE, nto, nfrm), nil, nil)
+	ne.Likely = true
+	l = append(l, ne)
+
+	fn := typecheck.LookupRuntime(w.curfunc.Target, "memmove", nl.Type().Elem(), nl.Type().Elem())
+	nwid := ir.Node(typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TUINTPTR)))
+	setwid := ir.NewAssignStmt(w.curfunc.Target.Pos, nwid, typecheck.Conv(w.curfunc, nlen, w.curfunc.Target.Type(types.TUINTPTR)))
+	ne.Body.Append(setwid)
+	nwid = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OMUL, nwid, ir.NewInt(w.curfunc.Target.Pos, nl.Type().Elem().Size()))
+	call := w.mkcall1(fn, nil, init, nto, nfrm, nwid)
+	ne.Body.Append(call)
+
+	typecheck.Stmts(w.curfunc, l)
+	w.walkStmtList(l)
+	init.Append(l...)
+	return nlen
+}
+
+// walkDelete walks an ODELETE node.
+func (w *walkState) walkDelete(init *ir.Nodes, n *ir.CallExpr) ir.Node {
+	init.Append(ir.TakeInit(n)...)
+	map_ := n.Args[0]
+	key := n.Args[1]
+	map_ = w.walkExpr(map_, init)
+	key = w.walkExpr(key, init)
+
+	t := map_.Type()
+	fast := mapfast(w.curfunc.Target, t)
+	key = mapKeyArg(w.curfunc, fast, n, key, false)
+	return w.mkcall1(mapfndel(w.curfunc.Target, mapdelete[fast], t), nil, init, reflectdata.DeleteMapRType(w.curfunc, w.curfunc.Target.Pos, n), map_, key)
+}
+
+// walkLenCap walks an OLEN or OCAP node.
+func (w *walkState) walkLenCap(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	if isRuneCount(w.curfunc.Target, n) {
+		// Replace len([]rune(string)) with runtime.countrunes(string).
+		return w.mkcall("countrunes", n.Type(), init, typecheck.Conv(w.curfunc, n.X.(*ir.ConvExpr).X, w.curfunc.Target.Type(types.TSTRING)))
+	}
+	if isByteCount(w.curfunc.Target, n) {
+		conv := n.X.(*ir.ConvExpr)
+		w.walkStmtList(conv.Init())
+		init.Append(ir.TakeInit(conv)...)
+		_, len := w.backingArrayPtrLen(w.cheapExpr(conv.X, init))
+		return len
+	}
+	if isChanLenCap(n) {
+		name := "chanlen"
+		if n.Op() == ir.OCAP {
+			name = "chancap"
+		}
+		// cannot use chanfn - closechan takes any, not chan any,
+		// because it accepts both send-only and recv-only channels.
+		fn := typecheck.LookupRuntime(w.curfunc.Target, name, n.X.Type())
+		return w.mkcall1(fn, n.Type(), init, n.X)
+	}
+
+	n.X = w.walkExpr(n.X, init)
+
+	// replace len(*[10]int) with 10.
+	// delayed until now to preserve side effects.
+	t := n.X.Type()
+	if t.IsPtr() {
+		t = t.Elem()
+	}
+	if t.IsArray() {
+		// evaluate any side effects in n.X. See issue 72844.
+		w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, w.curfunc.Target.BlankNode, n.X))
+
+		con := ir.NewConstExpr(constant.MakeInt64(t.NumElem()), n)
+		con.SetTypecheck(1)
+		return con
+	}
+	return n
+}
+
+// walkMakeChan walks an OMAKECHAN node.
+func (w *walkState) walkMakeChan(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
+	// When size fits into int, use makechan instead of
+	// makechan64, which is faster and shorter on 32 bit platforms.
+	size := n.Len
+	fnname := "makechan64"
+	argtype := w.curfunc.Target.Type(types.TINT64)
+
+	// Type checking guarantees that TIDEAL size is positive and fits in an int.
+	// The case of size overflow when converting TUINT or TUINTPTR to TINT
+	// will be handled by the negative range checks in makechan during runtime.
+	if size.Type().IsKind(types.TIDEAL) || size.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size() {
+		fnname = "makechan"
+		argtype = w.curfunc.Target.Type(types.TINT)
+	}
+
+	return w.mkcall1(chanfn(w.curfunc.Target, fnname, 1, n.Type()), n.Type(), init, reflectdata.MakeChanRType(w.curfunc, w.curfunc.Target.Pos, n), typecheck.Conv(w.curfunc, size, argtype))
+}
+
+// walkMakeMap walks an OMAKEMAP node.
+func (w *walkState) walkMakeMap(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
+	t := n.Type()
+	mapType := reflectdata.MapType(w.curfunc.Target)
+	hint := n.Len
+
+	// var m *Map
+	var m ir.Node
+	if n.Esc() == ir.EscNone {
+		// Allocate hmap on stack.
+
+		// var mv Map
+		// m = &mv
+		m = w.stackTempAddr(init, mapType)
+
+		// Allocate one group pointed to by m.dirPtr on stack if hint
+		// is not larger than MapGroupSlots. In case hint is
+		// larger, runtime.makemap will allocate on the heap.
+		// Maximum key and elem size is 128 bytes, larger objects
+		// are stored with an indirection. So max bucket size is 2048+eps.
+		if !ir.IsConst(hint, constant.Int) ||
+			constant.Compare(hint.Val(), token.LEQ, constant.MakeInt64(abi.MapGroupSlots)) {
+
+			// In case hint is larger than MapGroupSlots
+			// runtime.makemap will allocate on the heap, see
+			// #20184
+			//
+			// if hint <= abi.MapGroupSlots {
+			//     var gv group
+			//     g = &gv
+			//     g.ctrl = abi.MapCtrlEmpty
+			//     m.dirPtr = g
+			// }
+
+			nif := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLE, hint, ir.NewInt(w.curfunc.Target.Pos, abi.MapGroupSlots)), nil, nil)
+			nif.Likely = true
+
+			groupType := reflectdata.MapGroupType(w.curfunc.Target, t)
+
+			// var gv group
+			// g = &gv
+			g := w.stackTempAddr(&nif.Body, groupType)
+
+			// Can't use ir.NewInt because bit 63 is set, which
+			// makes conversion to uint64 upset.
+			empty := ir.NewBasicLit(w.curfunc.Target.Pos, types.UntypedInt, constant.MakeUint64(abi.MapCtrlEmpty))
+
+			// g.ctrl = abi.MapCtrlEmpty
+			csym := groupType.Field(0).Sym // g.ctrl see reflectdata/map.go
+			ca := ir.NewAssignStmt(w.curfunc.Target.Pos, ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, g, csym), empty)
+			nif.Body.Append(ca)
+
+			// m.dirPtr = g
+			dsym := mapType.Field(2).Sym // m.dirPtr see reflectdata/map.go
+			na := ir.NewAssignStmt(w.curfunc.Target.Pos, ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, m, dsym), typecheck.ConvNop(w.curfunc, g, w.curfunc.Target.Type(types.TUNSAFEPTR)))
+			nif.Body.Append(na)
+			w.appendWalkStmt(init, nif)
+		}
+	}
+
+	if ir.IsConst(hint, constant.Int) && constant.Compare(hint.Val(), token.LEQ, constant.MakeInt64(abi.MapGroupSlots)) {
+		// Handling make(map[any]any) and
+		// make(map[any]any, hint) where hint <= abi.MapGroupSlots
+		// specially allows for faster map initialization and
+		// improves binary size by using calls with fewer arguments.
+		// For hint <= abi.MapGroupSlots no groups will be
+		// allocated by makemap. Therefore, no groups need to be
+		// allocated in this code path.
+		if n.Esc() == ir.EscNone {
+			// Only need to initialize m.seed since
+			// m map has been allocated on the stack already.
+			// m.seed = uintptr(rand())
+			rand := w.mkcall("rand", w.curfunc.Target.Type(types.TUINT64), init)
+			seedSym := mapType.Field(1).Sym // m.seed see reflectdata/map.go
+			w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, m, seedSym), typecheck.Conv(w.curfunc, rand, w.curfunc.Target.Type(types.TUINTPTR))))
+			return typecheck.ConvNop(w.curfunc, m, t)
+		}
+		// Call runtime.makemap_small to allocate a
+		// map on the heap and initialize the map's seed field.
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "makemap_small", t.Key(), t.Elem())
+		return w.mkcall1(fn, n.Type(), init)
+	}
+
+	if n.Esc() != ir.EscNone {
+		m = typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
+	}
+
+	// Map initialization with a variable or large hint is
+	// more complicated. We therefore generate a call to
+	// runtime.makemap to initialize hmap and allocate the
+	// map buckets.
+
+	// When hint fits into int, use makemap instead of
+	// makemap64, which is faster and shorter on 32 bit platforms.
+	fnname := "makemap64"
+	argtype := w.curfunc.Target.Type(types.TINT64)
+
+	// Type checking guarantees that TIDEAL hint is positive and fits in an int.
+	// See checkmake call in TMAP case of OMAKE case in OpSwitch in typecheck1 function.
+	// The case of hint overflow when converting TUINT or TUINTPTR to TINT
+	// will be handled by the negative range checks in makemap during runtime.
+	if hint.Type().IsKind(types.TIDEAL) || hint.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size() {
+		fnname = "makemap"
+		argtype = w.curfunc.Target.Type(types.TINT)
+	}
+
+	fn := typecheck.LookupRuntime(w.curfunc.Target, fnname, mapType, t.Key(), t.Elem())
+	return w.mkcall1(fn, n.Type(), init, reflectdata.MakeMapRType(w.curfunc, w.curfunc.Target.Pos, n), typecheck.Conv(w.curfunc, hint, argtype), m)
+}
+
+// walkMakeSlice walks an OMAKESLICE node.
+func (w *walkState) walkMakeSlice(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
+	len := n.Len
+	cap := n.Cap
+	len = w.safeExpr(len, init)
+	if cap != nil {
+		cap = w.safeExpr(cap, init)
+	} else {
+		cap = len
+	}
+	t := n.Type()
+	if t.Elem().NotInHeap() {
+		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
+	}
+
+	tryStack := false
+	if n.Esc() == ir.EscNone {
+		if why := escape.HeapAllocReason(w.curfunc.Target, n); why != "" {
+			base.Fatalf("%v has EscNone, but %v", n, why)
+		}
+		if ir.IsSmallIntConst(cap) {
+			// Constant backing array - allocate it and slice it.
+			cap := typecheck.IndexConstFor(w.curfunc.Target, cap)
+			// Note that len might not be constant. If it isn't, check for panics.
+			// cap is constrained to [0,2^31) or [0,2^63) depending on whether
+			// we're in 32-bit or 64-bit systems. So it's safe to do:
+			//
+			// if uint64(len) > cap {
+			//     if len < 0 { panicmakeslicelen() }
+			//     panicmakeslicecap()
+			// }
+			nif := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TUINT64)), ir.NewInt(w.curfunc.Target.Pos, cap)), nil, nil)
+			niflen := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLT, len, ir.NewInt(w.curfunc.Target.Pos, 0)), nil, nil)
+			niflen.Body = []ir.Node{w.mkcall("panicmakeslicelen", nil, init)}
+			nif.Body.Append(niflen, w.mkcall("panicmakeslicecap", nil, init))
+			w.appendWalkStmt(init, nif)
+
+			// var arr [cap]E
+			// s = arr[:len]
+			t := types.NewArray(t.Elem(), cap) // [cap]E
+			arr := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, t)
+			w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, arr, nil))  // zero temp
+			s := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, arr, nil, len, nil) // arr[:len]
+			// The conv is necessary in case n.Type is named.
+			return w.walkExpr(typecheck.Expr(w.curfunc, typecheck.Conv(w.curfunc, s, n.Type())), init)
+		}
+		// Check that this optimization is enabled in general and for this node.
+		tryStack = w.curfunc.Target.Flags.N == 0 && w.curfunc.Target.VariableMakeHash.MatchPosWithLink(w.curfunc.Target.Ctxt, n.Pos(), nil)
+	}
+
+	// The final result is assigned to this variable.
+	slice := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, n.Type()) // []E result (possibly named)
+
+	if tryStack {
+		// K := maxStackSize/sizeof(E)
+		// if cap <= K {
+		//     var arr [K]E
+		//     slice = arr[:len:cap]
+		// } else {
+		//     slice = makeslice(elemType, len, cap)
+		// }
+		maxStackSize := int64(w.curfunc.Target.Debug.VariableMakeThreshold)
+		K := maxStackSize / t.Elem().Size() // rounds down
+		if K > 0 {                          // skip if elem size is too big.
+			nif := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLE, typecheck.Conv(w.curfunc, cap, w.curfunc.Target.Type(types.TUINT64)), ir.NewInt(w.curfunc.Target.Pos, K)), nil, nil)
+
+			// cap is in bounds after the K check, but len might not be.
+			// (Note that the slicing below would generate a panic for
+			// the same bad cases, but we want makeslice panics, not
+			// regular slicing panics.)
+			lenCap := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TUINT64)), typecheck.Conv(w.curfunc, cap, w.curfunc.Target.Type(types.TUINT64))), nil, nil)
+			lenZero := ir.NewIfStmt(w.curfunc.Target.Pos, ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLT, len, ir.NewInt(w.curfunc.Target.Pos, 0)), nil, nil)
+			lenZero.Body.Append(w.mkcall("panicmakeslicelen", nil, &lenZero.Body))
+			lenCap.Body.Append(lenZero)
+			lenCap.Body.Append(w.mkcall("panicmakeslicecap", nil, &lenCap.Body))
+			nif.Body.Append(lenCap)
+
+			t := types.NewArray(t.Elem(), K) // [K]E
+			// Wrap in a struct containing a [0]uintptr field to force
+			// pointer alignment. Some user code expects higher alignment
+			// than what is guaranteed by the element type, because that's
+			// the behavior they observed of mallocgc, and then relied upon.
+			// See issue 73199.
+			field := typecheck.Lookup(w.curfunc.Target, "arr")
+			t = types.NewStruct([]*types.Field{
+				{Sym: w.curfunc.Target.BlankSym, Type: types.NewArray(w.curfunc.Target.Type(types.TUINTPTR), 0)},
+				{Sym: field, Type: t},
+			})
+			t.SetNoalg(true)
+			store := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, t)             // var store struct{_ uintptr[0]; arr [K]E}
+			nif.Body.Append(ir.NewAssignStmt(w.curfunc.Target.Pos, store, nil))       // store = {} (zero it)
+			arr := ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, store, field)    // arr = store.arr
+			s := ir.NewSliceExpr(w.curfunc.Target.Pos, ir.OSLICE, arr, nil, len, cap) // store.arr[:len:cap]
+			nif.Body.Append(ir.NewAssignStmt(w.curfunc.Target.Pos, slice, s))         // slice = store.arr[:len:cap]
+
+			w.appendWalkStmt(init, typecheck.Stmt(w.curfunc, nif))
+
+			// Put makeslice call below in the else branch.
+			init = &nif.Else
+		}
+	}
+
+	// Set up a call to makeslice.
+	// When len and cap can fit into int, use makeslice instead of
+	// makeslice64, which is faster and shorter on 32 bit platforms.
+	fnname := "makeslice64"
+	argtype := w.curfunc.Target.Type(types.TINT64)
+
+	// Type checking guarantees that TIDEAL len/cap are positive and fit in an int.
+	// The case of len or cap overflow when converting TUINT or TUINTPTR to TINT
+	// will be handled by the negative range checks in makeslice during runtime.
+	if (len.Type().IsKind(types.TIDEAL) || len.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size()) &&
+		(cap.Type().IsKind(types.TIDEAL) || cap.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size()) {
+		fnname = "makeslice"
+		argtype = w.curfunc.Target.Type(types.TINT)
+	}
+	fn := typecheck.LookupRuntime(w.curfunc.Target, fnname)
+	ptr := w.mkcall1(fn, w.curfunc.Target.Type(types.TUNSAFEPTR), init, reflectdata.MakeSliceElemRType(w.curfunc, w.curfunc.Target.Pos, n), typecheck.Conv(w.curfunc, len, argtype), typecheck.Conv(w.curfunc, cap, argtype))
+	ptr.MarkNonNil()
+	len = typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT))
+	cap = typecheck.Conv(w.curfunc, cap, w.curfunc.Target.Type(types.TINT))
+	s := ir.NewSliceHeaderExpr(w.curfunc.Target.Pos, t, ptr, len, cap)
+	w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, slice, s))
+
+	return slice
+}
+
+// walkMakeSliceCopy walks an OMAKESLICECOPY node.
+func (w *walkState) walkMakeSliceCopy(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
+	if n.Esc() == ir.EscNone {
+		base.Fatalf("OMAKESLICECOPY with EscNone: %v", n)
+	}
+
+	t := n.Type()
+	if t.Elem().NotInHeap() {
+		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
+	}
+
+	length := typecheck.Conv(w.curfunc, n.Len, w.curfunc.Target.Type(types.TINT))
+	copylen := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OLEN, n.Cap)
+	copyptr := ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, n.Cap)
+
+	if !t.Elem().HasPointers() && n.Bounded() {
+		// When len(to)==len(from) and elements have no pointers:
+		// replace make+copy with runtime.mallocgc+runtime.memmove.
+
+		// We do not check for overflow of len(to)*elem.Width here
+		// since len(from) is an existing checked slice capacity
+		// with same elem.Width for the from slice.
+		size := ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OMUL, typecheck.Conv(w.curfunc, length, w.curfunc.Target.Type(types.TUINTPTR)), typecheck.Conv(w.curfunc, ir.NewInt(w.curfunc.Target.Pos, t.Elem().Size()), w.curfunc.Target.Type(types.TUINTPTR)))
+
+		// instantiate mallocgc(size uintptr, typ *byte, needszero bool) unsafe.Pointer
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "mallocgc")
+		ptr := w.mkcall1(fn, w.curfunc.Target.Type(types.TUNSAFEPTR), init, size, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos), ir.NewBool(w.curfunc.Target.Pos, false))
+		ptr.MarkNonNil()
+		sh := ir.NewSliceHeaderExpr(w.curfunc.Target.Pos, t, ptr, length, length)
+
+		s := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, t)
+		r := typecheck.Stmt(w.curfunc, ir.NewAssignStmt(w.curfunc.Target.Pos, s, sh))
+		r = w.walkExpr(r, init)
+		init.Append(r)
+
+		// instantiate memmove(to *any, frm *any, size uintptr)
+		fn = typecheck.LookupRuntime(w.curfunc.Target, "memmove", t.Elem(), t.Elem())
+		ncopy := w.mkcall1(fn, nil, init, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, s), copyptr, size)
+		init.Append(w.walkExpr(typecheck.Stmt(w.curfunc, ncopy), init))
+
+		return s
+	}
+	// Replace make+copy with runtime.makeslicecopy.
+	// instantiate makeslicecopy(typ *byte, tolen int, fromlen int, from unsafe.Pointer) unsafe.Pointer
+	fn := typecheck.LookupRuntime(w.curfunc.Target, "makeslicecopy")
+	ptr := w.mkcall1(fn, w.curfunc.Target.Type(types.TUNSAFEPTR), init, reflectdata.MakeSliceElemRType(w.curfunc, w.curfunc.Target.Pos, n), length, copylen, typecheck.Conv(w.curfunc, copyptr, w.curfunc.Target.Type(types.TUNSAFEPTR)))
+	ptr.MarkNonNil()
+	sh := ir.NewSliceHeaderExpr(w.curfunc.Target.Pos, t, ptr, length, length)
+	return w.walkExpr(typecheck.Expr(w.curfunc, sh), init)
+}
+
+// walkNew walks an ONEW node.
+func (w *walkState) walkNew(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	t := n.Type().Elem()
+	if t.NotInHeap() {
+		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", n.Type().Elem())
+	}
+	if n.Esc() == ir.EscNone {
+		if t.Size() > w.curfunc.Target.ImplicitStackVarSizeLimit() {
+			base.Fatalf("large ONEW with EscNone: %v", n)
+		}
+		return w.stackTempAddr(init, t)
+	}
+	types.CalcSize(t)
+	n.MarkNonNil()
+	return n
+}
+
+func (w *walkState) walkMinMax(n *ir.CallExpr, init *ir.Nodes) ir.Node {
+	init.Append(ir.TakeInit(n)...)
+	w.walkExprList(n.Args, init)
+	return n
+}
+
+// generate code for print.
+func (w *walkState) walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
+	// Hoist all the argument evaluation up before the lock.
+	w.walkExprListCheap(nn.Args, init)
+
+	// For println, add " " between elements and "\n" at the end.
+	if nn.Op() == ir.OPRINTLN {
+		s := nn.Args
+		t := make([]ir.Node, 0, len(s)*2)
+		for i, n := range s {
+			if i != 0 {
+				t = append(t, ir.NewString(w.curfunc.Target.Pos, " "))
+			}
+			t = append(t, n)
+		}
+		t = append(t, ir.NewString(w.curfunc.Target.Pos, "\n"))
+		nn.Args = t
+	}
+
+	// Collapse runs of constant strings.
+	s := nn.Args
+	t := make([]ir.Node, 0, len(s))
+	for i := 0; i < len(s); {
+		var strs []string
+		for i < len(s) && ir.IsConst(s[i], constant.String) {
+			strs = append(strs, ir.StringVal(s[i]))
+			i++
+		}
+		if len(strs) > 0 {
+			t = append(t, ir.NewString(w.curfunc.Target.Pos, strings.Join(strs, "")))
+		}
+		if i < len(s) {
+			t = append(t, s[i])
+			i++
+		}
+	}
+	nn.Args = t
+
+	calls := []ir.Node{w.mkcall("printlock", nil, init)}
+	for i, n := range nn.Args {
+		if n.Op() == ir.OLITERAL {
+			if n.Type() == types.UntypedRune {
+				n = typecheck.DefaultLitFor(w.curfunc.Target, n, w.curfunc.Target.RuneType)
+			}
+
+			switch n.Val().Kind() {
+			case constant.Int:
+				n = typecheck.DefaultLitFor(w.curfunc.Target, n, w.curfunc.Target.Type(types.TINT64))
+
+			case constant.Float:
+				n = typecheck.DefaultLitFor(w.curfunc.Target, n, w.curfunc.Target.Type(types.TFLOAT64))
+			}
+		}
+
+		if n.Op() != ir.OLITERAL && n.Type() != nil && n.Type().Kind() == types.TIDEAL {
+			n = typecheck.DefaultLitFor(w.curfunc.Target, n, w.curfunc.Target.Type(types.TINT64))
+		}
+		n = typecheck.DefaultLitFor(w.curfunc.Target, n, nil)
+		nn.Args[i] = n
+		if n.Type() == nil || n.Type().Kind() == types.TFORW {
+			continue
+		}
+
+		var on *ir.Name
+		switch n.Type().Kind() {
+		case types.TINTER:
+			if n.Type().IsEmptyInterface() {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printeface", n.Type())
+			} else {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printiface", n.Type())
+			}
+		case types.TPTR:
+			if n.Type().Elem().NotInHeap() {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printuintptr")
+				n = ir.NewConvExpr(w.curfunc.Target.Pos, ir.OCONV, nil, n)
+				n.SetType(w.curfunc.Target.Type(types.TUNSAFEPTR))
+				n = ir.NewConvExpr(w.curfunc.Target.Pos, ir.OCONV, nil, n)
+				n.SetType(w.curfunc.Target.Type(types.TUINTPTR))
+				break
+			}
+			fallthrough
+		case types.TCHAN, types.TMAP, types.TFUNC, types.TUNSAFEPTR:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printpointer", n.Type())
+		case types.TSLICE:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printslice", n.Type())
+		case types.TUINT, types.TUINT8, types.TUINT16, types.TUINT32, types.TUINT64, types.TUINTPTR:
+			if types.RuntimeSymName(n.Type().Sym()) == "hex" {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printhex")
+			} else {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printuint")
+			}
+		case types.TINT, types.TINT8, types.TINT16, types.TINT32, types.TINT64:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printint")
+		case types.TFLOAT32:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printfloat32")
+		case types.TFLOAT64:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printfloat64")
+		case types.TCOMPLEX64:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printcomplex64")
+		case types.TCOMPLEX128:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printcomplex128")
+		case types.TBOOL:
+			on = typecheck.LookupRuntime(w.curfunc.Target, "printbool")
+		case types.TSTRING:
+			cs := ""
+			if ir.IsConst(n, constant.String) {
+				cs = ir.StringVal(n)
+			}
+			// Print values of the named type `quoted` using printquoted.
+			if types.RuntimeSymName(n.Type().Sym()) == "quoted" {
+				on = typecheck.LookupRuntime(w.curfunc.Target, "printquoted")
+			} else {
+				switch cs {
+				case " ":
+					on = typecheck.LookupRuntime(w.curfunc.Target, "printsp")
+				case "\n":
+					on = typecheck.LookupRuntime(w.curfunc.Target, "printnl")
+				default:
+					on = typecheck.LookupRuntime(w.curfunc.Target, "printstring")
+				}
+			}
+		default:
+			badtype(nn.Op(), n.Type(), nil)
+			continue
+		}
+
+		r := ir.NewCallExpr(w.curfunc.Target.Pos, ir.OCALL, on, nil)
+		if params := on.Type().Params(); len(params) > 0 {
+			t := params[0].Type
+			n = typecheck.Conv(w.curfunc, n, t)
+			r.Args.Append(n)
+		}
+		calls = append(calls, r)
+	}
+
+	calls = append(calls, w.mkcall("printunlock", nil, init))
+
+	typecheck.Stmts(w.curfunc, calls)
+	w.walkExprList(calls, init)
+
+	r := ir.NewBlockStmt(w.curfunc.Target.Pos, nil)
+	r.List = calls
+	return w.walkStmt(typecheck.Stmt(w.curfunc, r))
+}
+
+// walkRecover walks an ORECOVER node.
+func (w *walkState) walkRecover(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
+	return w.mkcall("gorecover", nn.Type(), init)
+}
+
+// walkUnsafeData walks an OUNSAFESLICEDATA or OUNSAFESTRINGDATA expression.
+func (w *walkState) walkUnsafeData(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	slice := w.walkExpr(n.X, init)
+	res := typecheck.Expr(w.curfunc, ir.NewUnaryExpr(n.Pos(), ir.OSPTR, slice))
+	res.SetType(n.Type())
+	return w.walkExpr(res, init)
+}
+
+func (w *walkState) walkUnsafeSlice(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
+	ptr := w.safeExpr(n.X, init)
+	len := w.safeExpr(n.Y, init)
+	sliceType := n.Type()
+
+	lenType := w.curfunc.Target.Type(types.TINT64)
+	unsafePtr := typecheck.Conv(w.curfunc, ptr, w.curfunc.Target.Type(types.TUNSAFEPTR))
+
+	// If checkptr enabled, call runtime.unsafeslicecheckptr to check ptr and len.
+	// for simplicity, unsafeslicecheckptr always uses int64.
+	// Type checking guarantees that TIDEAL len/cap are positive and fit in an int.
+	// The case of len or cap overflow when converting TUINT or TUINTPTR to TINT
+	// will be handled by the negative range checks in unsafeslice during runtime.
+	if ir.ShouldCheckPtr(w.curfunc, 1) {
+		fnname := "unsafeslicecheckptr"
+		fn := typecheck.LookupRuntime(w.curfunc.Target, fnname)
+		init.Append(w.mkcall1(fn, nil, init, reflectdata.UnsafeSliceElemRType(w.curfunc, w.curfunc.Target.Pos, n), unsafePtr, typecheck.Conv(w.curfunc, len, lenType)))
+	} else {
+		// Otherwise, open code unsafe.Slice to prevent runtime call overhead.
+		// Keep this code in sync with runtime.unsafeslice{,64}
+		if len.Type().IsKind(types.TIDEAL) || len.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size() {
+			lenType = w.curfunc.Target.Type(types.TINT)
+		} else {
+			// len64 := int64(len)
+			// if int64(int(len64)) != len64 {
+			//     panicunsafeslicelen()
+			// }
+			len64 := typecheck.Conv(w.curfunc, len, lenType)
+			nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+			nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.ONE, typecheck.Conv(w.curfunc, typecheck.Conv(w.curfunc, len64, w.curfunc.Target.Type(types.TINT)), lenType), len64)
+			nif.Body.Append(w.mkcall("panicunsafeslicelen", nil, &nif.Body))
+			w.appendWalkStmt(init, nif)
+		}
+
+		// if len < 0 { panicunsafeslicelen() }
+		nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLT, typecheck.Conv(w.curfunc, len, lenType), ir.NewInt(w.curfunc.Target.Pos, 0))
+		nif.Body.Append(w.mkcall("panicunsafeslicelen", nil, &nif.Body))
+		w.appendWalkStmt(init, nif)
+
+		if sliceType.Elem().Size() == 0 {
+			// if ptr == nil && len > 0  {
+			//      panicunsafesliceptrnil()
+			// }
+			nifPtr := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+			isNil := ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OEQ, unsafePtr, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos))
+			gtZero := ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, typecheck.Conv(w.curfunc, len, lenType), ir.NewInt(w.curfunc.Target.Pos, 0))
+			nifPtr.Cond =
+				ir.NewLogicalExpr(w.curfunc.Target.Pos, ir.OANDAND, isNil, gtZero)
+			nifPtr.Body.Append(w.mkcall("panicunsafeslicenilptr", nil, &nifPtr.Body))
+			w.appendWalkStmt(init, nifPtr)
+
+			h := ir.NewSliceHeaderExpr(n.Pos(), sliceType,
+				typecheck.Conv(w.curfunc, ptr, w.curfunc.Target.Type(types.TUNSAFEPTR)),
+				typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT)),
+				typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT)))
+			return w.walkExpr(typecheck.Expr(w.curfunc, h), init)
+		}
+
+		// mem, overflow := math.mulUintptr(et.size, len)
+		mem := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TUINTPTR))
+		overflow := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TBOOL))
+
+		decl := types.NewSignature(nil,
+			[]*types.Field{
+				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TUINTPTR)),
+				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TUINTPTR)),
+			},
+			[]*types.Field{
+				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TUINTPTR)),
+				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TBOOL)),
+			})
+
+		mathPkg := w.curfunc.Target.Pkg("publicinternal/runtime/math", "math")
+		fn := ir.NewFunc(w.curfunc.Target, n.Pos(), n.Pos(), mathPkg.Lookup("MulUintptr"), decl)
+
+		call := w.mkcall1(fn.Nname, fn.Type().ResultsTuple(), init, ir.NewInt(w.curfunc.Target.Pos, sliceType.Elem().Size()), typecheck.Conv(w.curfunc, typecheck.Conv(w.curfunc, len, lenType), w.curfunc.Target.Type(types.TUINTPTR)))
+		w.appendWalkStmt(init, ir.NewAssignListStmt(w.curfunc.Target.Pos, ir.OAS2, []ir.Node{mem, overflow}, []ir.Node{call}))
+
+		// if overflow || mem > -uintptr(ptr) {
+		//     if ptr == nil {
+		//         panicunsafesliceptrnil()
+		//     }
+		//     panicunsafeslicelen()
+		// }
+		nif = ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		memCond := ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, mem, ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.ONEG, typecheck.Conv(w.curfunc, unsafePtr, w.curfunc.Target.Type(types.TUINTPTR))))
+		nif.Cond = ir.NewLogicalExpr(w.curfunc.Target.Pos, ir.OOROR, overflow, memCond)
+		nifPtr := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		nifPtr.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OEQ, unsafePtr, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos))
+		nifPtr.Body.Append(w.mkcall("panicunsafeslicenilptr", nil, &nifPtr.Body))
+		nif.Body.Append(nifPtr, w.mkcall("panicunsafeslicelen", nil, &nif.Body))
+		w.appendWalkStmt(init, nif)
+	}
+
+	h := ir.NewSliceHeaderExpr(n.Pos(), sliceType,
+		typecheck.Conv(w.curfunc, ptr, w.curfunc.Target.Type(types.TUNSAFEPTR)),
+		typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT)),
+		typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT)))
+	return w.walkExpr(typecheck.Expr(w.curfunc, h), init)
+}
+
+func (w *walkState) walkUnsafeString(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
+	ptr := w.safeExpr(n.X, init)
+	len := w.safeExpr(n.Y, init)
+
+	lenType := w.curfunc.Target.Type(types.TINT64)
+	unsafePtr := typecheck.Conv(w.curfunc, ptr, w.curfunc.Target.Type(types.TUNSAFEPTR))
+
+	// If checkptr enabled, call runtime.unsafestringcheckptr to check ptr and len.
+	// for simplicity, unsafestringcheckptr always uses int64.
+	// Type checking guarantees that TIDEAL len are positive and fit in an int.
+	if ir.ShouldCheckPtr(w.curfunc, 1) {
+		fnname := "unsafestringcheckptr"
+		fn := typecheck.LookupRuntime(w.curfunc.Target, fnname)
+		init.Append(w.mkcall1(fn, nil, init, unsafePtr, typecheck.Conv(w.curfunc, len, lenType)))
+	} else {
+		// Otherwise, open code unsafe.String to prevent runtime call overhead.
+		// Keep this code in sync with runtime.unsafestring{,64}
+		if len.Type().IsKind(types.TIDEAL) || len.Type().Size() <= w.curfunc.Target.Type(types.TUINT).Size() {
+			lenType = w.curfunc.Target.Type(types.TINT)
+		} else {
+			// len64 := int64(len)
+			// if int64(int(len64)) != len64 {
+			//     panicunsafestringlen()
+			// }
+			len64 := typecheck.Conv(w.curfunc, len, lenType)
+			nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+			nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.ONE, typecheck.Conv(w.curfunc, typecheck.Conv(w.curfunc, len64, w.curfunc.Target.Type(types.TINT)), lenType), len64)
+			nif.Body.Append(w.mkcall("panicunsafestringlen", nil, &nif.Body))
+			w.appendWalkStmt(init, nif)
+		}
+
+		// if len < 0 { panicunsafestringlen() }
+		nif := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		nif.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OLT, typecheck.Conv(w.curfunc, len, lenType), ir.NewInt(w.curfunc.Target.Pos, 0))
+		nif.Body.Append(w.mkcall("panicunsafestringlen", nil, &nif.Body))
+		w.appendWalkStmt(init, nif)
+
+		// if uintpr(len) > -uintptr(ptr) {
+		//    if ptr == nil {
+		//       panicunsafestringnilptr()
+		//    }
+		//    panicunsafeslicelen()
+		// }
+		nifLen := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		nifLen.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OGT, typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TUINTPTR)), ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.ONEG, typecheck.Conv(w.curfunc, unsafePtr, w.curfunc.Target.Type(types.TUINTPTR))))
+		nifPtr := ir.NewIfStmt(w.curfunc.Target.Pos, nil, nil, nil)
+		nifPtr.Cond = ir.NewBinaryExpr(w.curfunc.Target.Pos, ir.OEQ, unsafePtr, typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos))
+		nifPtr.Body.Append(w.mkcall("panicunsafestringnilptr", nil, &nifPtr.Body))
+		nifLen.Body.Append(nifPtr, w.mkcall("panicunsafestringlen", nil, &nifLen.Body))
+		w.appendWalkStmt(init, nifLen)
+	}
+	h := ir.NewStringHeaderExpr(w.curfunc.Target, n.Pos(),
+		typecheck.Conv(w.curfunc, ptr, w.curfunc.Target.Type(types.TUNSAFEPTR)),
+		typecheck.Conv(w.curfunc, len, w.curfunc.Target.Type(types.TINT)),
+	)
+	return w.walkExpr(typecheck.Expr(w.curfunc, h), init)
+}
+
+func badtype(op ir.Op, tl, tr *types.Type) {
+	var s string
+	if tl != nil {
+		s += fmt.Sprintf("\n\t%v", tl)
+	}
+	if tr != nil {
+		s += fmt.Sprintf("\n\t%v", tr)
+	}
+
+	// common mistake: *struct and *interface.
+	if tl != nil && tr != nil && tl.IsPtr() && tr.IsPtr() {
+		if tl.Elem().IsStruct() && tr.Elem().IsInterface() {
+			s += "\n\t(*struct vs *interface)"
+		} else if tl.Elem().IsInterface() && tr.Elem().IsStruct() {
+			s += "\n\t(*interface vs *struct)"
+		}
+	}
+
+	base.Errorf("illegal types for operand: %v%s", op, s)
+}
+
+func writebarrierfn(target *ir.Package, name string, l *types.Type, r *types.Type) ir.Node {
+	return typecheck.LookupRuntime(target, name, l, r)
+}
+
+// isRuneCount reports whether n is of the form len([]rune(string)).
+// These are optimized into a call to runtime.countrunes.
+func isRuneCount(target *ir.Package, n ir.Node) bool {
+	return target.Flags.N == 0 && !target.Flags.Cfg.Instrumenting && n.Op() == ir.OLEN && n.(*ir.UnaryExpr).X.Op() == ir.OSTR2RUNES
+}
+
+// isByteCount reports whether n is of the form len(string([]byte)).
+func isByteCount(target *ir.Package, n ir.Node) bool {
+	return target.Flags.N == 0 && !target.Flags.Cfg.Instrumenting && n.Op() == ir.OLEN &&
+		(n.(*ir.UnaryExpr).X.Op() == ir.OBYTES2STR || n.(*ir.UnaryExpr).X.Op() == ir.OBYTES2STRTMP)
+}
+
+// isChanLenCap reports whether n is of the form len(c) or cap(c) for a channel c.
+// Note that this does not check for -n or instrumenting because this
+// is a correctness rewrite, not an optimization.
+func isChanLenCap(n ir.Node) bool {
+	return (n.Op() == ir.OLEN || n.Op() == ir.OCAP) && n.(*ir.UnaryExpr).X.Type().IsChan()
+}

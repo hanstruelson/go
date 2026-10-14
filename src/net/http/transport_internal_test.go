@@ -13,8 +13,8 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/http/internal/http2"
-	"net/http/internal/testcert"
+	"net/http/publicinternal/http2"
+	"net/http/publicinternal/testcert"
 	"strings"
 	"testing"
 )

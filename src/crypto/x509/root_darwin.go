@@ -5,7 +5,7 @@
 package x509
 
 import (
-	"crypto/x509/internal/macos"
+	"crypto/x509/publicinternal/macos"
 	"errors"
 	"fmt"
 	"unicode/utf8"

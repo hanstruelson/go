@@ -17,14 +17,14 @@ package ed25519
 
 import (
 	"crypto"
-	"crypto/internal/fips140/ed25519"
-	"crypto/internal/fips140cache"
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/fips140/ed25519"
+	"crypto/publicinternal/fips140cache"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 	cryptorand "crypto/rand"
 	"crypto/subtle"
 	"errors"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"strconv"
 )

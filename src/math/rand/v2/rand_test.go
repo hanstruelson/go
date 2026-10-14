@@ -7,7 +7,7 @@ package rand_test
 import (
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math"
 	. "math/rand/v2"
 	"os"

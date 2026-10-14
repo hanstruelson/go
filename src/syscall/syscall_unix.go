@@ -8,12 +8,12 @@ package syscall
 
 import (
 	errorspkg "errors"
-	"internal/asan"
-	"internal/bytealg"
-	"internal/msan"
-	"internal/oserror"
-	"internal/race"
-	"internal/strconv"
+	"publicinternal/asan"
+	"publicinternal/bytealg"
+	"publicinternal/msan"
+	"publicinternal/oserror"
+	"publicinternal/race"
+	"publicinternal/strconv"
 	"runtime"
 	"sync"
 	"unsafe"

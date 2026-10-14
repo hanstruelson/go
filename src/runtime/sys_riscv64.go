@@ -7,8 +7,8 @@ package runtime
 import (
 	"unsafe"
 
-	"internal/abi"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
 )
 
 // adjust Gobuf as if it executed a call to fn with context ctxt

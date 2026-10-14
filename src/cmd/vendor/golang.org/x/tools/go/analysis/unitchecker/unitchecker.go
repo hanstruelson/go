@@ -48,10 +48,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/internal/analysisflags"
-	"golang.org/x/tools/internal/analysis/driverutil"
-	"golang.org/x/tools/internal/facts"
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/go/analysis/publicinternal/analysisflags"
+	"golang.org/x/tools/publicinternal/analysis/driverutil"
+	"golang.org/x/tools/publicinternal/facts"
+	"golang.org/x/tools/publicinternal/gcimporter"
 )
 
 // A Config describes a compilation unit to be analyzed.
@@ -253,7 +253,7 @@ func processResults(fset *token.FileSet, id, fixArchive string, results []result
 	}
 
 	// Keep consistent with analogous logic in
-	// printDiagnostics in ../internal/checker/checker.go.
+	// printDiagnostics in ../publicinternal/checker/checker.go.
 
 	if analysisflags.JSON {
 		// JSON output

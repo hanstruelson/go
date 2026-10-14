@@ -4,11 +4,11 @@ They are run as part of all.bash.
 
 To run just these tests, execute:
 
-	../bin/go test cmd/internal/testdir
+	../bin/go test cmd/publicinternal/testdir
 
 To run just tests from specified files in this directory, execute:
 
-	../bin/go test cmd/internal/testdir -run='Test/(file1.go|file2.go|...)'
+	../bin/go test cmd/publicinternal/testdir -run='Test/(file1.go|file2.go|...)'
 
 Standard library tests should be written as regular Go tests in the appropriate package.
 

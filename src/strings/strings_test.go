@@ -7,7 +7,7 @@ package strings_test
 import (
 	"bytes"
 	"fmt"
-	"internal/asan"
+	"publicinternal/asan"
 	"io"
 	"iter"
 	"math"

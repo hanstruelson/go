@@ -6,7 +6,7 @@ package sync_test
 
 import (
 	"fmt"
-	isync "internal/sync"
+	isync "publicinternal/sync"
 	"reflect"
 	"sync"
 	"sync/atomic"

@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/url"
 	"strconv"
 	"strings"

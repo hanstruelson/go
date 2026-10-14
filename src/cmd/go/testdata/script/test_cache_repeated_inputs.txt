@@ -1,5 +1,5 @@
 # The test binary skips inputs it has already written to its test log
-# since the last change of directory (testing/internal/testdeps).
+# since the last change of directory (testing/publicinternal/testdeps).
 # Check that inputs read many times, before and after a chdir, still
 # invalidate the cache.
 

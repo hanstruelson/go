@@ -26,7 +26,7 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"runtime"
 	"testing"
 )

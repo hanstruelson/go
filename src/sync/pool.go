@@ -5,8 +5,8 @@
 package sync
 
 import (
-	"internal/race"
-	rtatomic "internal/runtime/atomic"
+	"publicinternal/race"
+	rtatomic "publicinternal/runtime/atomic"
 	"runtime"
 	"sync/atomic"
 	"unsafe"

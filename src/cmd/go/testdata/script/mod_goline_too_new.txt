@@ -47,4 +47,4 @@ use .
 -- notvendor/modules.txt --
 # golang.org/x/text v0.9.0
 ## explicit; go 1.99999
-golang.org/x/text/internal/language
+golang.org/x/text/publicinternal/language

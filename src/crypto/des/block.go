@@ -5,7 +5,7 @@
 package des
 
 import (
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"sync"
 )
 

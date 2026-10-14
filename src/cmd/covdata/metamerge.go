@@ -11,14 +11,14 @@ package main
 import (
 	"fmt"
 	"hash/fnv"
-	"internal/coverage"
-	"internal/coverage/calloc"
-	"internal/coverage/cmerge"
-	"internal/coverage/decodecounter"
-	"internal/coverage/decodemeta"
-	"internal/coverage/encodecounter"
-	"internal/coverage/encodemeta"
-	"internal/coverage/slicewriter"
+	"publicinternal/coverage"
+	"publicinternal/coverage/calloc"
+	"publicinternal/coverage/cmerge"
+	"publicinternal/coverage/decodecounter"
+	"publicinternal/coverage/decodemeta"
+	"publicinternal/coverage/encodecounter"
+	"publicinternal/coverage/encodemeta"
+	"publicinternal/coverage/slicewriter"
 	"io"
 	"os"
 	"path/filepath"
@@ -284,7 +284,7 @@ func (mm *metaMerge) emitCounters(outdir string, metaHash [16]byte) {
 
 // VisitFuncs is used while writing the counter data files; it
 // implements the 'VisitFuncs' method required by the interface
-// internal/coverage/encodecounter/CounterVisitor.
+// publicinternal/coverage/encodecounter/CounterVisitor.
 func (mm *metaMerge) VisitFuncs(f encodecounter.CounterVisitorFn) error {
 	if *verbflag >= 4 {
 		fmt.Printf("counterVisitor invoked\n")

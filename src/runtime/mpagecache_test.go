@@ -5,7 +5,7 @@
 package runtime_test
 
 import (
-	"internal/goos"
+	"publicinternal/goos"
 	"math/rand"
 	. "runtime"
 	"testing"

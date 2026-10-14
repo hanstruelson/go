@@ -5,7 +5,7 @@
 package sync
 
 import (
-	isync "internal/sync"
+	isync "publicinternal/sync"
 )
 
 // Map is like a Go map[any]any but is safe for concurrent use

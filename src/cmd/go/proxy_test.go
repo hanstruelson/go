@@ -11,7 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"internal/txtar"
+	"publicinternal/txtar"
 	"io"
 	"io/fs"
 	"log"
@@ -24,8 +24,8 @@ import (
 	"sync"
 	"testing"
 
-	"cmd/go/internal/modfetch/codehost"
-	"cmd/internal/par"
+	"cmd/go/publicinternal/modfetch/codehost"
+	"cmd/publicinternal/par"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"

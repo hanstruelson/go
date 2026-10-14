@@ -20,8 +20,8 @@ an analyzer that can suggest fixes.
 package main
 
 import (
-	"cmd/internal/objabi"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/telemetry/counter"
 
 	"golang.org/x/tools/go/analysis/suite/fix"
 	"golang.org/x/tools/go/analysis/unitchecker"

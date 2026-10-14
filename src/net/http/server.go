@@ -13,13 +13,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"log"
 	"maps"
 	"math/rand/v2"
 	"net"
-	"net/http/internal"
+	"net/http/publicinternal"
 	"net/textproto"
 	"net/url"
 	urlpkg "net/url"
@@ -2095,7 +2095,7 @@ func (c *conn) serve(ctx context.Context) {
 		*c.tlsState = connStater.ConnectionState()
 		proto := c.tlsState.NegotiatedProtocol
 		if proto == "h2" && c.server.h2 != nil {
-			// net/http/internal/http2 path.
+			// net/http/publicinternal/http2 path.
 			//
 			// Mark freshly created HTTP/2 as active and prevent any server state hooks
 			// from being run on these connections. This prevents closeIdleConns from
@@ -3682,7 +3682,7 @@ var ErrServerClosed = errors.New("http: Server closed")
 // After [Server.Shutdown] or [Server.Close], the returned error is [ErrServerClosed].
 func (s *Server) Serve(l net.Listener) error {
 	// This is the sneaky path we use to let x/net/http2 wrap an http.Server
-	// and net/http/internal/http3 install an HTTP/3 implementation:
+	// and net/http/publicinternal/http3 install an HTTP/3 implementation:
 	// http2.ConfigureServer calls http.Server.Serve with a net.Listener that
 	// implements a certain interface, which we recognize here as an attempt
 	// to associate an http2.Server with us.
@@ -4021,7 +4021,7 @@ func ListenAndServeTLS(addr, certFile, keyFile string, handler Handler) error {
 // supports HTTP/3, allowing an external implementation of HTTP/3 to be used
 // via net/http. See https://go.dev/issue/77440 for details.
 //
-// This is currently only used with net/http/internal/http3, to allow us to
+// This is currently only used with net/http/publicinternal/http3, to allow us to
 // test our HTTP/3 implementation against tests in net/http. HTTP/3 is not yet
 // accessible to end-users.
 type http3ServerHandler struct {

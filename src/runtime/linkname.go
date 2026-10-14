@@ -6,7 +6,7 @@ package runtime
 
 import _ "unsafe"
 
-// used in internal/godebug and syscall
+// used in publicinternal/godebug and syscall
 //go:linkname write
 
 // used by cgo

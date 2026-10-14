@@ -3,7 +3,7 @@
 # Verifies golang.org/issue/31971.
 # TODO(jayconrod): This test is brittle. We should write _testmain.go as
 # a build action instead of with an ad-hoc WriteFile call
-# in internal/test/test.go. Then we could just grep 'go get -n'.
+# in publicinternal/test/test.go. Then we could just grep 'go get -n'.
 go test x_test.go
 
 -- x_test.go --

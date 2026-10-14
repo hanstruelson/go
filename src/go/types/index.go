@@ -10,7 +10,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
-	. "internal/types/errors"
+	. "publicinternal/types/errors"
 )
 
 // If e is a valid function instantiation, indexExpr returns true.

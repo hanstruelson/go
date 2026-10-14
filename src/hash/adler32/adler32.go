@@ -16,7 +16,7 @@ package adler32
 import (
 	"errors"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 const (

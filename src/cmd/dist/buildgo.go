@@ -41,10 +41,10 @@ func writeHeader(w io.Writer) {
 //	const defaultCXX = <defaultcxx>
 //	const defaultPkgConfig = <defaultpkgconfig>
 //
-// It is invoked to write cmd/go/internal/cfg/zdefaultcc.go
+// It is invoked to write cmd/go/publicinternal/cfg/zdefaultcc.go
 // but we also write cmd/cgo/zdefaultcc.go
 func mkzdefaultcc(dir, file string) {
-	if strings.Contains(file, filepath.FromSlash("go/internal/cfg")) {
+	if strings.Contains(file, filepath.FromSlash("go/publicinternal/cfg")) {
 		var buf strings.Builder
 		writeHeader(&buf)
 		fmt.Fprintf(&buf, "package cfg\n")

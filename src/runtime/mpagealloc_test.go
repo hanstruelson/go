@@ -6,7 +6,7 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/goos"
+	"publicinternal/goos"
 	. "runtime"
 	"testing"
 )

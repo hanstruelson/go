@@ -298,8 +298,8 @@ func (t *tester) maybeLogMetadata() error {
 	// toolchain.
 	//
 	// TODO(prattmic): If we split dist bootstrap and dist test then this
-	// could be simplified to directly use internal/sysinfo here.
-	return t.dirCmd(filepath.Join(goroot, "src/cmd/internal/metadata"), gorootBinGo, []string{"run", "main.go"}).Run()
+	// could be simplified to directly use publicinternal/sysinfo here.
+	return t.dirCmd(filepath.Join(goroot, "src/cmd/publicinternal/metadata"), gorootBinGo, []string{"run", "main.go"}).Run()
 }
 
 // testName returns the dist test name for a given package and variant.
@@ -626,7 +626,7 @@ func (t *tester) registerTests() {
 		// it's a very large test, we register is specially as several shards to
 		// enable better load balancing on sharded builders. Ideally the build
 		// system would know how to shard any large test package.
-		"cmd/internal/testdir": true,
+		"cmd/publicinternal/testdir": true,
 	}
 
 	// Fast path to avoid the ~1 second of `go list std cmd` when
@@ -816,7 +816,7 @@ func (t *tester) registerTests() {
 	// Spectre mitigation smoke test.
 	if goos == "linux" && goarch == "amd64" && !(gogcflags == "-spectre=all" && t.asmflags == "all=-spectre=all") {
 		// Pick a bunch of packages known to have some assembly.
-		pkgs := []string{"internal/runtime/...", "reflect", "crypto/..."}
+		pkgs := []string{"publicinternal/runtime/...", "reflect", "crypto/..."}
 		if !t.short {
 			pkgs = append(pkgs, "runtime")
 		}
@@ -919,7 +919,7 @@ func (t *tester) registerTests() {
 				buildmode: "pie",
 				ldflags:   "-linkmode=internal",
 				env:       []string{"CGO_ENABLED=0"},
-				pkg:       "crypto/internal/fips140test",
+				pkg:       "crypto/publicinternal/fips140test",
 				runTests:  "TestFIPSCheck",
 			})
 		// Also test a cgo package.
@@ -942,7 +942,7 @@ func (t *tester) registerTests() {
 					buildmode: "exe",
 					ldflags:   "-linkmode=external",
 					env:       []string{"CGO_ENABLED=1"},
-					pkg:       "crypto/internal/fips140test",
+					pkg:       "crypto/publicinternal/fips140test",
 					runTests:  "TestFIPSCheck",
 				})
 		}
@@ -953,7 +953,7 @@ func (t *tester) registerTests() {
 					buildmode: "pie",
 					ldflags:   "-linkmode=external",
 					env:       []string{"CGO_ENABLED=1"},
-					pkg:       "crypto/internal/fips140test",
+					pkg:       "crypto/publicinternal/fips140test",
 					runTests:  "TestFIPSCheck",
 				})
 		}
@@ -978,7 +978,7 @@ func (t *tester) registerTests() {
 		t.registerTest("wasip1 host tests",
 			&goTest{
 				variant:   "host",
-				pkg:       "internal/runtime/wasitest",
+				pkg:       "publicinternal/runtime/wasitest",
 				runOnHost: true,
 			})
 	}
@@ -1039,7 +1039,7 @@ func (t *tester) registerTests() {
 					// This makes the test target more clearly distinct in our build
 					// results and is important for load-balancing test shards.
 					variant:   id,
-					pkg:       "cmd/internal/testdir",
+					pkg:       "cmd/publicinternal/testdir",
 					testFlags: []string{fmt.Sprintf("-shard=%d", shard), fmt.Sprintf("-shards=%d", nShards)},
 					runOnHost: true,
 				},
@@ -1270,7 +1270,7 @@ func (t *tester) registerCgoTests(heading string) {
 	cgoTest := func(variant string, subdir, linkmode, buildmode string, opts ...registerTestOpt) *goTest {
 		gt := &goTest{
 			variant:   variant,
-			pkg:       "cmd/cgo/internal/" + subdir,
+			pkg:       "cmd/cgo/publicinternal/" + subdir,
 			buildmode: buildmode,
 		}
 		var ldflags []string
@@ -1361,7 +1361,7 @@ func (t *tester) registerCgoTests(heading string) {
 					return fmt.Sprintf("$CC (%q) not found, skip cgo static linking test.", ccName), true
 				}
 			} else {
-				cmd := t.dirCmd("src/cmd/cgo/internal/test", cc, "-xc", "-o", "/dev/null", "-static", "-")
+				cmd := t.dirCmd("src/cmd/cgo/publicinternal/test", cc, "-xc", "-o", "/dev/null", "-static", "-")
 				cmd.Stdin = strings.NewReader("int main() {}")
 				cmd.Stdout, cmd.Stderr = nil, nil // Discard output
 				if err := cmd.Run(); err != nil {
@@ -1526,7 +1526,7 @@ func (t *tester) runPending(nextTest *distTest) {
 }
 
 // hasParallelism is a copy of the function
-// internal/testenv.HasParallelism, which can't be used here
+// publicinternal/testenv.HasParallelism, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
 func (t *tester) hasParallelism() bool {
 	switch goos {
@@ -1589,11 +1589,11 @@ func (t *tester) registerRaceTests() {
 	// TODO(iant): Figure out how to catch this.
 	// t.registerTest(hdr, &goTest{variant: "race", race: true, runTests: "TestParallelTest", pkg: "cmd/go"})
 	if t.cgoEnabled {
-		// Building cmd/cgo/internal/test takes a long time.
+		// Building cmd/cgo/publicinternal/test takes a long time.
 		// There are already cgo-enabled packages being tested with the race detector.
-		// We shouldn't need to redo all of cmd/cgo/internal/test too.
+		// We shouldn't need to redo all of cmd/cgo/publicinternal/test too.
 		// The race builder will take care of this.
-		// t.registerTest(hdr, &goTest{variant: "race", race: true, env: []string{"GOTRACEBACK=2"}, pkg: "cmd/cgo/internal/test"})
+		// t.registerTest(hdr, &goTest{variant: "race", race: true, env: []string{"GOTRACEBACK=2"}, pkg: "cmd/cgo/publicinternal/test"})
 	}
 	if t.extLink() {
 		// Test with external linking; see issue 9133.
@@ -1708,7 +1708,7 @@ func (t *tester) makeGOROOTUnwritable() (undo func()) {
 }
 
 // raceDetectorSupported is a copy of the function
-// internal/platform.RaceDetectorSupported, which can't be used here
+// publicinternal/platform.RaceDetectorSupported, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
 // The race detector only supports 48-bit VMA on arm64. But we don't have
 // a good solution to check VMA size (see https://go.dev/issue/29948).
@@ -1729,7 +1729,7 @@ func raceDetectorSupported(goos, goarch string) bool {
 }
 
 // fips140Supported is a copy of the function
-// internal/platform.FIPS140Supported, which can't be used here
+// publicinternal/platform.FIPS140Supported, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
 func fips140Supported(goos, goarch string) bool {
 	switch {
@@ -1743,7 +1743,7 @@ func fips140Supported(goos, goarch string) bool {
 }
 
 // buildModeSupported is a copy of the function
-// internal/platform.BuildModeSupported, which can't be used here
+// publicinternal/platform.BuildModeSupported, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
 func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 	if compiler == "gccgo" {
@@ -1767,7 +1767,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			default:
 				// Other targets do not support -shared,
 				// per ParseFlags in
-				// cmd/compile/internal/base/flag.go.
+				// cmd/compile/publicinternal/base/flag.go.
 				// For c-archive the Go tool passes -shared,
 				// so that the result is suitable for inclusion
 				// in a PIE or shared library.
@@ -1857,7 +1857,7 @@ func (t *tester) fips140Supported() bool {
 		return false
 	}
 
-	// Keep the platform checks below in sync with crypto/internal/fips140.Supported.
+	// Keep the platform checks below in sync with crypto/publicinternal/fips140.Supported.
 	// We don't test with the purego tag, so no need to check it.
 
 	// Use GOFIPS140 or GOEXPERIMENT=boringcrypto, but not both.

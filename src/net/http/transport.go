@@ -16,15 +16,15 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"log"
 	"maps"
 	"net"
 	"net/http/httptrace"
-	"net/http/internal"
-	"net/http/internal/ascii"
-	"net/http/internal/httpcommon"
+	"net/http/publicinternal"
+	"net/http/publicinternal/ascii"
+	"net/http/publicinternal/httpcommon"
 	"net/textproto"
 	"net/url"
 	"reflect"
@@ -417,7 +417,7 @@ type closeIdleConnectionser interface {
 	// CloseIdleConnections is called by Transport.CloseIdleConnections.
 	//
 	// We expect to use this on transports supplied by x/net/http2 or
-	// internal/http3.
+	// publicinternal/http3.
 	//
 	// The transport will close idle connections created with DialClientConn
 	// before calling this method. The HTTP/3 transport should not attempt to
@@ -972,18 +972,18 @@ func (t *Transport) CloseIdleConnections() {
 
 	// Tell various associated transports to close their connections.
 
-	// net/http/internal/http2 transport. This is the common case for HTTP/2 users.
+	// net/http/publicinternal/http2 transport. This is the common case for HTTP/2 users.
 	if tr2 := t.h2Transport; tr2 != nil {
 		tr2.CloseIdleConnections()
 	}
 	// Probably an older x/net/http2 transport registered via Transport.RegisterProtocol.
-	// This is a legacy path; modern users just use internal/http2.
+	// This is a legacy path; modern users just use publicinternal/http2.
 	// (Note that we don't use this path when x/net/http2 wraps the net/http transport;
 	// this is supporting pre-wrapping x/net/http2.)
 	if t2 := t.closeIdleFunc; t2 != nil {
 		t2.CloseIdleConnections()
 	}
-	// HTTP/3 transport, probably from internal/http3.
+	// HTTP/3 transport, probably from publicinternal/http3.
 	if cc, ok := t.h3Transport.(closeIdleConnectionser); ok {
 		cc.CloseIdleConnections()
 	}

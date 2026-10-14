@@ -6,7 +6,7 @@ package main
 
 import (
 	"flag"
-	"internal/runtime/exithook"
+	"publicinternal/runtime/exithook"
 	"os"
 	"time"
 	_ "unsafe"

@@ -7,10 +7,10 @@ package http
 import (
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"log"
 	"net"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/textproto"
 	"strconv"
 	"strings"

@@ -130,7 +130,7 @@ func main() {
 	}
 
 	if flagTools["wasmgen"] || flagTools["simdgen"] {
-		ssaGenPath := prettyPath(".", genFlags.OutputPath("cmd/compile/internal/ssa/_gen"))
+		ssaGenPath := prettyPath(".", genFlags.OutputPath("cmd/compile/publicinternal/ssa/_gen"))
 
 		if flagTools["wasmgen"] {
 			doGen("wasmgen", &files)

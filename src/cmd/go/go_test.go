@@ -12,10 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
-	"internal/godebug"
-	"internal/goexperiment"
-	"internal/platform"
-	"internal/testenv"
 	"io"
 	"io/fs"
 	"log"
@@ -23,6 +19,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"publicinternal/godebug"
+	"publicinternal/goexperiment"
+	"publicinternal/platform"
+	"publicinternal/testenv"
 	"regexp"
 	"runtime"
 	"slices"
@@ -31,18 +31,18 @@ import (
 	"testing"
 	"time"
 
-	"cmd/go/internal/base"
-	"cmd/go/internal/cache"
-	"cmd/go/internal/cfg"
-	"cmd/go/internal/gover"
-	"cmd/go/internal/search"
-	"cmd/go/internal/toolchain"
-	"cmd/go/internal/vcs"
-	"cmd/go/internal/vcweb/vcstest"
-	"cmd/go/internal/web/intercept"
-	"cmd/go/internal/work"
-	"cmd/internal/robustio"
-	"cmd/internal/sys"
+	"cmd/go/publicinternal/base"
+	"cmd/go/publicinternal/cache"
+	"cmd/go/publicinternal/cfg"
+	"cmd/go/publicinternal/gover"
+	"cmd/go/publicinternal/search"
+	"cmd/go/publicinternal/toolchain"
+	"cmd/go/publicinternal/vcs"
+	"cmd/go/publicinternal/vcweb/vcstest"
+	"cmd/go/publicinternal/web/intercept"
+	"cmd/go/publicinternal/work"
+	"cmd/publicinternal/robustio"
+	"cmd/publicinternal/sys"
 
 	cmdgo "cmd/go"
 )
@@ -101,7 +101,7 @@ var testBin string
 // deletes it after the tests have been run.
 func TestMain(m *testing.M) {
 	// When CMDGO_TEST_RUN_MAIN is set, we're reusing the test binary as cmd/go.
-	// Enable the special behavior needed in cmd/go/internal/work,
+	// Enable the special behavior needed in cmd/go/publicinternal/work,
 	// run the main func exported via export_test.go, and exit.
 	// We set CMDGO_TEST_RUN_MAIN via os.Setenv and testScript.setup.
 	if os.Getenv("CMDGO_TEST_RUN_MAIN") != "" {
@@ -942,25 +942,25 @@ func TestNewReleaseRebuildsStalePackagesInGOPATH(t *testing.T) {
 	tg.run("install", "p1")
 	tg.wantNotStale("p1", "", "./testgo list claims p1 is stale, incorrectly, before any changes")
 
-	// Changing mtime of internal/runtime/sys/sys.go
+	// Changing mtime of publicinternal/runtime/sys/sys.go
 	// should have no effect: only the content matters.
 	// In fact this should be true even outside a release branch.
-	sys := tg.path("goroot/src/internal/runtime/sys/sys.go")
+	sys := tg.path("goroot/src/publicinternal/runtime/sys/sys.go")
 	tg.sleep()
 	restore := addVar(sys, 0)
 	restore()
-	tg.wantNotStale("p1", "", "./testgo list claims p1 is stale, incorrectly, after updating mtime of internal/runtime/sys/sys.go")
+	tg.wantNotStale("p1", "", "./testgo list claims p1 is stale, incorrectly, after updating mtime of publicinternal/runtime/sys/sys.go")
 
 	// But changing content of any file should have an effect.
 	// Previously zversion.go was the only one that mattered;
 	// now they all matter, so keep using sys.go.
 	restore = addVar(sys, 1)
 	defer restore()
-	tg.wantStale("p1", "stale dependency: internal/runtime/sys", "./testgo list claims p1 is NOT stale, incorrectly, after changing sys.go")
+	tg.wantStale("p1", "stale dependency: publicinternal/runtime/sys", "./testgo list claims p1 is NOT stale, incorrectly, after changing sys.go")
 	restore()
 	tg.wantNotStale("p1", "", "./testgo list claims p1 is stale, incorrectly, after changing back to old release")
 	addVar(sys, 2)
-	tg.wantStale("p1", "stale dependency: internal/runtime/sys", "./testgo list claims p1 is NOT stale, incorrectly, after changing sys.go again")
+	tg.wantStale("p1", "stale dependency: publicinternal/runtime/sys", "./testgo list claims p1 is NOT stale, incorrectly, after changing sys.go again")
 	tg.run("install", "p1")
 	tg.wantNotStale("p1", "", "./testgo list claims p1 is stale after building with new release")
 
@@ -1044,10 +1044,10 @@ func TestGoListDeps(t *testing.T) {
 	if runtime.Compiler != "gccgo" {
 		// Check the list is in dependency order.
 		tg.run("list", "-deps", "math")
-		want := "unsafe\ninternal/cpu\nmath/bits\nmath\n"
+		want := "unsafe\npublicinternal/cpu\nmath/bits\nmath\n"
 		out := tg.stdout.String()
-		if !strings.Contains(out, "internal/cpu") {
-			// Some systems don't use internal/cpu.
+		if !strings.Contains(out, "publicinternal/cpu") {
+			// Some systems don't use publicinternal/cpu.
 			want = "unsafe\nmath/bits\nmath\n"
 		}
 		if tg.stdout.String() != want {

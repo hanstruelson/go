@@ -11,7 +11,7 @@ package hpke
 import (
 	"crypto/cipher"
 	"errors"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 type context struct {

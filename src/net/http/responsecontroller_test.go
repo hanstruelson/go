@@ -7,7 +7,7 @@ package http_test
 import (
 	"errors"
 	"fmt"
-	"internal/nettest"
+	"publicinternal/nettest"
 	"io"
 	. "net/http"
 	"os"

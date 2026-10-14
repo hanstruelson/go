@@ -10,7 +10,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"internal/diff"
+	"publicinternal/diff"
 	"io"
 	"maps"
 	"net"

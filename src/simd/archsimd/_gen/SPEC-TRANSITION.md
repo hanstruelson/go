@@ -1,4 +1,4 @@
-# Transitioning the Go SIMD generators to `internal/spec`
+# Transitioning the Go SIMD generators to `publicinternal/spec`
 
 This plan lays out how to transition the myriad generators and hand-written
 sources of the SIMD API from disjoint, manually-enforced consistency, to a
@@ -19,7 +19,7 @@ and how to run things.
 
 ## The plan in brief
 
-`internal/spec` — generic Go functions describing each operation — becomes the
+`publicinternal/spec` — generic Go functions describing each operation — becomes the
 single hand-written description of the SIMD API. Today the same operation is
 described in six places, and they have already drifted from each other (§1.5).
 
@@ -36,7 +36,7 @@ Three things have to happen, and they are largely independent:
    which point the unifier no longer defines the API — it only expands one arch
    entry into the machine instructions matching it.
 
-Behavioral conformance against `internal/simdref` (track C) runs in parallel.
+Behavioral conformance against `publicinternal/simdref` (track C) runs in parallel.
 Beyond its own `ci-audit`, it depends only on spec coverage and on the `width`
 and `impl-defined` decisions.
 
@@ -389,11 +389,11 @@ NaN corners; and explicit mask patterns, since an inverted mask sense passes
 random testing about half the time.
 
 **This is a path we have already gone down successfully.**
-`simd/internal/test_helpers` carries per-type input vectors — `float32s` through
+`simd/publicinternal/test_helpers` carries per-type input vectors — `float32s` through
 `uint8s`, plus `bools` for masks — built by cycling a hand-picked list of
 exactly those corners (±0, ±Inf, quiet and signalling NaN, `MaxFloat`, and the
 8- and 16-bit saturation edges) up to a fixed length. In
-`archsimd/internal/simd_test/helpers_test.go`, the
+`archsimd/publicinternal/simd_test/helpers_test.go`, the
 `forSlice`/`forSlicePair`/`forSliceTriple`/`forSlicePairMasked` helpers walk
 windows over them for the cross-product, `map1`/`map2`/`map3`/`mapCompare` build
 the expected result elementwise — the same shape a spec body has — and
@@ -534,7 +534,7 @@ covering every task with no `Needs` at all:
 
 ## What "done" looks like
 
-After `cat-delete`, `simd/internal/spec` is the only hand-written description of
+After `cat-delete`, `simd/publicinternal/spec` is the only hand-written description of
 the API: every operation's name, signature, and documentation derives from it,
 in both public packages and on all four targets, and `specfill` fails the build
 if any of them drift. `categories.yaml` is gone. `midway/comments.yaml`
@@ -568,7 +568,7 @@ which is why they lead. Each is small in code and large in consequence.
 ### `width` — Resolve scalable width
 **Done:** [x] · **Needs:** — · **Blocks:** `spec-common`, `conform-scalable` · **Risk:** `risk-concrete-width`
 
-`simd/internal/spec/types.go` hardcodes `scalableWidth = 4096`, and `simdref` is
+`simd/publicinternal/spec/types.go` hardcodes `scalableWidth = 4096`, and `simdref` is
 built at that width, while `archsimd`'s SVE uses the runtime `vl()`. A
 conformance test of scalable types therefore compares vectors of different
 lengths. Spec's own TODO flags this and it is unresolved.
@@ -592,13 +592,13 @@ resolving it now, while there are few (SPEC-STATS.txt §1).
 `makeVec`, `lanes`, `refgen`, and the conformance harness; seen so far:
 parameterize width at spec execution, make `simdref` width-configurable at
 construction, or scope conformance to fixed widths initially and defer. (2)
-Implement the chosen approach in `internal/spec`. (3) Regenerate
-`internal/simdref` and confirm `cmd/specls` output is unchanged, or explain what
+Implement the chosen approach in `publicinternal/spec`. (3) Regenerate
+`publicinternal/simdref` and confirm `cmd/specls` output is unchanged, or explain what
 changed.
 
 **Done when** a scalable-typed operation can be executed through `simdref` at a
 width matching a chosen target, and the choice is documented in
-`internal/spec/doc.go`.
+`publicinternal/spec/doc.go`.
 
 ### `compiler-ops` — Compiler-only ops decision
 **Done:** [ ] · **Needs:** — · **Blocks:** `compiler-ops-impl`
@@ -620,7 +620,7 @@ than user-facing API docs. It need not come from spec, go through `specfill`, or
 satisfy M2. Wherever it lands is acceptable as long as it is kept next to the
 compiler-only op's other description.
 
-**Commits.** One design note in this document or in `internal/spec/doc.go`,
+**Commits.** One design note in this document or in `publicinternal/spec/doc.go`,
 listing all compiler-only operations from `_gen/simdgen` (`grep -h "go: [a-z]"
 ops/*/categories.yaml | sort -u`; also the capitalized `noTypes` entries) and
 stating for each family where its description, documentation, and remaining
@@ -666,7 +666,7 @@ change.
 
 **Done when** `cmd/specls` produces exactly the `ExtendLo*` declarations the API
 has, plus whatever maximalist extras are deliberate, and the scalable naming
-question is answered in `internal/spec/doc.go`.
+question is answered in `publicinternal/spec/doc.go`.
 
 ### `mask-bits` — Mask bitmap load/store shape and naming
 **Done:** [ ] · **Needs:** — · **Prefers:** `width` · **Blocks:** `spec-all` · **Risk:** `risk-spec-defects`
@@ -680,7 +680,7 @@ The API declares `Store(bits []uint16)` only on SVE's scalable masks
 (`archsimd/types_sve.go`), paired with `LoadMask8s(bits []uint16)` etc. It
 stores SVE predicate bits at byte granularity. No fixed-width mask has `Store`;
 fixed-width masks have `ToBits() UintN` instead (spec: `MaskToBits`,
-`internal/spec/masks.go`, constrained to `FixedWidth`). So `Mask*s.Store` has a
+`publicinternal/spec/masks.go`, constrained to `FixedWidth`). So `Mask*s.Store` has a
 different meaning from every other `Store` — a candidate violation of the "one
 name, one meaning" rule. Its bit layout is SVE's representation, not a per-lane
 one, which arguably fails §1.3's "claim about the operation's own semantics"
@@ -691,7 +691,7 @@ scalable masks, and for the portable package. (2) Change spec to match. (3) If
 the API name changes, land the rename through the generators as its own CL.
 
 **Done when** SPEC-STATS.txt §5 lists no mask `Store` defect, and the choice is
-recorded in `internal/spec/doc.go`.
+recorded in `publicinternal/spec/doc.go`.
 
 ### `impl-defined` — Implementation-defined behavior policy
 **Done:** [ ] · **Needs:** — · **Blocks:** `validate-amd64` · **Risk:** `risk-impl-defined-behavior`
@@ -724,7 +724,7 @@ Two halves, and both need answering:
 **Commits.** (1) Survey the known cases — `DotProductPairs` overflow, float
 conversion rounding, shuffle index out of range, saturation edges, NaN/±0
 handling — classifying each as specified, implementation-defined, or undefined.
-(2) Choose and document the spec vocabulary in `internal/spec/doc.go`. (3)
+(2) Choose and document the spec vocabulary in `publicinternal/spec/doc.go`. (3)
 Implement it far enough that one operation with a genuinely
 implementation-defined corner round-trips through `refgen` and the harness.
 
@@ -1034,12 +1034,12 @@ For wasm, use `node` for testing.
 ### `conform-fixed` — Conformance harness, fixed-width types
 **Done:** [ ] · **Needs:** `ci-audit` · **Blocks:** `validate-amd64`, `conform-scalable` · **Prefers:** `specfill`
 
-Generated tests comparing `archsimd` against `internal/simdref`. The generator's
+Generated tests comparing `archsimd` against `publicinternal/simdref`. The generator's
 input is spec (hand-written source), so this is not a generator reading another
 generator's output.
 
 **Commits.** (1) Input generation: start from
-`archsimd/internal/simd_test/helpers_test.go`, which already has the per-type
+`archsimd/publicinternal/simd_test/helpers_test.go`, which already has the per-type
 edge-case vectors, the mask patterns and the window-walking helpers (§1.9);
 decide whether to lift them into a package the generated tests can import. (2)
 Test generator producing one test per `(recv, name)` spec covers. (3) Wire into
@@ -1082,7 +1082,7 @@ implementation-defined under `impl-defined`'s policy.
 **Done:** [ ] · **Needs:** `validate-amd64`, `conform-scalable`
 
 Spec becomes the oracle for every target, not just amd64. The second half is the
-contributor-facing note — likely in `internal/spec/doc.go` and the SIMD README —
+contributor-facing note — likely in `publicinternal/spec/doc.go` and the SIMD README —
 describing the workflow: add the operation to spec if it is not there, implement
 it, run conformance.
 
@@ -1117,7 +1117,7 @@ included; their text differs between 16/32-bit and 64-bit elements. Verify via
 and unsigned elements; `categories.yaml` selects the variant with a `signed:`
 join key, which this retires. (4) If the mechanism proves insufficient, extend it
 (conditional doc text is the likely shape) and document the extension in
-`internal/spec/doc.go`.
+`publicinternal/spec/doc.go`.
 
 `concatSelectedConstant*` is harder still — four spec functions for one API name
 — but it is *unexported*, so it sits outside `specfill`'s scope per §1.7 and is
@@ -1421,7 +1421,7 @@ go run ./cmd/specstats -w     # rewrite SPEC-STATS.txt in place
 
 It loads `simd` and `archsimd` through `go/packages` for each build
 configuration, taking syntax only — no type-checking, per §1.4 — and reads
-`simd/internal/spec` through `specgen.Load`. It needs a recent Go toolchain and
+`simd/publicinternal/spec` through `specgen.Load`. It needs a recent Go toolchain and
 up-to-date output from the SIMD generators, but does not itself require any ISA
 data. Commit the regenerated file alongside whatever change moved the numbers;
 the diff is the record of what moved.

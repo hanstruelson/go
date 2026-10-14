@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/math"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -19,7 +19,7 @@ type slice struct {
 	cap   int
 }
 
-// A notInHeapSlice is a slice backed by internal/runtime/sys.NotInHeap memory.
+// A notInHeapSlice is a slice backed by publicinternal/runtime/sys.NotInHeap memory.
 type notInHeapSlice struct {
 	array *notInHeap
 	len   int
@@ -428,7 +428,7 @@ func slicecopy(toPtr unsafe.Pointer, toLen int, fromPtr unsafe.Pointer, fromLen 
 	return n
 }
 
-//go:linkname bytealg_MakeNoZero internal/bytealg.MakeNoZero
+//go:linkname bytealg_MakeNoZero publicinternal/bytealg.MakeNoZero
 func bytealg_MakeNoZero(len int) []byte {
 	if uintptr(len) > maxAlloc {
 		panicmakeslicelen()

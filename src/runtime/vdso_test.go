@@ -8,9 +8,9 @@ package runtime_test
 
 import (
 	"bytes"
-	"internal/asan"
-	"internal/goarch"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/goarch"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

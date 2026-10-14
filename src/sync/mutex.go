@@ -11,7 +11,7 @@
 package sync
 
 import (
-	isync "internal/sync"
+	isync "publicinternal/sync"
 )
 
 // A Mutex is a mutual exclusion lock.

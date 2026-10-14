@@ -13,9 +13,9 @@ package main
 
 import (
 	"bufio"
-	"cmd/internal/objabi"
-	"cmd/internal/pgo"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/pgo"
+	"cmd/publicinternal/telemetry/counter"
 	"flag"
 	"fmt"
 	"log"

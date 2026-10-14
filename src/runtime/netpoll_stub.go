@@ -6,7 +6,7 @@
 
 package runtime
 
-import "internal/runtime/atomic"
+import "publicinternal/runtime/atomic"
 
 var netpollInited atomic.Uint32
 

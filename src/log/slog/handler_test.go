@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog/internal/buffer"
+	"log/slog/publicinternal/buffer"
 	"os"
 	"path/filepath"
 	"slices"

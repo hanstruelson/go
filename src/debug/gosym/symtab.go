@@ -72,7 +72,7 @@ func (s *Sym) PackageName() string {
 	// Since go1.20, a prefix of "type:" and "go:" is a compiler-generated symbol,
 	// they do not belong to any package.
 	//
-	// See cmd/compile/internal/base/link.go:ReservedImports variable.
+	// See cmd/compile/publicinternal/base/link.go:ReservedImports variable.
 	if s.goVersion >= ver120 && (strings.HasPrefix(name, "go:") || strings.HasPrefix(name, "type:")) {
 		return ""
 	}

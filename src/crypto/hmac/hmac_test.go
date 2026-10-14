@@ -5,9 +5,9 @@
 package hmac
 
 import (
-	"crypto/internal/boring"
-	"crypto/internal/cryptotest"
-	"crypto/internal/fips140hash"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/fips140hash"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"

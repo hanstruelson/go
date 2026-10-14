@@ -5,8 +5,8 @@
 package main
 
 import (
-	"internal/asan"
-	"internal/race"
+	"publicinternal/asan"
+	"publicinternal/race"
 	"runtime"
 	"runtime/debug"
 	"unsafe"

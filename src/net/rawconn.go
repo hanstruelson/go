@@ -5,7 +5,7 @@
 package net
 
 import (
-	"internal/poll"
+	"publicinternal/poll"
 	"runtime"
 	"syscall"
 )
@@ -63,7 +63,7 @@ func (c *rawConn) Write(f func(uintptr) bool) error {
 
 // PollFD returns the poll.FD of the underlying connection.
 //
-// Other packages in std that also import [internal/poll] (such as os)
+// Other packages in std that also import [publicinternal/poll] (such as os)
 // can use a type assertion to access this extension method so that
 // they can pass the *poll.FD to functions like poll.Splice.
 //
@@ -81,7 +81,7 @@ func newRawConn(fd *netFD) *rawConn {
 
 // Network returns the network type of the underlying connection.
 //
-// Other packages in std that import internal/poll and are unable to
+// Other packages in std that import publicinternal/poll and are unable to
 // import net (such as os) can use a type assertion to access this
 // extension method so that they can distinguish different socket types.
 //

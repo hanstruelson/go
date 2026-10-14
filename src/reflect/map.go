@@ -5,11 +5,11 @@
 package reflect
 
 import (
-	"internal/abi"
-	"internal/goexperiment"
-	"internal/race"
-	"internal/runtime/maps"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goexperiment"
+	"publicinternal/race"
+	"publicinternal/runtime/maps"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -57,7 +57,7 @@ func MapOf(key, elem Type) Type {
 
 	// Make a map type.
 	// Note: flag values must match those used in the TMAP case
-	// in ../cmd/compile/internal/reflectdata/reflect.go:writeType.
+	// in ../cmd/compile/publicinternal/reflectdata/reflect.go:writeType.
 	var imap any = (map[unsafe.Pointer]unsafe.Pointer)(nil)
 	mt := **(**abi.MapType)(unsafe.Pointer(&imap))
 	mt.Str = resolveReflectName(newName(s, "", false, false))

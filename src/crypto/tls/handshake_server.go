@@ -12,7 +12,7 @@ import (
 	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/subtle"
-	"crypto/tls/internal/fips140tls"
+	"crypto/tls/publicinternal/fips140tls"
 	"crypto/x509"
 	"errors"
 	"fmt"

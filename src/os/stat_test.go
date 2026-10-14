@@ -6,7 +6,7 @@ package os_test
 
 import (
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"

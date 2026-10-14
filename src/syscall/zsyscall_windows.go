@@ -3,7 +3,7 @@
 package syscall
 
 import (
-	"internal/syscall/windows/sysdll"
+	"publicinternal/syscall/windows/sysdll"
 	"unsafe"
 )
 

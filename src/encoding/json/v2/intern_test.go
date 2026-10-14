@@ -12,7 +12,7 @@ import (
 	"io"
 	"testing"
 
-	"encoding/json/internal/jsontest"
+	"encoding/json/publicinternal/jsontest"
 	"encoding/json/jsontext"
 )
 

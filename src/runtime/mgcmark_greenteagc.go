@@ -37,11 +37,11 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
-	"internal/runtime/gc/scan"
-	"internal/runtime/sys"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/gc/scan"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

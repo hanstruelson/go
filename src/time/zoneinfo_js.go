@@ -7,7 +7,7 @@
 package time
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"syscall/js"
 )
 

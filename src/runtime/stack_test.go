@@ -6,8 +6,8 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/asan"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/testenv"
 	"reflect"
 	"regexp"
 	. "runtime"

@@ -16,10 +16,10 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

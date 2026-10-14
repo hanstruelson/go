@@ -9,8 +9,8 @@ package mldsa_test
 import (
 	"bytes"
 	"crypto"
-	"crypto/internal/cryptotest/wycheproof"
-	internalmldsa "crypto/internal/fips140/mldsa"
+	"crypto/publicinternal/cryptotest/wycheproof"
+	internalmldsa "crypto/publicinternal/fips140/mldsa"
 	"crypto/mldsa"
 	"slices"
 	"testing"

@@ -7,7 +7,7 @@ package types
 import "iter"
 
 // This file defines go1.23 iterator methods for a variety of data
-// types. They are not mirrored to cmd/compile/internal/types2, as
+// types. They are not mirrored to cmd/compile/publicinternal/types2, as
 // there is no point doing so until the bootstrap compiler it at least
 // go1.23; therefore go1.23-style range statements should not be used
 // in code common to types and types2, though clients of go/types are

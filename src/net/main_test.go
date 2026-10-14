@@ -7,7 +7,7 @@ package net
 import (
 	"flag"
 	"fmt"
-	"net/internal/socktest"
+	"net/publicinternal/socktest"
 	"os"
 	"runtime"
 	"slices"

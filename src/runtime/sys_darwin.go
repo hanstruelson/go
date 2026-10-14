@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 
@@ -52,9 +52,9 @@ func syscall_rawsyscalln(fn uintptr, args ...uintptr) (r1, r2, err uintptr) {
 
 func syscallN_trampoline()
 
-// crypto_x509_syscall is used in crypto/x509/internal/macos to call into Security.framework and CF.
+// crypto_x509_syscall is used in crypto/x509/publicinternal/macos to call into Security.framework and CF.
 
-//go:linkname crypto_x509_syscall crypto/x509/internal/macos.syscall
+//go:linkname crypto_x509_syscall crypto/x509/publicinternal/macos.syscall
 //go:nosplit
 func crypto_x509_syscall(fn, a1, a2, a3, a4, a5 uintptr, f1 float64) (r1 uintptr) {
 	args := struct {

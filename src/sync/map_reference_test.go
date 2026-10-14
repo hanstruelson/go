@@ -5,7 +5,7 @@
 package sync_test
 
 import (
-	isync "internal/sync"
+	isync "publicinternal/sync"
 	"sync"
 	"sync/atomic"
 )

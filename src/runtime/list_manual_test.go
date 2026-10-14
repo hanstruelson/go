@@ -5,7 +5,7 @@
 package runtime_test
 
 import (
-	"internal/runtime/sys"
+	"publicinternal/runtime/sys"
 	"runtime"
 	"testing"
 	"unsafe"

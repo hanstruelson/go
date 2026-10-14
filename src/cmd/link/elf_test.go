@@ -7,14 +7,14 @@
 package main
 
 import (
-	"cmd/internal/buildid"
-	"cmd/internal/hash"
-	"cmd/link/internal/ld"
+	"cmd/publicinternal/buildid"
+	"cmd/publicinternal/hash"
+	"cmd/link/publicinternal/ld"
 	"debug/elf"
 	"encoding/binary"
 	"fmt"
-	"internal/platform"
-	"internal/testenv"
+	"publicinternal/platform"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

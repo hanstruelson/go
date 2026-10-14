@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package specdoc validates exported SIMD declarations against package
-// simd/internal/spec and manages the composition and injection of spec-derived
+// simd/publicinternal/spec and manages the composition and injection of spec-derived
 // documentation into Go source files.
 //
 // Generators and tools pass Go source buffers through [Fill] before writing

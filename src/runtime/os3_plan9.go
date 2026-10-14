@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 

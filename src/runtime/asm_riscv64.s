@@ -756,7 +756,7 @@ TEXT runtime·setg(SB), NOSPLIT, $0-8
 	CALL	runtime·save_g(SB)
 	RET
 
-// spillArgs stores return values from registers to a *internal/abi.RegArgs in X25.
+// spillArgs stores return values from registers to a *publicinternal/abi.RegArgs in X25.
 TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOV	X10, (0*8)(X25)
 	MOV	X11, (1*8)(X25)
@@ -792,7 +792,7 @@ TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVD	F23, (31*8)(X25)
 	RET
 
-// unspillArgs loads args into registers from a *internal/abi.RegArgs in X25.
+// unspillArgs loads args into registers from a *publicinternal/abi.RegArgs in X25.
 TEXT ·unspillArgs(SB),NOSPLIT,$0-0
 	MOV	(0*8)(X25), X10
 	MOV	(1*8)(X25), X11

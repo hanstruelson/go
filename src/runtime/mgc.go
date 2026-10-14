@@ -129,11 +129,11 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
 	"unsafe"
 )
 
@@ -2151,7 +2151,7 @@ func gcResetMarkState() {
 // Hooks for other packages
 
 var poolcleanup func()
-var boringCaches []unsafe.Pointer // for crypto/internal/boring
+var boringCaches []unsafe.Pointer // for crypto/publicinternal/boring
 
 // sync_runtime_registerPoolCleanup should be an internal detail,
 // but widely used packages access it using linkname.
@@ -2167,7 +2167,7 @@ func sync_runtime_registerPoolCleanup(f func()) {
 	poolcleanup = f
 }
 
-//go:linkname boring_registerCache crypto/internal/boring/bcache.registerCache
+//go:linkname boring_registerCache crypto/publicinternal/boring/bcache.registerCache
 func boring_registerCache(p unsafe.Pointer) {
 	boringCaches = append(boringCaches, p)
 }

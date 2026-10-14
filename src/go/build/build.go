@@ -12,12 +12,12 @@ import (
 	"go/build/constraint"
 	"go/doc"
 	"go/token"
-	"internal/buildcfg"
-	"internal/godebug"
-	"internal/goroot"
-	"internal/goversion"
-	"internal/platform"
-	"internal/syslist"
+	"publicinternal/buildcfg"
+	"publicinternal/godebug"
+	"publicinternal/goroot"
+	"publicinternal/goversion"
+	"publicinternal/platform"
+	"publicinternal/syslist"
 	"io"
 	"io/fs"
 	"os"
@@ -288,7 +288,7 @@ func (ctxt *Context) SrcDirs() []string {
 // if set, or else the compiled code's GOARCH, GOOS, and GOROOT.
 var Default Context = defaultContext()
 
-// Keep consistent with cmd/go/internal/cfg.defaultGOPATH.
+// Keep consistent with cmd/go/publicinternal/cfg.defaultGOPATH.
 func defaultGOPATH() string {
 	env := "HOME"
 	if runtime.GOOS == "windows" {

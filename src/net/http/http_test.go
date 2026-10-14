@@ -8,7 +8,7 @@ package http
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"net/url"
 	"os"
@@ -133,13 +133,13 @@ func TestNoUnicodeStrings(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if path == "internal/ascii" {
+		if path == "publicinternal/ascii" {
 			return fs.SkipDir
 		}
 		if !strings.HasSuffix(path, ".go") ||
 			strings.HasSuffix(path, "_test.go") ||
-			path == "internal/http2/ascii.go" ||
-			path == "internal/httpcommon/ascii.go" ||
+			path == "publicinternal/http2/ascii.go" ||
+			path == "publicinternal/httpcommon/ascii.go" ||
 			d.IsDir() {
 			return nil
 		}

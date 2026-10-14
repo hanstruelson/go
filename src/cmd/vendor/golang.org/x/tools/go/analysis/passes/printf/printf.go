@@ -21,12 +21,12 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/fmtstr"
-	"golang.org/x/tools/internal/typeparams"
-	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/fmtstr"
+	"golang.org/x/tools/publicinternal/typeparams"
+	"golang.org/x/tools/publicinternal/typesinternal"
+	"golang.org/x/tools/publicinternal/versions"
 	"golang.org/x/tools/refactor/satisfy"
 )
 

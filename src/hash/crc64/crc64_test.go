@@ -7,7 +7,7 @@ package crc64
 import (
 	"encoding"
 	"hash"
-	"internal/testhash"
+	"publicinternal/testhash"
 	"io"
 	"testing"
 )

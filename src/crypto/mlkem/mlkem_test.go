@@ -6,9 +6,9 @@ package mlkem_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
-	"crypto/internal/fips140/mlkem"
-	"crypto/internal/fips140/sha3"
+	"crypto/publicinternal/cryptotest"
+	"crypto/publicinternal/fips140/mlkem"
+	"crypto/publicinternal/fips140/sha3"
 	. "crypto/mlkem"
 	"crypto/mlkem/mlkemtest"
 	"crypto/rand"

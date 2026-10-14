@@ -6,10 +6,10 @@ package des
 
 import (
 	"crypto/cipher"
-	"crypto/internal/fips140/alias"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140/alias"
+	"crypto/publicinternal/fips140only"
 	"errors"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 	"strconv"
 )
 

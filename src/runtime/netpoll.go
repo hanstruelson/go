@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -40,7 +40,7 @@ import (
 //     Reports whether fd is a file descriptor used by the poller.
 
 // Error codes returned by runtime_pollReset and runtime_pollWait.
-// These must match the values in internal/poll/fd_poll_runtime.go.
+// These must match the values in publicinternal/poll/fd_poll_runtime.go.
 const (
 	pollNoError        = 0 // no error
 	pollErrClosing     = 1 // descriptor is closed
@@ -210,7 +210,7 @@ var (
 // netpollWaiters is accessed in tests
 //go:linkname netpollWaiters
 
-//go:linkname poll_runtime_pollServerInit internal/poll.runtime_pollServerInit
+//go:linkname poll_runtime_pollServerInit publicinternal/poll.runtime_pollServerInit
 func poll_runtime_pollServerInit() {
 	netpollGenericInit()
 }
@@ -232,7 +232,7 @@ func netpollinited() bool {
 	return netpollInited.Load() != 0
 }
 
-//go:linkname poll_runtime_isPollServerDescriptor internal/poll.runtime_isPollServerDescriptor
+//go:linkname poll_runtime_isPollServerDescriptor publicinternal/poll.runtime_isPollServerDescriptor
 
 // poll_runtime_isPollServerDescriptor reports whether fd is a
 // descriptor being used by netpoll.
@@ -240,7 +240,7 @@ func poll_runtime_isPollServerDescriptor(fd uintptr) bool {
 	return netpollIsPollDescriptor(fd)
 }
 
-//go:linkname poll_runtime_pollOpen internal/poll.runtime_pollOpen
+//go:linkname poll_runtime_pollOpen publicinternal/poll.runtime_pollOpen
 func poll_runtime_pollOpen(fd uintptr) (*pollDesc, int) {
 	pd := pollcache.alloc()
 	lock(&pd.lock)
@@ -277,7 +277,7 @@ func poll_runtime_pollOpen(fd uintptr) (*pollDesc, int) {
 	return pd, 0
 }
 
-//go:linkname poll_runtime_pollClose internal/poll.runtime_pollClose
+//go:linkname poll_runtime_pollClose publicinternal/poll.runtime_pollClose
 func poll_runtime_pollClose(pd *pollDesc) {
 	if !pd.closing {
 		throw("runtime: close polldesc w/o unblock")
@@ -315,11 +315,11 @@ func (c *pollCache) free(pd *pollDesc) {
 	unlock(&c.lock)
 }
 
-// poll_runtime_pollReset, which is internal/poll.runtime_pollReset,
+// poll_runtime_pollReset, which is publicinternal/poll.runtime_pollReset,
 // prepares a descriptor for polling in mode, which is 'r' or 'w'.
 // This returns an error code; the codes are defined above.
 //
-//go:linkname poll_runtime_pollReset internal/poll.runtime_pollReset
+//go:linkname poll_runtime_pollReset publicinternal/poll.runtime_pollReset
 func poll_runtime_pollReset(pd *pollDesc, mode int) int {
 	errcode := netpollcheckerr(pd, int32(mode))
 	if errcode != pollNoError {
@@ -333,12 +333,12 @@ func poll_runtime_pollReset(pd *pollDesc, mode int) int {
 	return pollNoError
 }
 
-// poll_runtime_pollWait, which is internal/poll.runtime_pollWait,
+// poll_runtime_pollWait, which is publicinternal/poll.runtime_pollWait,
 // waits for a descriptor to be ready for reading or writing,
 // according to mode, which is 'r' or 'w'.
 // This returns an error code; the codes are defined above.
 //
-//go:linkname poll_runtime_pollWait internal/poll.runtime_pollWait
+//go:linkname poll_runtime_pollWait publicinternal/poll.runtime_pollWait
 func poll_runtime_pollWait(pd *pollDesc, mode int) int {
 	errcode := netpollcheckerr(pd, int32(mode))
 	if errcode != pollNoError {
@@ -360,7 +360,7 @@ func poll_runtime_pollWait(pd *pollDesc, mode int) int {
 	return pollNoError
 }
 
-//go:linkname poll_runtime_pollWaitCanceled internal/poll.runtime_pollWaitCanceled
+//go:linkname poll_runtime_pollWaitCanceled publicinternal/poll.runtime_pollWaitCanceled
 func poll_runtime_pollWaitCanceled(pd *pollDesc, mode int) {
 	// This function is used only on windows after a failed attempt to cancel
 	// a pending async IO operation. Wait for ioready, ignore closing or timeouts.
@@ -368,7 +368,7 @@ func poll_runtime_pollWaitCanceled(pd *pollDesc, mode int) {
 	}
 }
 
-//go:linkname poll_runtime_pollSetDeadline internal/poll.runtime_pollSetDeadline
+//go:linkname poll_runtime_pollSetDeadline publicinternal/poll.runtime_pollSetDeadline
 func poll_runtime_pollSetDeadline(pd *pollDesc, d int64, mode int) {
 	lock(&pd.lock)
 	if pd.closing {
@@ -448,7 +448,7 @@ func poll_runtime_pollSetDeadline(pd *pollDesc, d int64, mode int) {
 	netpollAdjustWaiters(delta)
 }
 
-//go:linkname poll_runtime_pollUnblock internal/poll.runtime_pollUnblock
+//go:linkname poll_runtime_pollUnblock publicinternal/poll.runtime_pollUnblock
 func poll_runtime_pollUnblock(pd *pollDesc) {
 	lock(&pd.lock)
 	if pd.closing {
@@ -718,7 +718,7 @@ func (c *pollCache) alloc() *pollDesc {
 // makeArg converts pd to an interface{}.
 // makeArg does not do any allocation. Normally, such
 // a conversion requires an allocation because pointers to
-// types which embed internal/runtime/sys.NotInHeap (which pollDesc is)
+// types which embed publicinternal/runtime/sys.NotInHeap (which pollDesc is)
 // must be stored in interfaces indirectly. See issue 42076.
 func (pd *pollDesc) makeArg() (i any) {
 	x := (*eface)(unsafe.Pointer(&i))

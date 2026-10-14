@@ -5,8 +5,8 @@
 package subtle
 
 import (
-	"internal/cpu"
-	"internal/runtime/sys"
+	"publicinternal/cpu"
+	"publicinternal/runtime/sys"
 	"testing"
 )
 

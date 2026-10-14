@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/runtime/math"
-	"internal/runtime/sys"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -23,7 +23,7 @@ func unsafestring(ptr unsafe.Pointer, len int) {
 	}
 }
 
-// Keep this code in sync with cmd/compile/internal/walk/builtin.go:walkUnsafeString
+// Keep this code in sync with cmd/compile/publicinternal/walk/builtin.go:walkUnsafeString
 func unsafestring64(ptr unsafe.Pointer, len64 int64) {
 	len := int(len64)
 	if int64(len) != len64 {
@@ -50,7 +50,7 @@ func panicunsafestringnilptr() {
 	panic(errorString("unsafe.String: ptr is nil and len is not zero"))
 }
 
-// Keep this code in sync with cmd/compile/internal/walk/builtin.go:walkUnsafeSlice
+// Keep this code in sync with cmd/compile/publicinternal/walk/builtin.go:walkUnsafeSlice
 func unsafeslice(et *_type, ptr unsafe.Pointer, len int) {
 	if len < 0 {
 		panicunsafeslicelen1(sys.GetCallerPC())
@@ -71,7 +71,7 @@ func unsafeslice(et *_type, ptr unsafe.Pointer, len int) {
 	}
 }
 
-// Keep this code in sync with cmd/compile/internal/walk/builtin.go:walkUnsafeSlice
+// Keep this code in sync with cmd/compile/publicinternal/walk/builtin.go:walkUnsafeSlice
 func unsafeslice64(et *_type, ptr unsafe.Pointer, len64 int64) {
 	len := int(len64)
 	if int64(len) != len64 {

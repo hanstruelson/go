@@ -6,7 +6,7 @@ package main
 
 import "C"
 import (
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"sync"
 	"syscall"

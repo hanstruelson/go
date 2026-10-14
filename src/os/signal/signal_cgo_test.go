@@ -14,9 +14,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"internal/syscall/unix"
-	"internal/testenv"
-	"internal/testpty"
+	"publicinternal/syscall/unix"
+	"publicinternal/testenv"
+	"publicinternal/testpty"
 	"os"
 	"os/signal"
 	"runtime"
@@ -53,7 +53,7 @@ func TestTerminalSignal(t *testing.T) {
 	// 6. Continue the child.
 	//
 	// On Darwin, step 4 results in the read() returning EINTR once the
-	// process continues. internal/poll should automatically retry the
+	// process continues. publicinternal/poll should automatically retry the
 	// read.
 	//
 	// These steps are complicated by the rules around foreground process

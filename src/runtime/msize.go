@@ -9,7 +9,7 @@
 
 package runtime
 
-import "internal/runtime/gc"
+import "publicinternal/runtime/gc"
 
 // Returns size of the memory block that mallocgc will allocate if you ask for the size,
 // minus any inline space for metadata.

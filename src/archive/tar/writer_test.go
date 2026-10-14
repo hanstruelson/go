@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"internal/obscuretestdata"
+	"publicinternal/obscuretestdata"
 	"io"
 	"io/fs"
 	"maps"

@@ -21,9 +21,9 @@ body:
     label: Proposed Config Change
     description: >
       A CL containing proposed changes to the
-      [config.txt](https://go.googlesource.com/telemetry/+/master/internal/chartconfig/config.txt)
+      [config.txt](https://go.googlesource.com/telemetry/+/master/publicinternal/chartconfig/config.txt)
       chart configuration.
-      See the [chartconfig](https://pkg.go.dev/golang.org/x/telemetry/internal/chartconfig)
+      See the [chartconfig](https://pkg.go.dev/golang.org/x/telemetry/publicinternal/chartconfig)
       package for an explanation of the chart config format.
       For an example change, see [CL 564619](https://go.dev/cl/564619).
   validations:

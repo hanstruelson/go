@@ -6,8 +6,8 @@ package os
 
 import (
 	"errors"
-	"internal/bytealg"
-	"internal/strconv"
+	"publicinternal/bytealg"
+	"publicinternal/strconv"
 	_ "unsafe" // for go:linkname
 )
 

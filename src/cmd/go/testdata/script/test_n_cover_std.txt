@@ -2,4 +2,4 @@
 # meta-data handling code handles pseudo-packages (ex: "unsafe") properly.
 
 cd $GOROOT/src
-go test -vet=off -p=1 -n -coverpkg=internal/coverage/decodecounter internal/coverage/decodecounter sync unsafe
+go test -vet=off -p=1 -n -coverpkg=publicinternal/coverage/decodecounter publicinternal/coverage/decodecounter sync unsafe

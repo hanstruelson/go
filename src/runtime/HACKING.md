@@ -181,7 +181,7 @@ In summary,
 Atomics
 =======
 
-The runtime uses its own atomics package at `internal/runtime/atomic`.
+The runtime uses its own atomics package at `publicinternal/runtime/atomic`.
 This corresponds to `sync/atomic`, but functions have different names
 for historical reasons and there are a few additional functions needed
 by the runtime.
@@ -243,7 +243,7 @@ There are three mechanisms for allocating unmanaged memory:
   objects of the same type.
 
 In general, types that are allocated using any of these should be
-marked as not in heap by embedding `internal/runtime/sys.NotInHeap`.
+marked as not in heap by embedding `publicinternal/runtime/sys.NotInHeap`.
 
 Objects that are allocated in unmanaged memory **must not** contain
 heap pointers unless the following rules are also obeyed:
@@ -532,10 +532,10 @@ Notes on modifying the execution tracer
 ---------------------------------------
 
 The execution tracer lives in the files whose names start with "trace."
-The parser for the execution trace format lives in the `internal/trace` package.
+The parser for the execution trace format lives in the `publicinternal/trace` package.
 
 If you plan on adding new trace events, consider starting with a [trace
-experiment](../internal/trace/tracev2/EXPERIMENTS.md).
+experiment](../publicinternal/trace/tracev2/EXPERIMENTS.md).
 
 If you plan to add new trace instrumentation to the runtime, read the comment
 at the top of [trace.go](./trace.go), especially the invariants.

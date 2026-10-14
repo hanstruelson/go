@@ -5,13 +5,13 @@
 package main_test
 
 import (
-	"cmd/go/internal/cfg"
-	"cmd/internal/script"
-	"cmd/internal/script/scripttest"
+	"cmd/go/publicinternal/cfg"
+	"cmd/publicinternal/script"
+	"cmd/publicinternal/script/scripttest"
 	"errors"
 	"fmt"
-	"internal/buildcfg"
-	"internal/platform"
+	"publicinternal/buildcfg"
+	"publicinternal/platform"
 	"os"
 	"os/exec"
 	"path/filepath"

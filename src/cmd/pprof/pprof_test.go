@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"runtime"

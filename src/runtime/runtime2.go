@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/chacha8rand"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/chacha8rand"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -477,8 +477,8 @@ type g struct {
 	// It is stack.lo+StackGuard on g0 and gsignal stacks.
 	// It is ~0 on other goroutine stacks, to trigger a call to morestackc (and crash).
 	stack       stack   // offset known to runtime/cgo
-	stackguard0 uintptr // offset known to cmd/internal/obj/*
-	stackguard1 uintptr // offset known to cmd/internal/obj/*
+	stackguard0 uintptr // offset known to cmd/publicinternal/obj/*
+	stackguard1 uintptr // offset known to cmd/publicinternal/obj/*
 
 	_panic    *_panic // innermost panic
 	_defer    *_defer // innermost defer
@@ -615,7 +615,7 @@ const (
 type m struct {
 	g0      *g     // goroutine with scheduling stack
 	morebuf gobuf  // gobuf arg to morestack
-	divmod  uint32 // div/mod denominator for arm - known to liblink (cmd/internal/obj/arm/obj5.go)
+	divmod  uint32 // div/mod denominator for arm - known to liblink (cmd/publicinternal/obj/arm/obj5.go)
 
 	// Fields whose offsets are not known to debuggers.
 
@@ -1073,7 +1073,7 @@ const (
 
 // Layout of in-memory per-function information prepared by linker
 // See https://golang.org/s/go12symtab.
-// Keep in sync with linker (../cmd/link/internal/ld/pcln.go:/pclntab)
+// Keep in sync with linker (../cmd/link/publicinternal/ld/pcln.go:/pclntab)
 // and with package debug/gosym and with symtab.go in package runtime.
 type _func struct {
 	sys.NotInHeap // Only in static data
@@ -1149,8 +1149,8 @@ type forcegcstate struct {
 
 // A _defer holds an entry on the list of deferred calls.
 // If you add a field here, add code to clear it in deferProcStack.
-// This struct must match the code in cmd/compile/internal/ssagen/ssa.go:deferstruct
-// and cmd/compile/internal/ssagen/ssa.go:(*state).call.
+// This struct must match the code in cmd/compile/publicinternal/ssagen/ssa.go:deferstruct
+// and cmd/compile/publicinternal/ssagen/ssa.go:(*state).call.
 // Some defers will be allocated on the stack and some on the heap.
 // All defers are logically part of the stack, so write barriers to
 // initialize them are not required. All defers must be manually scanned,
@@ -1484,7 +1484,7 @@ var (
 )
 
 // set by cmd/link on arm systems
-// accessed using linkname by internal/runtime/atomic.
+// accessed using linkname by publicinternal/runtime/atomic.
 //
 // goarm should be an internal detail,
 // but widely used packages access it using linkname.
@@ -1506,7 +1506,7 @@ var (
 	isarchive bool // -buildmode=c-archive
 )
 
-// Must agree with internal/buildcfg.FramePointerEnabled.
+// Must agree with publicinternal/buildcfg.FramePointerEnabled.
 const framepointer_enabled = GOARCH == "amd64" || GOARCH == "arm64"
 
 // getcallerfp returns the frame pointer of the caller of the caller

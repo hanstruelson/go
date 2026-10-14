@@ -11,8 +11,8 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"internal/obscuretestdata"
-	"internal/testenv"
+	"publicinternal/obscuretestdata"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path"
@@ -62,7 +62,7 @@ func TestReadFile(t *testing.T) {
 		buildModes = append(buildModes, "c-shared")
 	}
 
-	// Keep in sync with src/cmd/go/internal/work/init.go:buildModeInit.
+	// Keep in sync with src/cmd/go/publicinternal/work/init.go:buildModeInit.
 	badmode := func(goos, goarch, buildmode string) string {
 		return fmt.Sprintf("-buildmode=%s not supported on %s/%s", buildmode, goos, goarch)
 	}

@@ -5,8 +5,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 

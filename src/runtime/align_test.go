@@ -12,7 +12,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"regexp"
 	"runtime"

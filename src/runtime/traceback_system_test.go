@@ -10,7 +10,7 @@ package runtime_test
 import (
 	"bytes"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"path/filepath"

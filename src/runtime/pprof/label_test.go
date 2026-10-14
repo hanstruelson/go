@@ -7,7 +7,7 @@ package pprof
 import (
 	"context"
 	"fmt"
-	"internal/runtime/pprof/label"
+	"publicinternal/runtime/pprof/label"
 	"reflect"
 	"slices"
 	"strings"

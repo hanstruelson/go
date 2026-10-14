@@ -5,8 +5,8 @@
 package runtime_test
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
 	"runtime"
 	"sync"
 	"testing"

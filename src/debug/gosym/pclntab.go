@@ -11,8 +11,8 @@ package gosym
 import (
 	"bytes"
 	"encoding/binary"
-	"internal/abi"
-	"internal/saferio"
+	"publicinternal/abi"
+	"publicinternal/saferio"
 	"sort"
 	"sync"
 )

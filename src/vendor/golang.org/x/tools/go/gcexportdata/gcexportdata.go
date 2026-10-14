@@ -52,7 +52,7 @@ import (
 	"io"
 	"os/exec"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/publicinternal/gcimporter"
 )
 
 // Find returns the name of an object (.o) or archive (.a) file

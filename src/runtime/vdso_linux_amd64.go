@@ -8,7 +8,7 @@ import _ "unsafe" // for linkname
 
 const (
 	// vdsoArrayMax is the byte-size of a maximally sized array on this architecture.
-	// See cmd/compile/internal/amd64/galign.go arch.MAXWIDTH initialization.
+	// See cmd/compile/publicinternal/amd64/galign.go arch.MAXWIDTH initialization.
 	vdsoArrayMax = 1<<50 - 1
 )
 

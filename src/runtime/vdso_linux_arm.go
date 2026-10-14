@@ -6,7 +6,7 @@ package runtime
 
 const (
 	// vdsoArrayMax is the byte-size of a maximally sized array on this architecture.
-	// See cmd/compile/internal/arm/galign.go arch.MAXWIDTH initialization, but must also
+	// See cmd/compile/publicinternal/arm/galign.go arch.MAXWIDTH initialization, but must also
 	// be constrained to max +ve int.
 	vdsoArrayMax = 1<<31 - 1
 )

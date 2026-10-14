@@ -5,7 +5,7 @@
 // license that can be found in the LICENSE file.
 
 // Regression coverage for the late spill/reload pair coalescer on arm64
-// (cmd/compile/internal/arm64.pairSpills). When the coalescer fused two
+// (cmd/compile/publicinternal/arm64.pairSpills). When the coalescer fused two
 // adjacent AMOVD reloads into a single LDP, paths that branched directly to
 // the second reload would silently skip the fused load and observe a stale
 // or uninitialized register. The fix records branch and jump-table targets

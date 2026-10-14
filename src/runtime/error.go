@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/bytealg"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
+	"publicinternal/runtime/sys"
 )
 
 // Error identifies a runtime error used in panic.

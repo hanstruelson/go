@@ -34,7 +34,7 @@ TEXT ·asyncPreempt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD m_p(R0), R0
 	ADD $(p_xRegs+xRegPerP_scratch), R0, R0
 	#ifdef GOEXPERIMENT_simd
-	MOVBU internal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27
+	MOVBU publicinternal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27
 	CMP $1, R27
 	BNE saveNEON
 	RDVL $1, R27
@@ -109,7 +109,7 @@ preempt:
 	MOVD m_p(R0), R0
 	MOVD (p_xRegs+xRegPerP_cache)(R0), R0
 	#ifdef GOEXPERIMENT_simd
-	MOVBU internal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27
+	MOVBU publicinternal∕cpu·ARM64+const_offsetARM64HasSVE(SB), R27
 	CMP $1, R27
 	BNE restoreNEON
 	RDVL $1, R27

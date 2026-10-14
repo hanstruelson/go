@@ -8,7 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/asn1"
 	"errors"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"math/big"
 )
 

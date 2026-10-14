@@ -7,7 +7,7 @@
 package syscall
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"runtime"
 	"sync"
 	"unsafe"

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"encoding/json/internal/jsontest"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsontest"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 type valueTestdataEntry struct {

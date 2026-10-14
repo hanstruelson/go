@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/goos"
+	"publicinternal/goarch"
+	"publicinternal/goos"
 	"unsafe"
 )
 

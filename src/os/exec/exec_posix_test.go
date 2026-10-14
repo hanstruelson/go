@@ -8,7 +8,7 @@ package exec_test
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"os"
 	"os/exec"

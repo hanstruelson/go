@@ -9,7 +9,7 @@
 package net
 
 import (
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"sync"
 )
 

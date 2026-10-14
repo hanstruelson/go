@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"internal/trace"
-	"internal/trace/traceviewer"
+	"publicinternal/trace"
+	"publicinternal/trace/traceviewer"
 )
 
 func JSONTraceHandler(parsed *parsedTrace) http.Handler {

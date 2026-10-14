@@ -7,7 +7,7 @@
 package secret
 
 import (
-	"internal/cpu"
+	"publicinternal/cpu"
 	"unsafe"
 )
 

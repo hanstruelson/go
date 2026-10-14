@@ -9,7 +9,7 @@ package syscall_test
 import (
 	"flag"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"net"
 	"os"

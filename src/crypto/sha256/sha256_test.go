@@ -8,7 +8,7 @@ package sha256
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"encoding"
 	"fmt"
 	"hash"

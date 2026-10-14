@@ -7,10 +7,10 @@ package tls
 import (
 	"crypto"
 	"crypto/fips140"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"crypto/mldsa"
-	"crypto/tls/internal/fips140tls"
-	"internal/testenv"
+	"crypto/tls/publicinternal/fips140tls"
+	"publicinternal/testenv"
 	"strconv"
 	"testing"
 )

@@ -6,12 +6,12 @@ package runtime_test
 
 import (
 	"flag"
-	"internal/asan"
-	"internal/cpu"
-	"internal/msan"
-	"internal/race"
-	"internal/runtime/atomic"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/cpu"
+	"publicinternal/msan"
+	"publicinternal/race"
+	"publicinternal/runtime/atomic"
+	"publicinternal/testenv"
 	"io"
 	"math/bits"
 	. "runtime"
@@ -342,7 +342,7 @@ func TestAppendGrowthStack(t *testing.T) {
 	}
 
 	check(0)
-	want := 32 / 8 // 32 is the default for cmd/compile/internal/base.DebugFlags.VariableMakeThreshold
+	want := 32 / 8 // 32 is the default for cmd/compile/publicinternal/base.DebugFlags.VariableMakeThreshold
 	if testenv.OptimizationOff() {
 		want = 1
 	}

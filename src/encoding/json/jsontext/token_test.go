@@ -8,7 +8,7 @@ package jsontext
 
 import (
 	"errors"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math"
 	"reflect"
 	"strconv"

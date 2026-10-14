@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// copied from cmd/compile/internal/types2/testdata/fixedbugs/issue39755.go
+// copied from cmd/compile/publicinternal/types2/testdata/fixedbugs/issue39755.go
 
 package p
 

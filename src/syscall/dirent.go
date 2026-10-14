@@ -7,8 +7,8 @@
 package syscall
 
 import (
-	"internal/byteorder"
-	"internal/goarch"
+	"publicinternal/byteorder"
+	"publicinternal/goarch"
 	"runtime"
 	"unsafe"
 )

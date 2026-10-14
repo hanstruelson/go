@@ -1497,7 +1497,7 @@ func dwstoreOrder(p *struct {
 
 // Spills and reloads do not exist when the SSA pair pass runs: regalloc
 // inserts them later, so they never get a chance to be fused by that pass.
-// A late Prog-level pass in cmd/compile/internal/arm64 catches adjacent
+// A late Prog-level pass in cmd/compile/publicinternal/arm64 catches adjacent
 // spill/reload pairs that target the same base register at consecutive
 // 8-byte offsets. These tests pin down that behavior.
 

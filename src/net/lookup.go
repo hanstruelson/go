@@ -7,9 +7,9 @@ package net
 import (
 	"context"
 	"errors"
-	"internal/nettrace"
-	"internal/singleflight"
-	"internal/stringslite"
+	"publicinternal/nettrace"
+	"publicinternal/singleflight"
+	"publicinternal/stringslite"
 	"net/netip"
 	"sync"
 

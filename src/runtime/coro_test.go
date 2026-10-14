@@ -5,8 +5,8 @@
 package runtime_test
 
 import (
-	"internal/race"
-	"internal/testenv"
+	"publicinternal/race"
+	"publicinternal/testenv"
 	"runtime"
 	"strings"
 	"testing"

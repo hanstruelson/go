@@ -6,7 +6,7 @@ package net
 
 import (
 	"context"
-	"internal/strconv"
+	"publicinternal/strconv"
 	"net/netip"
 	"syscall"
 )

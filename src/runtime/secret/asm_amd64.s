@@ -27,7 +27,7 @@ TEXT ·loadRegisters(SB),0,$0-8
 	MOVOU	(AX), X3
 	MOVOU	(AX), X4
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	return
 
 	VMOVDQU	(AX), Y5
@@ -35,7 +35,7 @@ TEXT ·loadRegisters(SB),0,$0-8
 	VMOVDQU	(AX), Y7
 	VMOVDQU	(AX), Y8
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JNE	return
 
 	VMOVUPD	(AX), Z14
@@ -67,7 +67,7 @@ TEXT ·spillRegisters(SB),0,$0-16
 	MOVOU	X4, 48(AX)
 	ADDQ	$64, AX
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX(SB), $1
 	JNE	return
 
 	VMOVDQU	Y5, (AX)
@@ -76,7 +76,7 @@ TEXT ·spillRegisters(SB),0,$0-16
 	VMOVDQU	Y8, 96(AX)
 	ADDQ	$128, AX
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JNE	return
 
 	VMOVUPD	Z14, (AX)
@@ -141,7 +141,7 @@ TEXT ·useSecret(SB),0,$64-24
 	INCQ	AX
 	MOVQ	AX, R15
 
-	CMPB	internal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasAVX512(SB), $1
 	JNE	noavx512
 	VMOVUPD	(SP), Z0
 	VMOVUPD	(SP), Z1

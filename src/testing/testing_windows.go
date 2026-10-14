@@ -8,7 +8,7 @@ package testing
 
 import (
 	"errors"
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"math/bits"
 	"syscall"
 	"time"

@@ -842,7 +842,7 @@ func issue80399sub(a, b [2]uint64, s uint64) uint64 {
 // high 64 bit limbs are added.
 //
 // This is what happened on PPC64 when compiling
-// crypto/internal/edwards25519/field.feMulGeneric.
+// crypto/publicinternal/edwards25519/field.feMulGeneric.
 func Add64MultipleChains(a, b, c, d [2]uint64) [2]uint64 {
 	var cx, d1, d2 uint64
 	a1, a2 := a[0], a[1]

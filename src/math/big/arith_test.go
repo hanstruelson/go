@@ -9,7 +9,7 @@ package big
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"iter"
 	"math/bits"
 	"math/rand/v2"

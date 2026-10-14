@@ -8,7 +8,7 @@ import "testing"
 
 func BenchmarkLoad(b *testing.B) {
 	for b.Loop() {
-		funcs, err := Load("../../../internal/spec", &LoadOptions{})
+		funcs, err := Load("../../../publicinternal/spec", &LoadOptions{})
 		if err != nil {
 			b.Fatalf("Load failed: %s", err)
 		}

@@ -10,10 +10,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"internal/coverage"
-	"internal/coverage/decodecounter"
-	"internal/coverage/decodemeta"
-	"internal/coverage/pods"
+	"publicinternal/coverage"
+	"publicinternal/coverage/decodecounter"
+	"publicinternal/coverage/decodemeta"
+	"publicinternal/coverage/pods"
 	"os"
 	"strings"
 )

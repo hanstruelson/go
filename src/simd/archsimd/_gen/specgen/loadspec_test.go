@@ -21,7 +21,7 @@ func loadSpec(t *testing.T) *specPackage {
 		var root contextRoot
 		ctx := context{root: &root}
 
-		specPkg = loadSpecPackage(ctx, "../../../internal/spec", &LoadOptions{})
+		specPkg = loadSpecPackage(ctx, "../../../publicinternal/spec", &LoadOptions{})
 		if err := root.gatherErrors(); err != nil {
 			specLoadErr = err
 		}

@@ -297,7 +297,7 @@ func allocObjects(records []runtime.MemProfileRecord, leafFrame, function string
 }
 
 // scaleHeapSample unsamples heap allocations.
-// Taken from src/cmd/pprof/internal/profile/legacy_profile.go
+// Taken from src/cmd/pprof/publicinternal/profile/legacy_profile.go
 func scaleHeapSample(count, size, rate int64) (int64, int64) {
 	if count == 0 || size == 0 {
 		return 0, 0

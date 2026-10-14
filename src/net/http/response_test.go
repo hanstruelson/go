@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"go/token"
 	"io"
-	"net/http/internal"
+	"net/http/publicinternal"
 	"net/url"
 	"reflect"
 	"regexp"

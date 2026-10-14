@@ -496,7 +496,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	MOVW	$0, R26
 	B runtime·morestack(SB)
 
-// spillArgs stores return values from registers to a *internal/abi.RegArgs in R20.
+// spillArgs stores return values from registers to a *publicinternal/abi.RegArgs in R20.
 TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	STP	(R0, R1), (0*8)(R20)
 	STP	(R2, R3), (2*8)(R20)
@@ -516,7 +516,7 @@ TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	FSTPD	(F14, F15), (30*8)(R20)
 	RET
 
-// unspillArgs loads args into registers from a *internal/abi.RegArgs in R20.
+// unspillArgs loads args into registers from a *publicinternal/abi.RegArgs in R20.
 TEXT ·unspillArgs(SB),NOSPLIT,$0-0
 	LDP	(0*8)(R20), (R0, R1)
 	LDP	(2*8)(R20), (R2, R3)

@@ -5,8 +5,8 @@
 package comment
 
 import (
-	"internal/diff"
-	"internal/testenv"
+	"publicinternal/diff"
+	"publicinternal/testenv"
 	"slices"
 	"strings"
 	"testing"

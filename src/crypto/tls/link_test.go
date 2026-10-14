@@ -6,7 +6,7 @@ package tls
 
 import (
 	"bytes"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"testing"

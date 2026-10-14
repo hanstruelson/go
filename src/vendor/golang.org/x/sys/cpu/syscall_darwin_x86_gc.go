@@ -59,7 +59,7 @@ func sysctl(mib []_C_int, old *byte, oldlen *uintptr, new *byte, newlen uintptr)
 
 var libc_sysctl_trampoline_addr uintptr
 
-// adapted from internal/cpu/cpu_arm64_darwin.go
+// adapted from publicinternal/cpu/cpu_arm64_darwin.go
 func darwinSysctlEnabled(name []byte) bool {
 	out := int32(0)
 	nout := unsafe.Sizeof(out)

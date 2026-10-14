@@ -5,7 +5,7 @@
 package main
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"sync"
 )
 

@@ -6,4 +6,4 @@
 
 package race
 
-import _ "runtime/race/internal/amd64v1"
+import _ "runtime/race/publicinternal/amd64v1"

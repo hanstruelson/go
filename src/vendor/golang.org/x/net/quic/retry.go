@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/net/internal/quic/quicwire"
+	"golang.org/x/net/publicinternal/quic/quicwire"
 )
 
 // AEAD and nonce used to compute the Retry Integrity Tag.

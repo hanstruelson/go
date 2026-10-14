@@ -19,11 +19,11 @@ var (
 package {{.Arch}}
 
 import (
-	"cmd/compile/internal/ssa"
-	"cmd/compile/internal/ssagen"
-	"cmd/internal/obj"
-	"cmd/internal/obj/{{.ObjArch}}"
-	"cmd/compile/internal/ssa/ssaop"
+	"cmd/compile/publicinternal/ssa"
+	"cmd/compile/publicinternal/ssagen"
+	"cmd/publicinternal/obj"
+	"cmd/publicinternal/obj/{{.ObjArch}}"
+	"cmd/compile/publicinternal/ssa/ssaop"
 )
 
 func ssaGenSIMD{{.FuncInfix}}Value(s *ssagen.State, v *ssa.Value) bool {

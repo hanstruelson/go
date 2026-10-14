@@ -5,7 +5,7 @@
 package runtime_test
 
 import (
-	"internal/synctest"
+	"publicinternal/synctest"
 	"runtime"
 	"testing"
 )
@@ -19,7 +19,7 @@ func TestSynctest(t *testing.T) {
 }
 
 // TestSynctestAssocConsts verifies that constants defined
-// in both runtime and internal/synctest match.
+// in both runtime and publicinternal/synctest match.
 func TestSynctestAssocConsts(t *testing.T) {
 	if runtime.BubbleAssocUnbubbled != synctest.Unbubbled ||
 		runtime.BubbleAssocCurrentBubble != synctest.CurrentBubble ||

@@ -7,8 +7,8 @@ package main_test
 import (
 	"flag"
 	"go/format"
-	"internal/diff"
-	"internal/testenv"
+	"publicinternal/diff"
+	"publicinternal/testenv"
 	"os"
 	"strings"
 	"testing"

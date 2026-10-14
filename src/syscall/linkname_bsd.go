@@ -8,7 +8,7 @@ package syscall
 
 import _ "unsafe"
 
-// used by internal/syscall/unix
+// used by publicinternal/syscall/unix
 //go:linkname ioctlPtr
 
 // golang.org/x/net linknames sysctl.

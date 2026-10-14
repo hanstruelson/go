@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonwire"
 	"encoding/json/jsontext"
 )
 

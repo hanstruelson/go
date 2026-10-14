@@ -5,8 +5,8 @@
 package runtime_test
 
 import (
-	"internal/goarch"
-	"internal/runtime/atomic"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
 	"reflect"
 	. "runtime"
 	"runtime/debug"

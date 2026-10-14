@@ -5,7 +5,7 @@
 package pprof
 
 import (
-	"internal/profilerecord"
+	"publicinternal/profilerecord"
 	"io"
 	"math"
 	"runtime"
@@ -36,7 +36,7 @@ func writeHeapProto(w io.Writer, p []profilerecord.MemProfileRecord, rate int64,
 			// what appendLocsForStack expects.
 			if hideRuntime {
 				for i, addr := range stk {
-					if f := runtime.FuncForPC(addr); f != nil && (strings.HasPrefix(f.Name(), "runtime.") || strings.HasPrefix(f.Name(), "internal/runtime/")) {
+					if f := runtime.FuncForPC(addr); f != nil && (strings.HasPrefix(f.Name(), "runtime.") || strings.HasPrefix(f.Name(), "publicinternal/runtime/")) {
 						continue
 					}
 					// Found non-runtime. Show any runtime uses above it.

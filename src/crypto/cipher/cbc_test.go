@@ -8,7 +8,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"fmt"
 	"io"
 	"math/rand"

@@ -11,7 +11,7 @@ package time
 
 import (
 	"errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"runtime"
 	"syscall"
 	_ "unsafe" // for linkname

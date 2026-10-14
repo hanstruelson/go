@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"unsafe"
 )

@@ -25,7 +25,7 @@
 // arguments. For each change that matches the pattern, the target must
 // enable that change and also print one or more “match lines”
 // (to standard output or standard error) describing the change.
-// The [golang.org/x/tools/internal/bisect] package provides functions to help
+// The [golang.org/x/tools/publicinternal/bisect] package provides functions to help
 // targets implement this protocol. We plan to publish that package
 // in a non-internal location after finalizing its API.
 //
@@ -145,7 +145,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/tools/internal/bisect"
+	"golang.org/x/tools/publicinternal/bisect"
 )
 
 // Preserve import of bisect, to allow [bisect.Match] in the doc comment.

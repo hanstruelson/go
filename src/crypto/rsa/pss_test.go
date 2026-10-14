@@ -8,7 +8,7 @@ import (
 	"bufio"
 	"compress/bzip2"
 	"crypto"
-	"crypto/internal/fips140"
+	"crypto/publicinternal/fips140"
 	"crypto/rand"
 	. "crypto/rsa"
 	"crypto/sha256"
@@ -254,7 +254,7 @@ func TestInvalidPSSSaltLength(t *testing.T) {
 		t.Fatalf("SignPSS unexpected error: got %v, want %v", err, "crypto/rsa: invalid PSS salt length")
 	}
 
-	// We don't check the specific error here, because crypto/rsa and crypto/internal/boring
+	// We don't check the specific error here, because crypto/rsa and crypto/publicinternal/boring
 	// return different errors, so we just check that _an error_ was returned.
 	if err := VerifyPSS(&key.PublicKey, crypto.SHA256, []byte{1, 2, 3}, make([]byte, 31), &PSSOptions{
 		SaltLength: -2,

@@ -6,7 +6,7 @@ package filepath
 
 import (
 	"errors"
-	"internal/filepathlite"
+	"publicinternal/filepathlite"
 	"io/fs"
 	"os"
 	"runtime"

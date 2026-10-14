@@ -16,9 +16,9 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/versions"
 )
 
 var NewExprAnalyzer = &analysis.Analyzer{
@@ -161,7 +161,7 @@ func run(pass *analysis.Pass) (any, error) {
 				// the original lexical environment but not as a part of some
 				// larger expression that implies a conversion to some "typed" type.
 				// (For the genesis of this idea see (*state).arguments
-				// in ../../../../internal/refactor/inline/inline.go.)
+				// in ../../../../publicinternal/refactor/inline/inline.go.)
 				if tvarg.Value != nil {
 					info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
 					if err := types.CheckExpr(token.NewFileSet(), pass.Pkg, token.NoPos, arg, info2); err != nil {

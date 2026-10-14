@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"internal/nettest"
+	"publicinternal/nettest"
 	"io"
 	"net"
 	"net/http"

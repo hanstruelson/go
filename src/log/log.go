@@ -17,7 +17,7 @@ package log
 import (
 	"fmt"
 	"io"
-	"log/internal"
+	"log/publicinternal"
 	"os"
 	"runtime"
 	"sync"

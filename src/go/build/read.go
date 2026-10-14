@@ -413,7 +413,7 @@ func isValidImport(s string) bool {
 
 // parseGoEmbed parses a "//go:embed" to extract the glob patterns.
 // It accepts unquoted space-separated patterns as well as double-quoted and back-quoted Go strings.
-// This must match the behavior of cmd/compile/internal/noder/noder.go.
+// This must match the behavior of cmd/compile/publicinternal/noder/noder.go.
 func parseGoEmbed(fset *token.FileSet, pos token.Pos, comment string) ([]fileEmbed, error) {
 	dir, ok := ast.ParseDirective(pos, comment)
 	if !ok || dir.Tool != "go" || dir.Name != "embed" {

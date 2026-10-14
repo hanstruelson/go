@@ -13,11 +13,11 @@
 package net
 
 import (
-	"internal/bytealg"
-	"internal/godebug"
-	"internal/goversion"
-	"internal/strconv"
-	"internal/stringslite"
+	"publicinternal/bytealg"
+	"publicinternal/godebug"
+	"publicinternal/goversion"
+	"publicinternal/strconv"
+	"publicinternal/stringslite"
 	"net/netip"
 )
 

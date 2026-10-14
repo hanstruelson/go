@@ -7,7 +7,7 @@ package fips140_test
 import (
 	"crypto/des"
 	"crypto/fips140"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"testing"
 )
 

@@ -13,9 +13,9 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
-	"internal/runtime/sys"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/sys"
 )
 
 // Central list of free objects of a given size.

@@ -4,7 +4,7 @@
 
 package os
 
-import "internal/testlog"
+import "publicinternal/testlog"
 
 // Stat returns a [FileInfo] describing the named file.
 // If there is an error, it will be of type [*PathError].

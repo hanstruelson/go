@@ -19,9 +19,9 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsontest"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsontest"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // equalTokens reports whether to sequences of tokens formats the same way.

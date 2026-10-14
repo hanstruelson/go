@@ -10,7 +10,7 @@ package syscall
 
 import (
 	errorspkg "errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"runtime"
 	"sync"
 	"unsafe"

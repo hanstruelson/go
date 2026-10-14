@@ -7,10 +7,10 @@ package pprof
 import (
 	"bytes"
 	"fmt"
-	"internal/asan"
-	"internal/profile"
-	"internal/profilerecord"
-	"internal/testenv"
+	"publicinternal/asan"
+	"publicinternal/profile"
+	"publicinternal/profilerecord"
+	"publicinternal/testenv"
 	"runtime"
 	"slices"
 	"strings"
@@ -272,7 +272,7 @@ func TestHeapRuntimeFrames(t *testing.T) {
 		if strings.Contains(l, "runtime.") {
 			t.Errorf("Sample got %s, want no runtime frames", l)
 		}
-		if strings.Contains(l, "internal/runtime/") {
+		if strings.Contains(l, "publicinternal/runtime/") {
 			t.Errorf("Sample got %s, want no runtime frames", l)
 		}
 		if strings.Contains(l, "mapassign") { // in case mapassign moves to a package not matching above paths.

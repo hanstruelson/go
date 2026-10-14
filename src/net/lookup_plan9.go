@@ -7,9 +7,9 @@ package net
 import (
 	"context"
 	"errors"
-	"internal/bytealg"
-	"internal/strconv"
-	"internal/stringslite"
+	"publicinternal/bytealg"
+	"publicinternal/strconv"
+	"publicinternal/stringslite"
 	"io"
 	"os"
 )

@@ -9,7 +9,7 @@ package gob
 import (
 	"encoding"
 	"errors"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"math"
 	"math/bits"

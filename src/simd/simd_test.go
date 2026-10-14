@@ -9,7 +9,7 @@ package simd_test
 import (
 	"runtime"
 	"simd"
-	"simd/internal/test_helpers"
+	"simd/publicinternal/test_helpers"
 	"slices"
 	"testing"
 )

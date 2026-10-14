@@ -5,7 +5,7 @@
 package unique
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"runtime"
 	"strconv"
 	"sync"

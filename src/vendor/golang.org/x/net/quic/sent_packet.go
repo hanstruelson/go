@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/internal/quic/quicwire"
+	"golang.org/x/net/publicinternal/quic/quicwire"
 )
 
 // A sentPacket tracks state related to an in-flight packet we sent,

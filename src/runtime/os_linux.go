@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/atomic"
-	"internal/runtime/syscall/linux"
-	"internal/strconv"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/syscall/linux"
+	"publicinternal/strconv"
 	"unsafe"
 )
 

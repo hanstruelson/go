@@ -7,9 +7,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/sys"
-	"internal/trace/tracev2"
+	"publicinternal/abi"
+	"publicinternal/runtime/sys"
+	"publicinternal/trace/tracev2"
 )
 
 // traceArg is a simple wrapper type to help ensure that arguments passed

@@ -7,7 +7,7 @@ package testing_test
 import (
 	"flag"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"regexp"

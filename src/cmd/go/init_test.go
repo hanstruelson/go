@@ -5,7 +5,7 @@
 package main_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"sync/atomic"
 	"testing"
 )

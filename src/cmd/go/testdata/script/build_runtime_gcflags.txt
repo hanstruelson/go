@@ -4,7 +4,7 @@ env GO111MODULE=off
 env GOCACHE=$WORK/gocache
 mkdir $GOCACHE
 
-# Verify the standard library (specifically internal/runtime/atomic) can be
+# Verify the standard library (specifically publicinternal/runtime/atomic) can be
 # built with -gcflags when -n is given. See golang.org/issue/29346.
 go build -n -gcflags=all='-l' std
-stderr 'compile.* internal/runtime/atomic .* -l'
+stderr 'compile.* publicinternal/runtime/atomic .* -l'

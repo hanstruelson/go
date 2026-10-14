@@ -15,7 +15,7 @@ import (
 	"go/ast"
 	"go/printer"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"io/fs"
 	"os"

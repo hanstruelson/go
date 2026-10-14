@@ -11,8 +11,8 @@
 package fips140
 
 import (
-	"crypto/internal/fips140"
-	"crypto/internal/fips140/check"
+	"crypto/publicinternal/fips140"
+	"crypto/publicinternal/fips140/check"
 )
 
 // Enabled reports whether the cryptography libraries are operating in FIPS

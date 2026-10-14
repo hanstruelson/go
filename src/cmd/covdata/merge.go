@@ -10,11 +10,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"internal/coverage"
-	"internal/coverage/cmerge"
-	"internal/coverage/decodecounter"
-	"internal/coverage/decodemeta"
-	"internal/coverage/pods"
+	"publicinternal/coverage"
+	"publicinternal/coverage/cmerge"
+	"publicinternal/coverage/decodecounter"
+	"publicinternal/coverage/decodemeta"
+	"publicinternal/coverage/pods"
 	"os"
 )
 

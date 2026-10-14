@@ -11,8 +11,8 @@ import (
 	"os"
 	"strings"
 
-	"cmd/internal/buildid"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/buildid"
+	"cmd/publicinternal/telemetry/counter"
 )
 
 func usage() {
@@ -45,7 +45,7 @@ func main() {
 		return
 	}
 
-	// Keep in sync with src/cmd/go/internal/work/buildid.go:updateBuildID
+	// Keep in sync with src/cmd/go/publicinternal/work/buildid.go:updateBuildID
 
 	f, err := os.Open(file)
 	if err != nil {

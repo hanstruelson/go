@@ -4,7 +4,7 @@
 
 package archsimd
 
-import "internal/cpu"
+import "publicinternal/cpu"
 
 type X86Features struct{}
 

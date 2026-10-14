@@ -5,10 +5,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
-	"internal/runtime/syscall/windows"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
+	"publicinternal/runtime/syscall/windows"
 	"unsafe"
 )
 
@@ -211,7 +211,7 @@ func initSysDirectory() {
 	sysDirectoryLen = l + 1
 }
 
-//go:linkname windows_GetSystemDirectory internal/syscall/windows.GetSystemDirectory
+//go:linkname windows_GetSystemDirectory publicinternal/syscall/windows.GetSystemDirectory
 func windows_GetSystemDirectory() string {
 	return unsafe.String(&sysDirectory[0], sysDirectoryLen)
 }
@@ -221,21 +221,21 @@ func windowsLoadSystemLib(name []uint16) uintptr {
 	return stdcall(_LoadLibraryExW, uintptr(unsafe.Pointer(&name[0])), 0, _LOAD_LIBRARY_SEARCH_SYSTEM32)
 }
 
-//go:linkname windows_QueryPerformanceCounter internal/syscall/windows.QueryPerformanceCounter
+//go:linkname windows_QueryPerformanceCounter publicinternal/syscall/windows.QueryPerformanceCounter
 func windows_QueryPerformanceCounter() int64 {
 	var counter int64
 	stdcall(_QueryPerformanceCounter, uintptr(unsafe.Pointer(&counter)))
 	return counter
 }
 
-//go:linkname windows_QueryPerformanceFrequency internal/syscall/windows.QueryPerformanceFrequency
+//go:linkname windows_QueryPerformanceFrequency publicinternal/syscall/windows.QueryPerformanceFrequency
 func windows_QueryPerformanceFrequency() int64 {
 	var frequency int64
 	stdcall(_QueryPerformanceFrequency, uintptr(unsafe.Pointer(&frequency)))
 	return frequency
 }
 
-//go:linknamestd cpu_isProcessorFeaturePresent internal/cpu.isProcessorFeaturePresent
+//go:linknamestd cpu_isProcessorFeaturePresent publicinternal/cpu.isProcessorFeaturePresent
 func cpu_isProcessorFeaturePresent(processorFeature uint32) bool {
 	ret := stdcall(_IsProcessorFeaturePresent, uintptr(processorFeature))
 	return ret != 0
@@ -411,7 +411,7 @@ func initHighResTimer() {
 	}
 }
 
-//go:linkname canUseLongPaths internal/syscall/windows.CanUseLongPaths
+//go:linkname canUseLongPaths publicinternal/syscall/windows.CanUseLongPaths
 var canUseLongPaths bool
 
 // initLongPathSupport enables long path support.
@@ -758,7 +758,7 @@ func newosproc(mp *m) {
 // finished. Unlike go followed by LockOSThread, it cannot acquire an existing
 // thread with outstanding I/O from an earlier goroutine.
 //
-//go:linkname poll_runtime_startThread internal/poll.runtime_startThread
+//go:linkname poll_runtime_startThread publicinternal/poll.runtime_startThread
 func poll_runtime_startThread(fn func()) {
 	// A locked worker may need the template thread to replace its M when it
 	// parks. Set this up before publishing a worker, as LockOSThread does.
@@ -787,7 +787,7 @@ func poll_runtime_startThread(fn func()) {
 // minit initialized it before the worker started. The worker is permanently
 // locked to its thread, so unminit cannot close the handle until it returns.
 //
-//go:linkname poll_runtime_threadHandle internal/poll.runtime_threadHandle
+//go:linkname poll_runtime_threadHandle publicinternal/poll.runtime_threadHandle
 //go:nosplit
 func poll_runtime_threadHandle() uintptr {
 	gp := getg()

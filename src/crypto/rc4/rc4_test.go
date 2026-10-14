@@ -7,7 +7,7 @@ package rc4
 import (
 	"bytes"
 	"crypto/cipher"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"fmt"
 	"testing"
 )

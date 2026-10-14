@@ -101,13 +101,13 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/goos"
-	"internal/runtime/atomic"
-	"internal/runtime/gc"
-	"internal/runtime/math"
-	"internal/runtime/sys"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/goos"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/gc"
+	"publicinternal/runtime/math"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -2145,7 +2145,7 @@ func newobject(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.Size_, typ, true)
 }
 
-//go:linkname maps_newobject internal/runtime/maps.newobject
+//go:linkname maps_newobject publicinternal/runtime/maps.newobject
 func maps_newobject(typ *_type) unsafe.Pointer {
 	return newobject(typ)
 }
@@ -2166,7 +2166,7 @@ func reflect_unsafe_New(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.Size_, typ, true)
 }
 
-//go:linkname reflectlite_unsafe_New internal/reflectlite.unsafe_New
+//go:linkname reflectlite_unsafe_New publicinternal/reflectlite.unsafe_New
 func reflectlite_unsafe_New(typ *_type) unsafe.Pointer {
 	return mallocgc(typ.Size_, typ, true)
 }
@@ -2214,7 +2214,7 @@ func reflect_unsafe_NewArray(typ *_type, n int) unsafe.Pointer {
 	return newarray(typ, n)
 }
 
-//go:linkname maps_newarray internal/runtime/maps.newarray
+//go:linkname maps_newarray publicinternal/runtime/maps.newarray
 func maps_newarray(typ *_type, n int) unsafe.Pointer {
 	return newarray(typ, n)
 }
@@ -2309,7 +2309,7 @@ var persistentChunks *notInHeap
 // sysStat must be non-nil.
 //
 // Consider marking persistentalloc'd types not in heap by embedding
-// internal/runtime/sys.NotInHeap.
+// publicinternal/runtime/sys.NotInHeap.
 //
 // nosplit because it is used during write barriers and must not be preempted.
 //
@@ -2455,7 +2455,7 @@ func (l *linearAlloc) alloc(size, align uintptr, sysStat *sysMemStat, vmaName st
 // like sysAlloc or persistentAlloc.
 //
 // In general, it's better to use real types which embed
-// internal/runtime/sys.NotInHeap, but this serves as a generic type
+// publicinternal/runtime/sys.NotInHeap, but this serves as a generic type
 // for situations where that isn't possible (like in the allocators).
 //
 // TODO: Use this as the return type of sysAlloc, persistentAlloc, etc?

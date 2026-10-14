@@ -6,12 +6,12 @@ package main
 
 import (
 	"bytes"
-	cmddwarf "cmd/internal/dwarf"
-	"cmd/internal/objfile"
-	"cmd/internal/quoted"
+	cmddwarf "cmd/publicinternal/dwarf"
+	"cmd/publicinternal/objfile"
+	"cmd/publicinternal/quoted"
 	"debug/dwarf"
-	"internal/platform"
-	"internal/testenv"
+	"publicinternal/platform"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path"
@@ -401,7 +401,7 @@ func TestDWARFLocationList(t *testing.T) {
 func TestFlagW(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	if runtime.GOOS == "aix" {
-		t.Skip("internal/xcoff cannot parse file without symbol table")
+		t.Skip("publicinternal/xcoff cannot parse file without symbol table")
 	}
 	if !platform.ExecutableHasDWARF(runtime.GOOS, runtime.GOARCH) {
 		t.Skipf("skipping on %s/%s: no DWARF symbol table in executables", runtime.GOOS, runtime.GOARCH)

@@ -5,8 +5,8 @@
 package os
 
 import (
-	"internal/bytealg"
-	"internal/filepathlite"
+	"publicinternal/bytealg"
+	"publicinternal/filepathlite"
 	"io"
 	"io/fs"
 	"slices"

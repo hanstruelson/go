@@ -14,11 +14,11 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysis/analyzerutil"
-	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
-	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/stdlib"
-	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/publicinternal/analysis/analyzerutil"
+	typeindexanalyzer "golang.org/x/tools/publicinternal/analysis/typeindex"
+	"golang.org/x/tools/publicinternal/astutil"
+	"golang.org/x/tools/publicinternal/stdlib"
+	"golang.org/x/tools/publicinternal/typesinternal/typeindex"
 )
 
 var StdIteratorsAnalyzer = &analysis.Analyzer{

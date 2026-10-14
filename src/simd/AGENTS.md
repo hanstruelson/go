@@ -33,7 +33,7 @@ Don't rely on a remembered list of which files are big — measure:
 find . -name '*.go' -size +50k -not -path '*/_gen/*' | xargs ls -lS
 ```
 
-`archsimd/ops_*.go`, `internal/simdref/simdref.go`, `internal/bridge/decls_*.go`
+`archsimd/ops_*.go`, `publicinternal/simdref/simdref.go`, `publicinternal/bridge/decls_*.go`
 and the `simd_test` helpers are usually on that list. Treat it as a starting
 point, not an inventory.
 

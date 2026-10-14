@@ -19,8 +19,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 type isZeroer interface {

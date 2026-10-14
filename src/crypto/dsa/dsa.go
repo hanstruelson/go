@@ -18,8 +18,8 @@ import (
 	"io"
 	"math/big"
 
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 )
 
 // Parameters represents the domain parameters for a key. These parameters can

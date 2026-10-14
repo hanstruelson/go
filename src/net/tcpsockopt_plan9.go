@@ -7,7 +7,7 @@
 package net
 
 import (
-	"internal/strconv"
+	"publicinternal/strconv"
 	"syscall"
 	"time"
 )

@@ -18,7 +18,7 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
-	"database/sql/internal"
+	"database/sql/publicinternal"
 	"errors"
 	"fmt"
 	"io"

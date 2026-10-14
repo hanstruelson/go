@@ -7,5 +7,5 @@
 package tools
 
 // Arrange to vendor the bisect command for use
-// by the internal/godebug package test.
+// by the publicinternal/godebug package test.
 import _ "golang.org/x/tools/cmd/bisect"

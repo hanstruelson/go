@@ -6,7 +6,7 @@ package build
 
 import (
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io"
 	"maps"
 	"os"
@@ -429,12 +429,12 @@ func TestImportCmd(t *testing.T) {
 		t.Skipf("skipping on %s/%s, no valid GOROOT", runtime.GOOS, runtime.GOARCH)
 	}
 
-	p, err := Import("cmd/internal/objfile", "", 0)
+	p, err := Import("cmd/publicinternal/objfile", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(filepath.ToSlash(p.Dir), "src/cmd/internal/objfile") {
-		t.Fatalf("Import cmd/internal/objfile returned Dir=%q, want %q", filepath.ToSlash(p.Dir), ".../src/cmd/internal/objfile")
+	if !strings.HasSuffix(filepath.ToSlash(p.Dir), "src/cmd/publicinternal/objfile") {
+		t.Fatalf("Import cmd/publicinternal/objfile returned Dir=%q, want %q", filepath.ToSlash(p.Dir), ".../src/cmd/publicinternal/objfile")
 	}
 }
 

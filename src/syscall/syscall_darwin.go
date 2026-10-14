@@ -13,7 +13,7 @@
 package syscall
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"unsafe"
 )
 
@@ -154,7 +154,7 @@ func Kill(pid int, signum Signal) (err error) { return kill(pid, int(signum), 1)
 //sys	Flock(fd int, how int) (err error)
 //sys	Fpathconf(fd int, name int) (val int, err error)
 //sys	Fsync(fd int) (err error)
-//  Fsync is not called for os.File.Sync(). Please see internal/poll/fd_fsync_darwin.go
+//  Fsync is not called for os.File.Sync(). Please see publicinternal/poll/fd_fsync_darwin.go
 //sys	Ftruncate(fd int, length int64) (err error)
 //sys	Getdtablesize() (size int)
 //sysnb	Getegid() (egid int)
@@ -416,7 +416,7 @@ func syscall6X(fn, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2 uintptr, err Errno) {
 	return r1, r2, errnoX(r1, err)
 }
 
-// syscall9 is used in [internal/syscall/unix].
+// syscall9 is used in [publicinternal/syscall/unix].
 //
 //go:linkname syscall9
 //go:nosplit

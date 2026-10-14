@@ -6,11 +6,11 @@ package runtime_test
 
 import (
 	"fmt"
-	"internal/abi"
-	"internal/race"
-	"internal/syscall/windows"
-	"internal/syscall/windows/sysdll"
-	"internal/testenv"
+	"publicinternal/abi"
+	"publicinternal/race"
+	"publicinternal/syscall/windows"
+	"publicinternal/syscall/windows/sysdll"
+	"publicinternal/testenv"
 	"io"
 	"math"
 	"os"

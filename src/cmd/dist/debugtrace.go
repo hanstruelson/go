@@ -17,7 +17,7 @@ var (
 	distEvents  []*traceEvent
 )
 
-// This is a subset of the fields on internal/trace/traceviewer/format.go,
+// This is a subset of the fields on publicinternal/trace/traceviewer/format.go,
 // which we can't use here because it's an internal package and cmd/dist
 // needs to be buildable using another Go toolchain. That struct is in turn
 // used to represent the Chrome Trace Viewer JSON format whose canonical

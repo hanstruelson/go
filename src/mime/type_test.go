@@ -5,7 +5,7 @@
 package mime
 
 import (
-	"internal/asan"
+	"publicinternal/asan"
 	"slices"
 	"strings"
 	"sync"

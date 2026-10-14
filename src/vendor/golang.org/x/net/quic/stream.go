@@ -12,7 +12,7 @@ import (
 	"math"
 	"sync"
 
-	"golang.org/x/net/internal/quic/quicwire"
+	"golang.org/x/net/publicinternal/quic/quicwire"
 )
 
 // A Stream is an ordered byte stream.

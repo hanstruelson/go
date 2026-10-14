@@ -7,7 +7,7 @@
 package syscall
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"runtime"
 	"unsafe"
 )

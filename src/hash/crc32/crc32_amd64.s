@@ -168,7 +168,7 @@ TEXT ·ieeeCLMUL(SB),NOSPLIT,$0
 	MOVQ   p_len+16(FP), CX          // len(p)
 
 	// Check feature support and length to be >= 1024 bytes.
-	CMPB internal∕cpu·X86+const_offsetX86HasAVX512VPCLMULQDQL(SB), $1
+	CMPB publicinternal∕cpu·X86+const_offsetX86HasAVX512VPCLMULQDQL(SB), $1
 	JNE  useSSE42
 	CMPQ CX, $1024
 	JL   useSSE42

@@ -37,7 +37,7 @@ import "C"
 import (
 	"bytes"
 	"fmt"
-	"internal/profile"
+	"publicinternal/profile"
 	"os"
 	"runtime/pprof"
 	"time"

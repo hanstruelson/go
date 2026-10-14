@@ -15,10 +15,10 @@
 package main
 
 import (
-	"cmd/go/internal/str"
+	"cmd/go/publicinternal/str"
 	"flag"
 	"fmt"
-	"internal/txtar"
+	"publicinternal/txtar"
 	"io/fs"
 	"log"
 	"os"

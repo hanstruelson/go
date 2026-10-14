@@ -7,7 +7,7 @@ package multipart
 import (
 	"bytes"
 	"errors"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"math"
 	"net/textproto"

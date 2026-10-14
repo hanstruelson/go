@@ -14,7 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"math/big"
 	"net"
 	"net/url"

@@ -16,7 +16,7 @@ import (
 	"go/ast"
 	"go/printer"
 	"go/token"
-	"internal/buildcfg"
+	"publicinternal/buildcfg"
 	"io"
 	"maps"
 	"os"
@@ -27,11 +27,11 @@ import (
 	"strings"
 	"sync"
 
-	"cmd/internal/edit"
-	"cmd/internal/hash"
-	"cmd/internal/objabi"
-	"cmd/internal/par"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/edit"
+	"cmd/publicinternal/hash"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/par"
+	"cmd/publicinternal/telemetry/counter"
 )
 
 // A Package collects information about the package we're going to write.

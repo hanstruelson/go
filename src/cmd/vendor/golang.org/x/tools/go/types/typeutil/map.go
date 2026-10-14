@@ -12,7 +12,7 @@ import (
 	"go/types"
 	"hash/maphash"
 
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/publicinternal/typeparams"
 )
 
 // Map is a hash-table-based mapping from types (types.Type) to

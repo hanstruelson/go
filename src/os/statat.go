@@ -7,7 +7,7 @@
 package os
 
 import (
-	"internal/testlog"
+	"publicinternal/testlog"
 )
 
 func (f *File) lstatat(name string) (FileInfo, error) {

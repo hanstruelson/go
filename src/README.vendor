@@ -39,14 +39,14 @@ Go from source and use that 'go' binary to update its source tree.
 
 Requirements may be added, updated, and removed with 'go get'.
 The vendor directory may be updated with 'go mod vendor'.
-Tree inconsistencies are reported by 'go test cmd/internal/moddeps'.
+Tree inconsistencies are reported by 'go test cmd/publicinternal/moddeps'.
 A typical sequence might be:
 
     cd src  # or src/cmd
     GOPROXY=direct go get golang.org/x/net@master
     go mod tidy
     go mod vendor
-    go test cmd/internal/moddeps
+    go test cmd/publicinternal/moddeps
 
 Use caution when passing '-u' to 'go get'. The '-u' flag updates
 modules providing all transitively imported packages, not only

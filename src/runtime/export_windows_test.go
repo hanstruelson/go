@@ -7,7 +7,7 @@
 package runtime
 
 import (
-	"internal/runtime/syscall/windows"
+	"publicinternal/runtime/syscall/windows"
 	"unsafe"
 )
 

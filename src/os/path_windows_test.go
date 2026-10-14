@@ -6,8 +6,8 @@ package os_test
 
 import (
 	"fmt"
-	"internal/syscall/windows"
-	"internal/testenv"
+	"publicinternal/syscall/windows"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"strings"

@@ -6,7 +6,7 @@ package os
 
 import (
 	"errors"
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"runtime"
 	"syscall"
 	"time"

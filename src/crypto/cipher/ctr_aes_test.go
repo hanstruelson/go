@@ -14,9 +14,9 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/internal/boring"
-	"crypto/internal/cryptotest"
-	fipsaes "crypto/internal/fips140/aes"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/cryptotest"
+	fipsaes "crypto/publicinternal/fips140/aes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -128,7 +128,7 @@ func TestCTR_AES_blocks8FastPathMatchesGeneric(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := block.(*fipsaes.Block); !ok {
-		t.Skip("requires crypto/internal/fips140/aes")
+		t.Skip("requires crypto/publicinternal/fips140/aes")
 	}
 
 	keystream := make([]byte, 8*aes.BlockSize)

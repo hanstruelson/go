@@ -4,7 +4,7 @@
 
 package http
 
-import "net/http/internal"
+import "net/http/publicinternal"
 
 // DetectContentType implements the algorithm described
 // at https://mimesniff.spec.whatwg.org/ to determine the

@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"internal/byteorder"
+	"publicinternal/byteorder"
 )
 
 // The KDF is one of the three components of an HPKE ciphersuite, implementing

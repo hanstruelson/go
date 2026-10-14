@@ -6,9 +6,9 @@ package net
 
 import (
 	"context"
-	"internal/bytealg"
-	"internal/godebug"
-	"internal/nettrace"
+	"publicinternal/bytealg"
+	"publicinternal/godebug"
+	"publicinternal/nettrace"
 	"net/netip"
 	"syscall"
 	"time"

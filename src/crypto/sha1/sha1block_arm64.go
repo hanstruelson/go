@@ -7,8 +7,8 @@
 package sha1
 
 import (
-	"crypto/internal/impl"
-	"internal/cpu"
+	"crypto/publicinternal/impl"
+	"publicinternal/cpu"
 )
 
 var useSHA1 = cpu.ARM64.HasSHA1

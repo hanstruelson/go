@@ -6,8 +6,8 @@ package trace_test
 
 import (
 	"bytes"
-	inttrace "internal/trace"
-	"internal/trace/testtrace"
+	inttrace "publicinternal/trace"
+	"publicinternal/trace/testtrace"
 	"io"
 	"runtime"
 	"runtime/trace"

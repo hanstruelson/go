@@ -5,7 +5,7 @@
 package sort
 
 import (
-	"internal/reflectlite"
+	"publicinternal/reflectlite"
 	"math/bits"
 )
 

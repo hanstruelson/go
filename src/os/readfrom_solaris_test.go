@@ -5,7 +5,7 @@
 package os_test
 
 import (
-	"internal/poll"
+	"publicinternal/poll"
 	. "os"
 	"testing"
 )

@@ -7,9 +7,9 @@
 package runtime
 
 import (
-	"internal/byteorder"
-	"internal/chacha8rand"
-	"internal/goarch"
+	"publicinternal/byteorder"
+	"publicinternal/chacha8rand"
+	"publicinternal/goarch"
 	"math/bits"
 	"unsafe"
 	_ "unsafe" // for go:linkname
@@ -117,7 +117,7 @@ func allZero(b []byte) bool {
 	return acc == 0
 }
 
-// Used in internal/runtime/maps
+// Used in publicinternal/runtime/maps
 // bootstrapRand returns a random uint64 from the global random generator.
 //
 //go:linknamestd bootstrapRand
@@ -182,7 +182,7 @@ func rand() uint64 {
 	}
 }
 
-//go:linkname maps_rand internal/runtime/maps.rand
+//go:linkname maps_rand publicinternal/runtime/maps.rand
 func maps_rand() uint64 {
 	return rand()
 }

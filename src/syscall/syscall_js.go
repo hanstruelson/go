@@ -8,8 +8,8 @@ package syscall
 
 import (
 	errorspkg "errors"
-	"internal/oserror"
-	"internal/strconv"
+	"publicinternal/oserror"
+	"publicinternal/strconv"
 	"sync"
 	"unsafe"
 )

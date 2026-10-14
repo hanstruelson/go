@@ -8,7 +8,7 @@ package exec
 
 import (
 	"errors"
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"io/fs"
 	"os"
 	"path/filepath"

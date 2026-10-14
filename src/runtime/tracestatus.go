@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/runtime/atomic"
-	"internal/trace/tracev2"
+	"publicinternal/runtime/atomic"
+	"publicinternal/trace/tracev2"
 )
 
 // writeGoStatus emits a GoStatus event as well as any active ranges on the goroutine.

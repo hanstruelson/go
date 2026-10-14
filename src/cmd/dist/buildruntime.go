@@ -26,7 +26,7 @@ func mkzversion(dir, file string) {
 	writefile(buf.String(), file, writeSkipSame)
 }
 
-// mkbuildcfg writes internal/buildcfg/zbootstrap.go:
+// mkbuildcfg writes publicinternal/buildcfg/zbootstrap.go:
 //
 //	package buildcfg
 //
@@ -72,7 +72,7 @@ func mkbuildcfg(file string) {
 	writefile(buf.String(), file, writeSkipSame)
 }
 
-// mkobjabi writes cmd/internal/objabi/zbootstrap.go:
+// mkobjabi writes cmd/publicinternal/objabi/zbootstrap.go:
 //
 //	package objabi
 //

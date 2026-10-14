@@ -5,8 +5,8 @@
 package sync_test
 
 import (
-	isync "internal/sync"
-	"internal/testenv"
+	isync "publicinternal/sync"
+	"publicinternal/testenv"
 	"math/rand"
 	"reflect"
 	"runtime"

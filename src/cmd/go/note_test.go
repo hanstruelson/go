@@ -5,17 +5,17 @@
 package main_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"runtime"
 	"testing"
 
-	"cmd/internal/buildid"
+	"cmd/publicinternal/buildid"
 )
 
 func TestNoteReading(t *testing.T) {
 	tooSlow(t, "runs build")
 
-	// cmd/internal/buildid already has tests that the basic reading works.
+	// cmd/publicinternal/buildid already has tests that the basic reading works.
 	// This test is essentially checking that -ldflags=-buildid=XXX works,
 	// both in internal and external linking mode.
 	tg := testgo(t)

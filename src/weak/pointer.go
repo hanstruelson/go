@@ -5,7 +5,7 @@
 package weak
 
 import (
-	"internal/abi"
+	"publicinternal/abi"
 	"runtime"
 	"unsafe"
 )

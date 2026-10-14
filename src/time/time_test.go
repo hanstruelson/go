@@ -9,7 +9,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"internal/goexperiment"
+	"publicinternal/goexperiment"
 	"math"
 	"math/big"
 	"math/rand"

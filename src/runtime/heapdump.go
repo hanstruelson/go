@@ -12,9 +12,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/gc"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/gc"
 	"unsafe"
 )
 

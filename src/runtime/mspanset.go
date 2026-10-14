@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/cpu"
-	"internal/goarch"
-	"internal/runtime/atomic"
+	"publicinternal/cpu"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 

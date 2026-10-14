@@ -7,9 +7,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -29,7 +29,7 @@ func time_runtimeNow() (sec int64, nsec int32, mono int64) {
 	return time_now()
 }
 
-//go:linkname crypto_internal_fips140deps_time_monoTime crypto/internal/fips140deps/time.monoTime
+//go:linkname crypto_internal_fips140deps_time_monoTime crypto/publicinternal/fips140deps/time.monoTime
 func crypto_internal_fips140deps_time_monoTime() (mono int64) {
 	_, _, mono = time_now()
 	return mono

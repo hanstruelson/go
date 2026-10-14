@@ -6,9 +6,9 @@ package net
 
 import (
 	"errors"
-	"internal/bytealg"
-	"internal/godebug"
-	"internal/stringslite"
+	"publicinternal/bytealg"
+	"publicinternal/godebug"
+	"publicinternal/stringslite"
 	"io/fs"
 	"os"
 	"runtime"

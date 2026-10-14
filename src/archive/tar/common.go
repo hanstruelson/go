@@ -13,7 +13,7 @@ package tar
 import (
 	"errors"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io/fs"
 	"maps"
 	"math"

@@ -5,12 +5,12 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/bytealg"
-	"internal/goarch"
-	"internal/godebugs"
-	"internal/runtime/atomic"
-	"internal/strconv"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
+	"publicinternal/goarch"
+	"publicinternal/godebugs"
+	"publicinternal/runtime/atomic"
+	"publicinternal/strconv"
 	"unsafe"
 )
 
@@ -733,14 +733,14 @@ func reflect_resolveTextOff(rtype unsafe.Pointer, off int32) unsafe.Pointer {
 
 // reflectlite_resolveNameOff resolves a name offset from a base pointer.
 //
-//go:linkname reflectlite_resolveNameOff internal/reflectlite.resolveNameOff
+//go:linkname reflectlite_resolveNameOff publicinternal/reflectlite.resolveNameOff
 func reflectlite_resolveNameOff(ptrInModule unsafe.Pointer, off int32) unsafe.Pointer {
 	return unsafe.Pointer(resolveNameOff(ptrInModule, nameOff(off)).Bytes)
 }
 
 // reflectlite_resolveTypeOff resolves an *rtype offset from a base type.
 //
-//go:linkname reflectlite_resolveTypeOff internal/reflectlite.resolveTypeOff
+//go:linkname reflectlite_resolveTypeOff publicinternal/reflectlite.resolveTypeOff
 func reflectlite_resolveTypeOff(rtype unsafe.Pointer, off int32) unsafe.Pointer {
 	return unsafe.Pointer(toRType((*_type)(rtype)).typeOff(typeOff(off)))
 }
@@ -775,12 +775,12 @@ func reflect_adjustAIXGCDataForRuntime(addr *byte) *byte {
 	return (*byte)(add(unsafe.Pointer(addr), aixStaticDataBase-firstmoduledata.data))
 }
 
-//go:linkname fips_getIndicator crypto/internal/fips140.getIndicator
+//go:linkname fips_getIndicator crypto/publicinternal/fips140.getIndicator
 func fips_getIndicator() uint8 {
 	return getg().fipsIndicator
 }
 
-//go:linkname fips_setIndicator crypto/internal/fips140.setIndicator
+//go:linkname fips_setIndicator crypto/publicinternal/fips140.setIndicator
 func fips_setIndicator(indicator uint8) {
 	getg().fipsIndicator = indicator
 }

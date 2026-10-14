@@ -23,7 +23,7 @@ import (
 	"debug/dwarf"
 	"encoding/binary"
 	"fmt"
-	"internal/saferio"
+	"publicinternal/saferio"
 	"io"
 	"os"
 	"path/filepath"

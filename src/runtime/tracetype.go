@@ -7,9 +7,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/trace/tracev2"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/trace/tracev2"
 	"unsafe"
 )
 

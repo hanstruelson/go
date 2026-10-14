@@ -15,7 +15,7 @@ package big
 import (
 	"flag"
 	"fmt"
-	"internal/sysinfo"
+	"publicinternal/sysinfo"
 	"math"
 	"runtime"
 	"slices"

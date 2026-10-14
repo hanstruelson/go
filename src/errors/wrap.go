@@ -5,7 +5,7 @@
 package errors
 
 import (
-	"internal/reflectlite"
+	"publicinternal/reflectlite"
 )
 
 // Unwrap returns the result of calling the Unwrap method on err, if err's

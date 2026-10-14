@@ -5,7 +5,7 @@
 package runtime
 
 import (
-	"internal/coverage/rtcov"
+	"publicinternal/coverage/rtcov"
 	"unsafe"
 )
 

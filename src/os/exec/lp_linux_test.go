@@ -6,8 +6,8 @@ package exec_test
 
 import (
 	"errors"
-	"internal/syscall/unix"
-	"internal/testenv"
+	"publicinternal/syscall/unix"
+	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"

@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"cmd/internal/disasm"
-	"cmd/internal/objfile"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/disasm"
+	"cmd/publicinternal/objfile"
+	"cmd/publicinternal/telemetry/counter"
 
 	"github.com/google/pprof/driver"
 	"github.com/google/pprof/profile"

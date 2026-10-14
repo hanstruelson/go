@@ -9,11 +9,11 @@
 package crc32
 
 import (
-	"internal/cpu"
+	"publicinternal/cpu"
 	"unsafe"
 )
 
-// Offset into internal/cpu records for use in assembly.
+// Offset into publicinternal/cpu records for use in assembly.
 const (
 	offsetX86HasAVX512VPCLMULQDQL = unsafe.Offsetof(cpu.X86.HasAVX512VPCLMULQDQ)
 )

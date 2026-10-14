@@ -5,9 +5,9 @@
 package main
 
 import (
-	"cmd/internal/archive"
-	"cmd/internal/objabi"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/archive"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/telemetry/counter"
 	"fmt"
 	"io"
 	"io/fs"

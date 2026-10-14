@@ -5,7 +5,7 @@
 package debug_test
 
 import (
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"runtime"
 	. "runtime/debug"

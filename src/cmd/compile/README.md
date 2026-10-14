@@ -27,7 +27,7 @@ little to do with uppercase "GC", which stands for garbage collection.
 
 ### 1. Parsing
 
-* `cmd/compile/internal/syntax` (lexer, parser, syntax tree)
+* `cmd/compile/publicinternal/syntax` (lexer, parser, syntax tree)
 
 In the first phase of compilation, source code is tokenized (lexical analysis),
 parsed (syntax analysis), and a syntax tree is constructed for each source
@@ -40,16 +40,16 @@ which is used for error reporting and the creation of debugging information.
 
 ### 2. Type checking
 
-* `cmd/compile/internal/types2` (type checking)
+* `cmd/compile/publicinternal/types2` (type checking)
 
 The types2 package is a port of `go/types` to use the syntax package's
 AST instead of `go/ast`.
 
 ### 3. IR construction ("noding")
 
-* `cmd/compile/internal/types` (compiler types)
-* `cmd/compile/internal/ir` (compiler AST)
-* `cmd/compile/internal/noder` (create compiler AST)
+* `cmd/compile/publicinternal/types` (compiler types)
+* `cmd/compile/publicinternal/ir` (compiler AST)
+* `cmd/compile/publicinternal/noder` (create compiler AST)
 
 The compiler middle end uses its own AST definition and representation of Go
 types carried over from when it was written in C. All of its code is written in
@@ -63,9 +63,9 @@ Unified IR is also involved in import/export of packages and inlining.
 
 ### 4. Middle end
 
-* `cmd/compile/internal/inline` (function call inlining)
-* `cmd/compile/internal/devirtualize` (devirtualization of known interface method calls)
-* `cmd/compile/internal/escape` (escape analysis)
+* `cmd/compile/publicinternal/inline` (function call inlining)
+* `cmd/compile/publicinternal/devirtualize` (devirtualization of known interface method calls)
+* `cmd/compile/publicinternal/escape` (escape analysis)
 
 Several optimization passes are performed on the IR representation:
 dead code elimination, (early) devirtualization, function call
@@ -75,7 +75,7 @@ The early dead code elimination pass is integrated into the unified IR writer ph
 
 ### 5. Walk
 
-* `cmd/compile/internal/walk` (order of evaluation, desugaring)
+* `cmd/compile/publicinternal/walk` (order of evaluation, desugaring)
 
 The final pass over the IR representation is "walk," which serves two purposes:
 
@@ -89,8 +89,8 @@ The final pass over the IR representation is "walk," which serves two purposes:
 
 ### 6. Generic SSA
 
-* `cmd/compile/internal/ssa` (SSA passes and rules)
-* `cmd/compile/internal/ssagen` (converting IR to SSA)
+* `cmd/compile/publicinternal/ssa` (SSA passes and rules)
+* `cmd/compile/publicinternal/ssagen` (converting IR to SSA)
 
 In this phase, IR is converted into Static Single Assignment (SSA) form, a
 lower-level intermediate representation with specific properties that make it
@@ -116,8 +116,8 @@ values, and optimizing multiplications and float operations.
 
 ### 7. Generating machine code
 
-* `cmd/compile/internal/ssa` (SSA lowering and arch-specific passes)
-* `cmd/internal/obj` (machine code generation)
+* `cmd/compile/publicinternal/ssa` (SSA lowering and arch-specific passes)
+* `cmd/publicinternal/obj` (machine code generation)
 
 The machine-dependent phase of the compiler begins with the "lower" pass, which
 rewrites generic values into their machine-specific variants. For example, on
@@ -137,7 +137,7 @@ analysis, which computes which on-stack pointers are live at each GC safe point.
 
 At the end of the SSA generation phase, Go functions have been transformed into
 a series of obj.Prog instructions. These are passed to the assembler
-(`cmd/internal/obj`), which turns them into machine code and writes out the
+(`cmd/publicinternal/obj`), which turns them into machine code and writes out the
 final object file. The object file will also contain reflect data, export data,
 and debugging information.
 
@@ -157,7 +157,7 @@ The format of the export data file has gone through a number of
 iterations. Its current form is called "unified", and it is a
 serialized representation of an object graph, with an index allowing
 lazy decoding of parts of the whole (since most imports are used to
-provide only a handful of symbols). See [here](internal/noder/README.md)
+provide only a handful of symbols). See [here](publicinternal/noder/README.md)
 for details on making changes to unified IR.
 
 The GOROOT repository contains a reader and a writer for the unified
@@ -240,15 +240,15 @@ dependencies, so is not suitable for distributed build systems.)
   [test](https://github.com/golang/go/tree/master/test) directory:
 
   ```
-  $ go test cmd/internal/testdir                           # all tests in 'test' dir
-  $ go test cmd/internal/testdir -run='Test/escape.*.go'   # test specific files in 'test' dir
+  $ go test cmd/publicinternal/testdir                           # all tests in 'test' dir
+  $ go test cmd/publicinternal/testdir -run='Test/escape.*.go'   # test specific files in 'test' dir
   ```
   For details, see the [testdir README](https://github.com/golang/go/tree/master/test#readme).
-  The `errorCheck` method in [testdir_test.go](https://github.com/golang/go/blob/master/src/cmd/internal/testdir/testdir_test.go)
+  The `errorCheck` method in [testdir_test.go](https://github.com/golang/go/blob/master/src/cmd/publicinternal/testdir/testdir_test.go)
   is helpful for a description of the `ERROR` comments used in many of those tests.
 
-  In addition, the `go/types` package from the standard library and `cmd/compile/internal/types2`
-  have shared tests in `src/internal/types/testdata`, and both type checkers
+  In addition, the `go/types` package from the standard library and `cmd/compile/publicinternal/types2`
+  have shared tests in `src/publicinternal/types/testdata`, and both type checkers
   should be checked if anything changes there.
 
 * The new [application-based coverage profiling](https://go.dev/testing/coverage/) can be used
@@ -360,7 +360,7 @@ dependencies, so is not suitable for distributed build systems.)
 ### Further reading
 
 To dig deeper into how the SSA package works, including its passes and rules,
-head to [cmd/compile/internal/ssa/README.md](internal/ssa/README.md).
+head to [cmd/compile/publicinternal/ssa/README.md](publicinternal/ssa/README.md).
 
 Finally, if something in this README or the SSA README is unclear
 or if you have an idea for an improvement, feel free to leave a comment in

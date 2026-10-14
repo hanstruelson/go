@@ -6,7 +6,7 @@ package net
 
 import (
 	"errors"
-	"internal/strconv"
+	"publicinternal/strconv"
 	"sync"
 	"time"
 	_ "unsafe"

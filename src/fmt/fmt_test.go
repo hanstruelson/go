@@ -7,7 +7,7 @@ package fmt_test
 import (
 	"bytes"
 	. "fmt"
-	"internal/race"
+	"publicinternal/race"
 	"io"
 	"math"
 	"reflect"

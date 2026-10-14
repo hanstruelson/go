@@ -14,7 +14,7 @@ import (
 	"go/printer"
 	"go/scanner"
 	"go/token"
-	"internal/diff"
+	"publicinternal/diff"
 	"io"
 	"io/fs"
 	"math/rand"
@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/telemetry/counter"
 
 	"golang.org/x/sync/semaphore"
 )

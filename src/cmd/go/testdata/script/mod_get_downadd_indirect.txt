@@ -1,5 +1,5 @@
 # This test illustrates a case where downgrading one module may upgrade another.
-# Compare to the downcross2 test case in cmd/go/internal/mvs/mvs_test.go.
+# Compare to the downcross2 test case in cmd/go/publicinternal/mvs/mvs_test.go.
 
 # The initial package import graph used in this test looks like:
 #

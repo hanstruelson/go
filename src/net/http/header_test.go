@@ -6,7 +6,7 @@ package http
 
 import (
 	"bytes"
-	"internal/race"
+	"publicinternal/race"
 	"reflect"
 	"runtime"
 	"strings"

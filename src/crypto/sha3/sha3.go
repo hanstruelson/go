@@ -8,7 +8,7 @@ package sha3
 
 import (
 	"crypto"
-	"crypto/internal/fips140/sha3"
+	"crypto/publicinternal/fips140/sha3"
 	"hash"
 	_ "unsafe"
 )
@@ -102,7 +102,7 @@ type SHA3 struct {
 	s sha3.Digest
 }
 
-//go:linkname fips140hash_sha3Unwrap crypto/internal/fips140hash.sha3Unwrap
+//go:linkname fips140hash_sha3Unwrap crypto/publicinternal/fips140hash.sha3Unwrap
 func fips140hash_sha3Unwrap(s *SHA3) *sha3.Digest {
 	s.init()
 	return &s.s

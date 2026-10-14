@@ -5,11 +5,11 @@
 package runtime
 
 import (
-	"internal/cpu"
+	"publicinternal/cpu"
 	"unsafe"
 )
 
-// Offsets into internal/cpu records for use in assembly.
+// Offsets into publicinternal/cpu records for use in assembly.
 const (
 	offsetX86HasAVX    = unsafe.Offsetof(cpu.X86.HasAVX)
 	offsetX86HasAVX2   = unsafe.Offsetof(cpu.X86.HasAVX2)
@@ -28,7 +28,7 @@ const (
 
 var (
 	// Set in runtime.cpuinit.
-	// TODO: deprecate these; use internal/cpu directly.
+	// TODO: deprecate these; use publicinternal/cpu directly.
 	x86HasAVX    bool
 	x86HasFMA    bool
 	x86HasPOPCNT bool

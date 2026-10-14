@@ -2077,7 +2077,7 @@ func (p *parser) makeExpr(s ast.Stmt, want string) ast.Expr {
 }
 
 // parseIfHeader is an adjusted version of parser.header
-// in cmd/compile/internal/syntax/parser.go, which has
+// in cmd/compile/publicinternal/syntax/parser.go, which has
 // been tuned for better error handling.
 func (p *parser) parseIfHeader() (init ast.Stmt, cond ast.Expr) {
 	if p.tok == token.LBRACE {
@@ -2704,7 +2704,7 @@ func extractName(x ast.Expr, force bool) (*ast.Ident, ast.Expr) {
 		if name, _ := x.Fun.(*ast.Ident); name != nil {
 			if len(x.Args) == 1 && x.Ellipsis == token.NoPos && (force || isTypeElem(x.Args[0])) {
 				// x = name (x.Args[0])
-				// (Note that the cmd/compile/internal/syntax parser does not care
+				// (Note that the cmd/compile/publicinternal/syntax parser does not care
 				// about syntax tree fidelity and does not preserve parentheses here.)
 				return name, &ast.ParenExpr{
 					Lparen: x.Lparen,

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Minimal copy from internal/cpu and runtime to make sysctl calls.
+// Minimal copy from publicinternal/cpu and runtime to make sysctl calls.
 
 //go:build darwin && arm64 && gc
 
@@ -15,7 +15,7 @@ import (
 
 type Errno = syscall.Errno
 
-// adapted from internal/cpu/cpu_arm64_darwin.go
+// adapted from publicinternal/cpu/cpu_arm64_darwin.go
 func darwinSysctlEnabled(name []byte) bool {
 	out := int32(0)
 	nout := unsafe.Sizeof(out)

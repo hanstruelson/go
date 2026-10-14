@@ -6,7 +6,7 @@ package subtle_test
 
 import (
 	"bytes"
-	"crypto/internal/cryptotest"
+	"crypto/publicinternal/cryptotest"
 	"crypto/rand"
 	. "crypto/subtle"
 	"fmt"

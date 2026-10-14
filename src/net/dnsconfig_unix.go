@@ -9,8 +9,8 @@
 package net
 
 import (
-	"internal/bytealg"
-	"internal/stringslite"
+	"publicinternal/bytealg"
+	"publicinternal/stringslite"
 	"net/netip"
 	"time"
 )

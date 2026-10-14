@@ -5,7 +5,7 @@
 // license that can be found in the LICENSE file.
 
 // Make sure this doesn't crash the compiler.
-// (This test should be part of the internal/syntax
+// (This test should be part of the publicinternal/syntax
 // package, but we don't have a general test framework
 // there yet, so put it here for now. See also #20800.)
 

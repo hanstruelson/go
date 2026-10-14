@@ -12,8 +12,8 @@ import (
 	"math"
 	"strconv"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonflags"
+	"encoding/json/publicinternal/jsonwire"
 )
 
 // NOTE: Token is analogous to v1 json.Token.

@@ -5,7 +5,7 @@
 package sync
 
 import (
-	"internal/race"
+	"publicinternal/race"
 	"sync/atomic"
 	"unsafe"
 )

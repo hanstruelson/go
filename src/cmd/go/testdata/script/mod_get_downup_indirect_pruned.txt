@@ -1,7 +1,7 @@
 # This test illustrates a case where downgrading one module may upgrade another.
 # This is the same as mod_get_downup_indirect, but using modules
 # with graph pruning enabled (go ≥ 1.17).
-# Compare to the downcross1 test case in cmd/go/internal/mvs/mvs_test.go.
+# Compare to the downcross1 test case in cmd/go/publicinternal/mvs/mvs_test.go.
 
 # The package import graph used in this test looks like:
 #

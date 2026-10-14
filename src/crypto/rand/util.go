@@ -5,8 +5,8 @@
 package rand
 
 import (
-	"crypto/internal/fips140only"
-	"crypto/internal/rand"
+	"crypto/publicinternal/fips140only"
+	"crypto/publicinternal/rand"
 	"errors"
 	"io"
 	"math/big"

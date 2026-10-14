@@ -7,10 +7,10 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goexperiment"
-	"internal/runtime/atomic"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/atomic"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

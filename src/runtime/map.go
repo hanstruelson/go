@@ -5,9 +5,9 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/runtime/maps"
-	"internal/runtime/sys"
+	"publicinternal/abi"
+	"publicinternal/runtime/maps"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 
@@ -17,7 +17,7 @@ const (
 	loadFactorDen = 8
 )
 
-//go:linkname maps_errNilAssign internal/runtime/maps.errNilAssign
+//go:linkname maps_errNilAssign publicinternal/runtime/maps.errNilAssign
 var maps_errNilAssign error = plainError("assignment to entry in nil map")
 
 func makemap64(t *abi.MapType, hint int64, m *maps.Map) *maps.Map {
@@ -73,7 +73,7 @@ func makemap(t *abi.MapType, hint int, m *maps.Map) *maps.Map {
 // NOTE: The returned pointer may keep the whole map live, so don't
 // hold onto it for very long.
 //
-// mapaccess1 is pushed from internal/runtime/maps. We could just call it, but
+// mapaccess1 is pushed from publicinternal/runtime/maps. We could just call it, but
 // we want to avoid one layer of call.
 //
 //go:linkname mapaccess1
@@ -96,7 +96,7 @@ func mapaccess1_fat(t *abi.MapType, m *maps.Map, key, zero unsafe.Pointer) unsaf
 //go:linkname mapaccess2_fat
 func mapaccess2_fat(t *abi.MapType, m *maps.Map, key, zero unsafe.Pointer) (unsafe.Pointer, bool)
 
-// mapassign is pushed from internal/runtime/maps. We could just call it, but
+// mapassign is pushed from publicinternal/runtime/maps. We could just call it, but
 // we want to avoid one layer of call.
 //
 // mapassign should be an internal detail,
@@ -287,7 +287,7 @@ func reflect_mapclear(t *abi.MapType, m *maps.Map) {
 	mapclear(t, m)
 }
 
-//go:linkname reflectlite_maplen internal/reflectlite.maplen
+//go:linkname reflectlite_maplen publicinternal/reflectlite.maplen
 func reflectlite_maplen(m *maps.Map) int {
 	if m == nil {
 		return 0

@@ -14,7 +14,7 @@ package net
 import (
 	"context"
 	"errors"
-	"internal/bytealg"
+	"publicinternal/bytealg"
 	"net/netip"
 	"runtime"
 	"syscall"

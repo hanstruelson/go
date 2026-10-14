@@ -39,9 +39,9 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"internal/buildcfg"
-	"internal/testenv"
-	"internal/types/errors"
+	"publicinternal/buildcfg"
+	"publicinternal/testenv"
+	"publicinternal/types/errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -414,11 +414,11 @@ func TestIssue47243_TypedRHS(t *testing.T) {
 
 func TestCheck(t *testing.T) {
 	DefPredeclaredTestFuncs()
-	testDirFiles(t, "../../internal/types/testdata/check", false)
+	testDirFiles(t, "../../publicinternal/types/testdata/check", false)
 }
-func TestSpec(t *testing.T)      { testDirFiles(t, "../../internal/types/testdata/spec", false) }
-func TestExamples(t *testing.T)  { testDirFiles(t, "../../internal/types/testdata/examples", false) }
-func TestFixedbugs(t *testing.T) { testDirFiles(t, "../../internal/types/testdata/fixedbugs", false) }
+func TestSpec(t *testing.T)      { testDirFiles(t, "../../publicinternal/types/testdata/spec", false) }
+func TestExamples(t *testing.T)  { testDirFiles(t, "../../publicinternal/types/testdata/examples", false) }
+func TestFixedbugs(t *testing.T) { testDirFiles(t, "../../publicinternal/types/testdata/fixedbugs", false) }
 func TestLocal(t *testing.T)     { testDirFiles(t, "testdata/local", false) }
 
 func testDirFiles(t *testing.T, dir string, manual bool) {

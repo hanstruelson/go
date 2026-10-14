@@ -15,9 +15,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/telemetry/counter"
-	"golang.org/x/telemetry/internal/crashmonitor"
-	"golang.org/x/telemetry/internal/telemetry"
-	"golang.org/x/telemetry/internal/upload"
+	"golang.org/x/telemetry/publicinternal/crashmonitor"
+	"golang.org/x/telemetry/publicinternal/telemetry"
+	"golang.org/x/telemetry/publicinternal/upload"
 )
 
 // Config controls the behavior of [Start].

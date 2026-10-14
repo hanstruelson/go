@@ -31,7 +31,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io"
 	"mime"
 	"mime/quotedprintable"

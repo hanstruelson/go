@@ -6,11 +6,11 @@
 
 package os
 
-import "internal/poll"
+import "publicinternal/poll"
 
 // PollFD returns the poll.FD of the file.
 //
-// Other packages in std that also import internal/poll (such as net)
+// Other packages in std that also import publicinternal/poll (such as net)
 // can use a type assertion to access this extension method so that
 // they can pass the *poll.FD to functions like poll.Splice.
 //

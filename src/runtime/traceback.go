@@ -5,12 +5,12 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/bytealg"
-	"internal/goarch"
-	"internal/runtime/pprof/label"
-	"internal/runtime/sys"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/bytealg"
+	"publicinternal/goarch"
+	"publicinternal/runtime/pprof/label"
+	"publicinternal/runtime/sys"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 
@@ -191,8 +191,8 @@ func (u *unwinder) initAt(pc0, sp0, lr0 uintptr, gp *g, flags unwindFlags) {
 		}
 	}
 
-	// internal/runtime/atomic functions call into kernel helpers on
-	// arm < 7. See internal/runtime/atomic/sys_linux_arm.s.
+	// publicinternal/runtime/atomic functions call into kernel helpers on
+	// arm < 7. See publicinternal/runtime/atomic/sys_linux_arm.s.
 	//
 	// Start in the caller's frame.
 	if GOARCH == "arm" && goarm < 7 && GOOS == "linux" && frame.pc&0xffff0000 == 0xffff0000 {
@@ -1507,7 +1507,7 @@ func tracebackHexdump(stk stack, frame *stkframe, bad uintptr) {
 // system (that is, the finalizer goroutine) is considered a user
 // goroutine.
 func isSystemGoroutine(gp *g, fixed bool) bool {
-	// Keep this in sync with internal/trace.IsSystemGoroutine.
+	// Keep this in sync with publicinternal/trace.IsSystemGoroutine.
 	f := findfunc(gp.startpc)
 	if !f.valid() {
 		return false

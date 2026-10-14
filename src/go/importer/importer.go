@@ -14,9 +14,9 @@ package importer
 
 import (
 	"go/build"
-	"go/internal/gccgoimporter"
-	"go/internal/gcimporter"
-	"go/internal/srcimporter"
+	"go/publicinternal/gccgoimporter"
+	"go/publicinternal/gcimporter"
+	"go/publicinternal/srcimporter"
 	"go/token"
 	"go/types"
 	"io"

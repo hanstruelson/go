@@ -16,7 +16,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"log"
 	"math/big"
 	"net"

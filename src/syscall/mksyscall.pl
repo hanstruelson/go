@@ -84,7 +84,7 @@ if($ARGV[0] =~ /^-/) {
 }
 
 if($libc) {
-	$extraimports = 'import "internal/abi"';
+	$extraimports = 'import "publicinternal/abi"';
 }
 if($darwin) {
 	$extraimports .= "\nimport \"runtime\"";

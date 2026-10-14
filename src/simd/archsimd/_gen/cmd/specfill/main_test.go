@@ -18,7 +18,7 @@ import (
 )
 
 // TestFill verifies that exported declarations in simd and archsimd match
-// internal/spec.
+// publicinternal/spec.
 func TestFill(t *testing.T) {
 	goroot := gentools.DefaultGOROOT()
 	specDir := specgen.MustFindSpecDir(goroot)
@@ -70,7 +70,7 @@ func TestFill(t *testing.T) {
 			})
 			var rep *specdoc.Report
 			if errors.As(err, &rep) {
-				t.Errorf("%s diverges from internal/spec:\n%s", relPath, rep)
+				t.Errorf("%s diverges from publicinternal/spec:\n%s", relPath, rep)
 			} else if err != nil {
 				t.Errorf("checking %s: %v", relPath, err)
 			} else if !bytes.Equal(src, filled) {
@@ -85,7 +85,7 @@ func TestFill(t *testing.T) {
 				default:
 					fix = "\tgo run ./cmd/specfill -no-fill-doc -w\n"
 				}
-				t.Errorf("%s diverges from internal/spec:\n%s\nTo fix:\n\tcd $GOROOT/src/simd/archsimd/_gen\n%s\tgo run . -w", relPath, diff, fix)
+				t.Errorf("%s diverges from publicinternal/spec:\n%s\nTo fix:\n\tcd $GOROOT/src/simd/archsimd/_gen\n%s\tgo run . -w", relPath, diff, fix)
 			}
 		}
 	}

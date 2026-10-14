@@ -23,8 +23,8 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/runtime/atomic"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 

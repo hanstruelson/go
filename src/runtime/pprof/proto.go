@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"internal/abi"
+	"publicinternal/abi"
 	"io"
 	"runtime"
 	"strconv"

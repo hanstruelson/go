@@ -9,8 +9,8 @@ package main
 import (
 	"cmp"
 	"fmt"
-	"internal/trace"
-	"internal/trace/traceviewer"
+	"publicinternal/trace"
+	"publicinternal/trace/traceviewer"
 	"net/http"
 	"slices"
 	"strings"

@@ -11,9 +11,9 @@
 package pbkdf2
 
 import (
-	"crypto/internal/fips140/pbkdf2"
-	"crypto/internal/fips140hash"
-	"crypto/internal/fips140only"
+	"crypto/publicinternal/fips140/pbkdf2"
+	"crypto/publicinternal/fips140hash"
+	"crypto/publicinternal/fips140only"
 	"errors"
 	"hash"
 )

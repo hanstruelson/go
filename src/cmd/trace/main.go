@@ -5,15 +5,15 @@
 package main
 
 import (
-	"cmd/internal/browser"
-	"cmd/internal/telemetry/counter"
+	"cmd/publicinternal/browser"
+	"cmd/publicinternal/telemetry/counter"
 	"cmp"
 	"flag"
 	"fmt"
-	"internal/trace"
-	"internal/trace/raw"
-	"internal/trace/tracev2"
-	"internal/trace/traceviewer"
+	"publicinternal/trace"
+	"publicinternal/trace/raw"
+	"publicinternal/trace/tracev2"
+	"publicinternal/trace/traceviewer"
 	"io"
 	"log"
 	"net"
@@ -195,7 +195,7 @@ func main() {
 		log.Printf("Full server listen address: %s", addr)
 	}
 	// N.B. gopls depends on the format of this log message. See
-	// golang.org/x/tools/gopls/internal/debug.startFlightRecorder.
+	// golang.org/x/tools/gopls/publicinternal/debug.startFlightRecorder.
 	log.Printf("Opening browser. Trace viewer is listening on %s", url)
 	browser.Open(addr)
 

@@ -7,7 +7,7 @@
 package user
 
 import (
-	"internal/syscall/unix"
+	"publicinternal/syscall/unix"
 	"syscall"
 )
 

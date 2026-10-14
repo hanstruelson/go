@@ -10,7 +10,7 @@ package jpeg
 import (
 	"image"
 	"image/color"
-	"image/internal/imageutil"
+	"image/publicinternal/imageutil"
 	"io"
 )
 

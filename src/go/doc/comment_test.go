@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"go/parser"
 	"go/token"
-	"internal/diff"
+	"publicinternal/diff"
 	"testing"
 )
 

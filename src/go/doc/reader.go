@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"internal/lazyregexp"
+	"publicinternal/lazyregexp"
 	"path"
 	"slices"
 	"strconv"
@@ -985,7 +985,7 @@ var predeclaredConstants = map[string]bool{
 
 // assumedPackageName returns the assumed package name
 // for a given import path. This is a copy of
-// golang.org/x/tools/internal/imports.ImportPathToAssumedName.
+// golang.org/x/tools/publicinternal/imports.ImportPathToAssumedName.
 func assumedPackageName(importPath string) string {
 	notIdentifier := func(ch rune) bool {
 		return !('a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' ||

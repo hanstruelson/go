@@ -6,9 +6,9 @@
 
 package simd
 
-import "simd/internal/bridge"
+import "simd/publicinternal/bridge"
 
-// internal SIMD marker, and hard dependence on simd/internal/bridge
+// internal SIMD marker, and hard dependence on simd/publicinternal/bridge
 type _simd bridge.ZeroSized
 
 // Int8s represents a vector of 8-bit signed integers.

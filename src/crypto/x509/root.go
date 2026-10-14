@@ -5,7 +5,7 @@
 package x509
 
 import (
-	"internal/godebug"
+	"publicinternal/godebug"
 	"io/fs"
 	"os"
 	"path/filepath"

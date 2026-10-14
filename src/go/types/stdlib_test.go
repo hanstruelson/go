@@ -16,7 +16,7 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -29,7 +29,7 @@ import (
 	. "go/types"
 )
 
-// The cmd/*/internal packages may have been deleted as part of a binary
+// The cmd/*/publicinternal packages may have been deleted as part of a binary
 // release. Import from source instead.
 //
 // (See https://golang.org/issue/43232 and
@@ -356,9 +356,9 @@ func TestStdKen(t *testing.T) {
 // Package paths of excluded packages.
 var excluded = map[string]bool{
 	"builtin":                       true,
-	"cmd/compile/internal/ssa/_gen": true,
-	"crypto/internal/cryptotest/wycheproof/_schema": true,
-	"crypto/internal/cryptotest/x509limbo/_schema":  true,
+	"cmd/compile/publicinternal/ssa/_gen": true,
+	"crypto/publicinternal/cryptotest/wycheproof/_schema": true,
+	"crypto/publicinternal/cryptotest/x509limbo/_schema":  true,
 	"runtime/_mkmalloc":                             true,
 }
 

@@ -4,7 +4,7 @@
 
 package metrics
 
-import "internal/godebugs"
+import "publicinternal/godebugs"
 
 // Description describes a runtime metric.
 type Description struct {

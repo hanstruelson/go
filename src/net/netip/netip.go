@@ -14,8 +14,8 @@ package netip
 import (
 	"cmp"
 	"errors"
-	"internal/bytealg"
-	"internal/byteorder"
+	"publicinternal/bytealg"
+	"publicinternal/byteorder"
 	"math"
 	"strconv"
 	"unique"

@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
-	. "internal/types/errors"
+	. "publicinternal/types/errors"
 	"strings"
 )
 

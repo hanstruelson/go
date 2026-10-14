@@ -20,7 +20,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"internal/xcoff"
+	"publicinternal/xcoff"
 	"math"
 	"os"
 	"os/exec"
@@ -32,7 +32,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"cmd/internal/quoted"
+	"cmd/publicinternal/quoted"
 )
 
 var debugDefine = flag.Bool("debug-define", false, "print relevant #defines")

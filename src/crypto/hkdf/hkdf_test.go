@@ -6,8 +6,8 @@ package hkdf
 
 import (
 	"bytes"
-	"crypto/internal/boring"
-	"crypto/internal/fips140"
+	"crypto/publicinternal/boring"
+	"crypto/publicinternal/fips140"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"

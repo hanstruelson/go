@@ -9,9 +9,9 @@ package os_test
 import (
 	"errors"
 	"fmt"
-	"internal/strconv"
-	"internal/syscall/windows"
-	"internal/testenv"
+	"publicinternal/strconv"
+	"publicinternal/syscall/windows"
+	"publicinternal/testenv"
 	"os"
 	"path/filepath"
 	"syscall"

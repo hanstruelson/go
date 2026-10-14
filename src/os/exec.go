@@ -6,7 +6,7 @@ package os
 
 import (
 	"errors"
-	"internal/testlog"
+	"publicinternal/testlog"
 	"runtime"
 	"sync"
 	"sync/atomic"

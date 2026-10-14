@@ -21,9 +21,9 @@
 package runtime
 
 import (
-	"internal/goarch"
-	"internal/goexperiment"
-	"internal/runtime/sys"
+	"publicinternal/goarch"
+	"publicinternal/goexperiment"
+	"publicinternal/runtime/sys"
 	"unsafe"
 )
 

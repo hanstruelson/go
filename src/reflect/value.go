@@ -6,10 +6,10 @@ package reflect
 
 import (
 	"errors"
-	"internal/abi"
-	"internal/goarch"
-	"internal/strconv"
-	"internal/unsafeheader"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/strconv"
+	"publicinternal/unsafeheader"
 	"iter"
 	"math"
 	"runtime"

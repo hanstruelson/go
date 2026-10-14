@@ -7,8 +7,8 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/stringslite"
+	"publicinternal/abi"
+	"publicinternal/stringslite"
 	"unsafe"
 )
 

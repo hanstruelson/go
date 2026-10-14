@@ -24,7 +24,7 @@
 package fs
 
 import (
-	"internal/oserror"
+	"publicinternal/oserror"
 	"time"
 	"unicode/utf8"
 )

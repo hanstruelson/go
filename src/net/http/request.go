@@ -20,7 +20,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http/httptrace"
-	"net/http/internal/ascii"
+	"net/http/publicinternal/ascii"
 	"net/textproto"
 	"net/url"
 	urlpkg "net/url"

@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"encoding/json/internal/jsonwire"
+	"encoding/json/publicinternal/jsonwire"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 )

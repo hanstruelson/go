@@ -611,7 +611,7 @@ func fuint64to64(x uint64) uint64 {
 	if int64(x) >= 0 {
 		return fint64to64(int64(x))
 	}
-	// See ../cmd/compile/internal/ssagen/ssa.go:uint64Tofloat
+	// See ../cmd/compile/publicinternal/ssagen/ssa.go:uint64Tofloat
 	y := x & 1
 	z := x >> 1
 	z = z | y
@@ -623,7 +623,7 @@ func fuint64to32(x uint64) uint32 {
 	if int64(x) >= 0 {
 		return fint64to32(int64(x))
 	}
-	// See ../cmd/compile/internal/ssagen/ssa.go:uint64Tofloat
+	// See ../cmd/compile/publicinternal/ssagen/ssa.go:uint64Tofloat
 	y := x & 1
 	z := x >> 1
 	z = z | y

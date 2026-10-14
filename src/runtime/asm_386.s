@@ -854,7 +854,7 @@ TEXT runtime·cputicks(SB),NOSPLIT,$0-8
 #ifdef GO386_softfloat
 	JMP	rdtsc  // no fence instructions available
 #endif
-	CMPB	internal∕cpu·X86+const_offsetX86HasRDTSCP(SB), $1
+	CMPB	publicinternal∕cpu·X86+const_offsetX86HasRDTSCP(SB), $1
 	JNE	fences
 	// Instruction stream serializing RDTSCP is supported.
 	// RDTSCP is supported by Intel Nehalem (2008) and

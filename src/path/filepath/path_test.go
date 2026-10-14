@@ -7,7 +7,7 @@ package filepath_test
 import (
 	"errors"
 	"fmt"
-	"internal/testenv"
+	"publicinternal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"

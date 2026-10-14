@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"encoding/json/internal"
+	"encoding/json/publicinternal"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 )

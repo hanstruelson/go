@@ -6,7 +6,7 @@ package pprof
 
 import (
 	"fmt"
-	"internal/syscall/windows"
+	"publicinternal/syscall/windows"
 	"io"
 	"syscall"
 	"unsafe"

@@ -7,13 +7,13 @@
 package runtime
 
 import (
-	"internal/abi"
-	"internal/goarch"
-	"internal/runtime/atomic"
+	"publicinternal/abi"
+	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
 	"unsafe"
 )
 
-//go:linkname maps_typeString internal/runtime/maps.typeString
+//go:linkname maps_typeString publicinternal/runtime/maps.typeString
 func maps_typeString(typ *abi.Type) string {
 	return toRType(typ).string()
 }
@@ -328,7 +328,7 @@ func (t rtype) nameOff(off nameOff) name {
 func resolveTypeOff(ptrInModule unsafe.Pointer, off typeOff) *_type {
 	if off == 0 || off == -1 {
 		// -1 is the sentinel value for unreachable code.
-		// See cmd/link/internal/ld/data.go:relocsym.
+		// See cmd/link/publicinternal/ld/data.go:relocsym.
 		return nil
 	}
 	base := uintptr(ptrInModule)
@@ -371,7 +371,7 @@ func (t rtype) typeOff(off typeOff) *_type {
 func (t rtype) textOff(off textOff) unsafe.Pointer {
 	if off == -1 {
 		// -1 is the sentinel value for unreachable code.
-		// See cmd/link/internal/ld/data.go:relocsym.
+		// See cmd/link/publicinternal/ld/data.go:relocsym.
 		return unsafe.Pointer(abi.FuncPCABIInternal(unreachableMethod))
 	}
 	base := uintptr(unsafe.Pointer(t.Type))
@@ -525,7 +525,7 @@ func moduleTypelinks(md *moduledata) []*_type {
 	td := md.types
 
 	// We have to increment by the pointer size to match the
-	// increment in cmd/link/internal/ld/data.go createRelroSect
+	// increment in cmd/link/publicinternal/ld/data.go createRelroSect
 	// in allocateDataSections.
 	//
 	// The linker doesn't do that increment when runtime.types
