@@ -315,10 +315,8 @@ func checkImportPath(path string, allowSpace bool) error {
 		return errors.New("import path contains NUL")
 	}
 
-	for ri := range base.ReservedImports {
-		if path == ri {
-			return fmt.Errorf("import path %q is reserved and cannot be used", path)
-		}
+	if path == "go" || path == "type" {
+		return fmt.Errorf("import path %q is reserved and cannot be used", path)
 	}
 
 	for _, r := range path {

@@ -195,17 +195,7 @@ func (d *HashDebug) matchPkgFunc(pkg, fn string, note func() string) bool {
 	return d.matchAndLog(hash, func() string { return pkg + "." + fn }, note)
 }
 
-// MatchPos is similar to MatchPkgFunc, but for hash computation
-// it uses the source position including all inlining information instead of
-// package name and path.
-// Note that the default answer for no environment variable (d == nil)
-// is "yes", do the thing.
-func (d *HashDebug) MatchPos(pos src.XPos, desc func() string) bool {
-	return d.MatchPosWithLink(Ctxt, pos, desc)
-}
-
-// MatchPosWithLink is like MatchPos, but uses ctxt instead of the legacy
-// process-wide linker context.
+// MatchPosWithLink matches a source position using the compilation link context.
 func (d *HashDebug) MatchPosWithLink(ctxt *obj.Link, pos src.XPos, desc func() string) bool {
 	if d == nil {
 		return true
@@ -234,17 +224,8 @@ func (d *HashDebug) matchPosWithInfo(ctxt *obj.Link, pos src.XPos, info any, not
 		note)
 }
 
-// MatchPosWithInfo is similar to MatchPos, but with additional information
-// that is included for hash computation, so it can distinguish multiple
-// matches on the same source location.
-// Note that the default answer for no environment variable (d == nil)
-// is "yes", do the thing.
-func (d *HashDebug) MatchPosWithInfo(pos src.XPos, info any, desc func() string) bool {
-	return d.MatchPosWithInfoAndLink(Ctxt, pos, info, desc)
-}
-
-// MatchPosWithInfoAndLink is like MatchPosWithInfo, but uses ctxt instead of
-// the legacy process-wide linker context.
+// MatchPosWithInfoAndLink also includes info in the hash so it can distinguish
+// multiple matches at the same source location.
 func (d *HashDebug) MatchPosWithInfoAndLink(ctxt *obj.Link, pos src.XPos, info any, desc func() string) bool {
 	if d == nil {
 		return true
@@ -345,8 +326,8 @@ func (d *HashDebug) log(varname string, hash uint64, text string) {
 			var err error
 			file, err = os.OpenFile(tmpfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 			if err != nil {
-				Fatalf("could not open hash-testing logfile %s", tmpfile)
-				return
+				fmt.Fprintf(os.Stderr, "could not open hash-testing logfile %s: %v\n", tmpfile, err)
+				file = os.Stdout
 			}
 		}
 		if file == nil {

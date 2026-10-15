@@ -23,9 +23,9 @@ import (
 // Diagnostics owns compiler diagnostics for one compilation. It is safe for
 // concurrent parser workers to report errors through the same instance.
 type Diagnostics struct {
-	mu      sync.Mutex
-	flushMu sync.Mutex
-	bugStack *counter.StackCounter
+	mu       sync.Mutex
+	flushMu  sync.Mutex
+	bugStack interface{ Inc() }
 
 	Ctxt  *obj.Link
 	Flags CmdFlags

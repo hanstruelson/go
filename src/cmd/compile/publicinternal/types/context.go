@@ -89,13 +89,31 @@ func contextForType(t *Type) *Context {
 	return t.Context()
 }
 
+func contextForTypes(types []*Type) *Context {
+	var context *Context
+	for _, typ := range types {
+		if typ == nil || typ.context == nil {
+			continue
+		}
+		if context != nil && context != typ.context {
+			panic("types belong to different compilation contexts")
+		}
+		context = typ.context
+	}
+	if context == nil {
+		panic("cannot infer compilation context from context-free types")
+	}
+	return context
+}
+
 func contextForFields(fields []*Field) *Context {
+	var types []*Type
 	for _, f := range fields {
 		if f != nil && f.Type != nil {
-			return contextForType(f.Type)
+			types = append(types, f.Type)
 		}
 	}
-	panic("cannot infer compilation context from empty fields")
+	return contextForTypes(types)
 }
 
 func ptrSizeFor(c *Context) int {

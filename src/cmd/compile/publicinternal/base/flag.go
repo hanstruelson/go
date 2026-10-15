@@ -6,7 +6,6 @@ package base
 
 import (
 	"cmd/publicinternal/cov/covcmd"
-	"cmd/publicinternal/obj"
 	"flag"
 )
 
@@ -124,4 +123,3 @@ type CmdFlags struct {
 		Instrumenting bool
 	}
 }
-
