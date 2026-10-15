@@ -5,6 +5,7 @@
 package devirtualize
 
 import (
+	"bytes"
 	"cmd/compile/publicinternal/inline"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/pgoir"
@@ -13,8 +14,6 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
 	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
 )
 
@@ -104,8 +103,9 @@ func ProfileGuided(fn *ir.Func, p *pgoir.Profile) {
 	name := ir.LinkFuncName(fn)
 
 	var jsonW *json.Encoder
+	var jsonOutput bytes.Buffer
 	if fn.Target.Debug.PGODebug >= 3 {
-		jsonW = json.NewEncoder(os.Stdout)
+		jsonW = json.NewEncoder(&jsonOutput)
 	}
 
 	var edit func(n ir.Node) ir.Node
@@ -140,12 +140,12 @@ func ProfileGuided(fn *ir.Func, p *pgoir.Profile) {
 		}
 
 		if fn.Target.Debug.PGODebug >= 2 {
-			fmt.Printf("%v: PGO devirtualize considering call %v\n", ir.LineFor(fn.Target, call), call)
+			fn.Target.Diagnostics.Printf("%v: PGO devirtualize considering call %v\n", ir.LineFor(fn.Target, call), call)
 		}
 
 		if call.GoDefer {
 			if fn.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: can't PGO devirtualize go/defer call %v\n", ir.LineFor(fn.Target, call), call)
+				fn.Target.Diagnostics.Printf("%v: can't PGO devirtualize go/defer call %v\n", ir.LineFor(fn.Target, call), call)
 			}
 			return n
 		}
@@ -175,6 +175,9 @@ func ProfileGuided(fn *ir.Func, p *pgoir.Profile) {
 	}
 
 	ir.EditChildren(fn, edit)
+	if jsonOutput.Len() != 0 {
+		fn.Target.Diagnostics.Printf("%s", jsonOutput.String())
+	}
 }
 
 // Devirtualize interface call if possible and eligible. Returns the new
@@ -232,7 +235,7 @@ func maybeDevirtualizeFunctionCall(p *pgoir.Profile, fn *ir.Func, call *ir.CallE
 	// haven't done yet.
 	if callee.OClosure != nil {
 		if fn.Target.Debug.PGODebug >= 3 {
-			fmt.Printf("callee %s is a closure, skipping\n", ir.FuncName(callee))
+			fn.Target.Diagnostics.Printf("callee %s is a closure, skipping\n", ir.FuncName(callee))
 		}
 		return nil, nil, 0
 	}
@@ -242,7 +245,7 @@ func maybeDevirtualizeFunctionCall(p *pgoir.Profile, fn *ir.Func, call *ir.CallE
 	// cmd/compile/publicinternal/reflectdata.genhash.
 	if callee.Sym().Pkg.Path == "runtime" && callee.Sym().Name == "memhash_varlen" {
 		if fn.Target.Debug.PGODebug >= 3 {
-			fmt.Printf("callee %s is a closure (runtime.memhash_varlen), skipping\n", ir.FuncName(callee))
+			fn.Target.Diagnostics.Printf("callee %s is a closure (runtime.memhash_varlen), skipping\n", ir.FuncName(callee))
 		}
 		return nil, nil, 0
 	}
@@ -275,7 +278,7 @@ func maybeDevirtualizeFunctionCall(p *pgoir.Profile, fn *ir.Func, call *ir.CallE
 	// ideally we should support direct wrapper references as well.
 	if callee.Type().Recv() != nil {
 		if fn.Target.Debug.PGODebug >= 3 {
-			fmt.Printf("callee %s is a method, skipping\n", ir.FuncName(callee))
+			fn.Target.Diagnostics.Printf("callee %s is a method, skipping\n", ir.FuncName(callee))
 		}
 		return nil, nil, 0
 	}
@@ -303,7 +306,7 @@ func shouldPGODevirt(fn *ir.Func) bool {
 		defer func() {
 			if reason != "" {
 				if fn.Target.Flags.LowerM > 1 {
-					fmt.Printf("%v: should not PGO devirtualize %v: %s\n", ir.LineFor(fn.Target, fn), ir.FuncName(fn), reason)
+					fn.Target.Diagnostics.Printf("%v: should not PGO devirtualize %v: %s\n", ir.LineFor(fn.Target, fn), ir.FuncName(fn), reason)
 				}
 				if fn.Target.LogOpt.Enabled() {
 					fn.Target.LogOpt.LogOpt(fn.Pos(), ": should not PGO devirtualize function", "pgoir-devirtualize", ir.FuncName(fn), reason)
@@ -488,7 +491,7 @@ func condCall(curfn *ir.Func, pos src.XPos, cond ir.Node, thenCall, elseCall *ir
 // method call to concretetyp.
 func rewriteInterfaceCall(call *ir.CallExpr, curfn, callee *ir.Func, concretetyp *types.Type) ir.Node {
 	if curfn.Target.Flags.LowerM != 0 {
-		fmt.Printf("%v: PGO devirtualizing interface call %v to %v\n", ir.LineFor(curfn.Target, call), call.Fun, callee)
+		curfn.Target.Diagnostics.Printf("%v: PGO devirtualizing interface call %v to %v\n", ir.LineFor(curfn.Target, call), call.Fun, callee)
 	}
 
 	// We generate an OINCALL of:
@@ -546,7 +549,7 @@ func rewriteInterfaceCall(call *ir.CallExpr, curfn, callee *ir.Func, concretetyp
 	res := condCall(curfn, pos, tmpok, concreteCall, call, init)
 
 	if curfn.Target.Debug.PGODebug >= 3 {
-		fmt.Printf("PGO devirtualizing interface call to %+v. After: %+v\n", concretetyp, res)
+		curfn.Target.Diagnostics.Printf("PGO devirtualizing interface call to %+v. After: %+v\n", concretetyp, res)
 	}
 
 	return res
@@ -556,7 +559,7 @@ func rewriteInterfaceCall(call *ir.CallExpr, curfn, callee *ir.Func, concretetyp
 // function call to callee.
 func rewriteFunctionCall(call *ir.CallExpr, curfn, callee *ir.Func) ir.Node {
 	if curfn.Target.Flags.LowerM != 0 {
-		fmt.Printf("%v: PGO devirtualizing function call %v to %v\n", ir.LineFor(curfn.Target, call), call.Fun, callee)
+		curfn.Target.Diagnostics.Printf("%v: PGO devirtualizing function call %v to %v\n", ir.LineFor(curfn.Target, call), call.Fun, callee)
 	}
 
 	// We generate an OINCALL of:
@@ -618,7 +621,7 @@ func rewriteFunctionCall(call *ir.CallExpr, curfn, callee *ir.Func) ir.Node {
 	res := condCall(curfn, pos, pcEq, concreteCall, call, init)
 
 	if curfn.Target.Debug.PGODebug >= 3 {
-		fmt.Printf("PGO devirtualizing function call to %+v. After: %+v\n", ir.FuncName(callee), res)
+		curfn.Target.Diagnostics.Printf("PGO devirtualizing function call to %+v. After: %+v\n", ir.FuncName(callee), res)
 	}
 
 	return res
@@ -706,7 +709,7 @@ func findHotConcreteCallee(p *pgoir.Profile, caller *ir.Func, call *ir.CallExpr,
 			// is globally very cold, there is not much value in
 			// devirtualizing.
 			if caller.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d): too cold (hottest %d)\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, hottest.Weight)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): too cold (hottest %d)\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, hottest.Weight)
 			}
 			continue
 		}
@@ -722,7 +725,7 @@ func findHotConcreteCallee(p *pgoir.Profile, caller *ir.Func, call *ir.CallExpr,
 			// callee. If we skip this then we'd return the #2
 			// hottest callee.
 			if caller.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d) (missing IR): hottest so far\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d) (missing IR): hottest so far\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
 			}
 			hottest = e
 			continue
@@ -733,20 +736,20 @@ func findHotConcreteCallee(p *pgoir.Profile, caller *ir.Func, call *ir.CallExpr,
 		}
 
 		if caller.Target.Debug.PGODebug >= 2 {
-			fmt.Printf("%v: edge %s:%d -> %s (weight %d): hottest so far\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
+			caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): hottest so far\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
 		}
 		hottest = e
 	}
 
 	if hottest == nil || hottest.Weight == 0 {
 		if caller.Target.Debug.PGODebug >= 2 {
-			fmt.Printf("%v: call %s:%d: no hot callee\n", ir.LineFor(caller.Target, call), callerName, callOffset)
+			caller.Target.Diagnostics.Printf("%v: call %s:%d: no hot callee\n", ir.LineFor(caller.Target, call), callerName, callOffset)
 		}
 		return nil, 0
 	}
 
 	if caller.Target.Debug.PGODebug >= 2 {
-		fmt.Printf("%v: call %s:%d: hottest callee %s (weight %d)\n", ir.LineFor(caller.Target, call), callerName, callOffset, hottest.Dst.Name(), hottest.Weight)
+		caller.Target.Diagnostics.Printf("%v: call %s:%d: hottest callee %s (weight %d)\n", ir.LineFor(caller.Target, call), callerName, callOffset, hottest.Dst.Name(), hottest.Weight)
 	}
 	return hottest.Dst.AST, hottest.Weight
 }
@@ -762,7 +765,7 @@ func findHotConcreteInterfaceCallee(p *pgoir.Profile, caller *ir.Func, call *ir.
 			// Not a method.
 			// TODO(prattmic): Support non-interface indirect calls.
 			if caller.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d): callee not a method\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): callee not a method\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
 			}
 			return false
 		}
@@ -781,7 +784,7 @@ func findHotConcreteInterfaceCallee(p *pgoir.Profile, caller *ir.Func, call *ir.
 			// rather than doing a full type assertion.
 			if caller.Target.Debug.PGODebug >= 2 {
 				why := typecheck.ImplementsExplain(ctyp, inter)
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d): %v doesn't implement %v (%s)\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, ctyp, inter, why)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): %v doesn't implement %v (%s)\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, ctyp, inter, why)
 			}
 			return false
 		}
@@ -790,7 +793,7 @@ func findHotConcreteInterfaceCallee(p *pgoir.Profile, caller *ir.Func, call *ir.
 		// different call on the same line
 		if !strings.HasSuffix(e.Dst.Name(), "."+method.Name) {
 			if caller.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d): callee is a different method\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): callee is a different method\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight)
 			}
 			return false
 		}
@@ -816,7 +819,7 @@ func findHotConcreteFunctionCallee(p *pgoir.Profile, caller *ir.Func, call *ir.C
 		// the same underlying type.
 		if !types.Identical(typ, ctyp) {
 			if caller.Target.Debug.PGODebug >= 2 {
-				fmt.Printf("%v: edge %s:%d -> %s (weight %d): %v doesn't match %v\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, ctyp, typ)
+				caller.Target.Diagnostics.Printf("%v: edge %s:%d -> %s (weight %d): %v doesn't match %v\n", ir.LineFor(caller.Target, call), callerName, callOffset, e.Dst.Name(), e.Weight, ctyp, typ)
 			}
 			return false
 		}

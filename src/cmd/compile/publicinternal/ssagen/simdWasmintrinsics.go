@@ -10,7 +10,7 @@ import (
 	"cmd/publicinternal/sys"
 )
 
-func initWasmSIMD() {
+func initWasmSIMD(intrinsics intrinsicBuilders) {
 	makeSimdOp1 := func(op ssaop.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(op, types.TypeVec128, args[0])

@@ -6,7 +6,6 @@ package ssagen
 
 import (
 	"fmt"
-	"os"
 	"publicinternal/buildcfg"
 	"slices"
 	"sort"
@@ -171,9 +170,9 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 		mls = liveness.MergeLocals(fn, f)
 		if s.curfn.Target.Debug.MergeLocalsTrace > 0 && mls != nil {
 			savedNP, savedP := mls.EstSavings()
-			fmt.Fprintf(os.Stderr, "%s: %d bytes of stack space saved via stack slot merging (%d nonpointer %d pointer)\n", ir.FuncName(fn), savedNP+savedP, savedNP, savedP)
+			fn.Target.Diagnostics.Printf("%s: %d bytes of stack space saved via stack slot merging (%d nonpointer %d pointer)\n", ir.FuncName(fn), savedNP+savedP, savedNP, savedP)
 			if s.curfn.Target.Debug.MergeLocalsTrace > 1 {
-				fmt.Fprintf(os.Stderr, "=-= merge locals state for %v:\n%v",
+				fn.Target.Diagnostics.Printf("=-= merge locals state for %v:\n%v",
 					fn, mls)
 			}
 		}
@@ -208,12 +207,12 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 	}
 
 	if s.curfn.Target.Debug.MergeLocalsTrace > 1 && mls != nil {
-		fmt.Fprintf(os.Stderr, "=-= sorted DCL for %v:\n", fn)
+		fn.Target.Diagnostics.Printf("=-= sorted DCL for %v:\n", fn)
 		for i, v := range fn.Dcl {
 			if !ssa.IsMergeCandidate(v) {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, " %d: %q isleader=%v subsumed=%v used=%v sz=%d align=%d t=%s\n", i, v.Sym().Name, mls.IsLeader(v), mls.Subsumed(v), v.Used(), v.Type().Size(), v.Type().Alignment(), v.Type().String())
+			fn.Target.Diagnostics.Printf(" %d: %q isleader=%v subsumed=%v used=%v sz=%d align=%d t=%s\n", i, v.Sym().Name, mls.IsLeader(v), mls.Subsumed(v), v.Used(), v.Type().Size(), v.Type().Alignment(), v.Type().String())
 		}
 	}
 
@@ -280,12 +279,12 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 		}
 
 		if s.curfn.Target.Debug.MergeLocalsTrace > 1 {
-			fmt.Fprintf(os.Stderr, "=-= stack layout for %v:\n", fn)
+			fn.Target.Diagnostics.Printf("=-= stack layout for %v:\n", fn)
 			for i, v := range fn.Dcl {
 				if v.Op() != ir.ONAME || (v.Class != ir.PAUTO && !(v.Class == ir.PPARAMOUT && v.IsOutputParamInRegisters())) {
 					continue
 				}
-				fmt.Fprintf(os.Stderr, " %d: %q frameoff %d isleader=%v subsumed=%v sz=%d align=%d t=%s\n", i, v.Sym().Name, v.FrameOffset(), mls.IsLeader(v), mls.Subsumed(v), v.Type().Size(), v.Type().Alignment(), v.Type().String())
+				fn.Target.Diagnostics.Printf(" %d: %q frameoff %d isleader=%v subsumed=%v sz=%d align=%d t=%s\n", i, v.Sym().Name, v.FrameOffset(), mls.IsLeader(v), mls.Subsumed(v), v.Type().Size(), v.Type().Alignment(), v.Type().String())
 			}
 		}
 	}
@@ -361,7 +360,7 @@ func weakenGlobalMapInitRelocs(fn *ir.Func) {
 			continue
 		}
 		if fn.Target.Debug.WrapGlobalMapDbg > 1 {
-			fmt.Fprintf(os.Stderr, "=-= weakify fn %v reloc %d %+v\n", fn, i,
+			fn.Target.Diagnostics.Printf("=-= weakify fn %v reloc %d %+v\n", fn, i,
 				fn.LSym.R[i])
 		}
 		// set the R_WEAK bit, leave rest of reloc type intact

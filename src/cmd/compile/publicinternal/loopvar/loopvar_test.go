@@ -5,10 +5,10 @@
 package loopvar_test
 
 import (
-	"publicinternal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"publicinternal/testenv"
 	"regexp"
 	"runtime"
 	"strings"
@@ -199,11 +199,11 @@ func TestLoopVarHashes(t *testing.T) {
 		return string(b)
 	}
 
-	for _, arg := range []string{"v001100110110110010100100", "vx336ca4"} {
+	for _, arg := range []string{"v111011101010101100110011", "vxab33"} {
 		m := f(arg)
 		t.Log(m)
 
-		mCount := countMatches(m, "loopvarhash triggered cmd/compile/publicinternal/loopvar/testdata/inlines/main.go:27:6: .* 001100110110110010100100")
+		mCount := countMatches(m, "loopvarhash triggered cmd/compile/publicinternal/loopvar/testdata/inlines/main.go:27:6: .* 111011101010101100110011")
 		otherCount := strings.Count(m, "loopvarhash")
 		if mCount < 1 {
 			t.Errorf("%s: did not see triggered main.go:27:6", arg)
@@ -211,7 +211,7 @@ func TestLoopVarHashes(t *testing.T) {
 		if mCount != otherCount {
 			t.Errorf("%s: too many matches", arg)
 		}
-		mCount = countMatches(m, "cmd/compile/publicinternal/loopvar/testdata/inlines/main.go:27:6: .* \\[bisect-match 0x7802e115b9336ca4\\]")
+		mCount = countMatches(m, "cmd/compile/publicinternal/loopvar/testdata/inlines/main.go:27:6: .* \\[bisect-match 0xf8ccabf173eeab33\\]")
 		otherCount = strings.Count(m, "[bisect-match ")
 		if mCount < 1 {
 			t.Errorf("%s: did not see bisect-match for main.go:27:6", arg)

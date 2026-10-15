@@ -32,26 +32,29 @@ func TestMain(m *testing.M) {
 		REGSP:    x86.REGSP,
 		MAXWIDTH: 1 << 50,
 	}
-	types.MaxWidth = arch.MAXWIDTH
-	base.Ctxt = obj.Linknew(arch.LinkArch)
-	base.Ctxt.DiagFunc = base.Diagf
-	base.Ctxt.DiagFlush = base.FlushErrors
-	base.Ctxt.Bso = bufio.NewWriter(os.Stdout)
+	ctxt := obj.Linknew(arch.LinkArch)
+	diagnostics := base.NewDiagnostics(os.Stdout)
+	diagnostics.Configure(ctxt, base.CmdFlags{}, base.DebugFlags{}, os.Stdout)
+	ctxt.DiagFunc = diagnostics.Diagf
+	ctxt.DiagFlush = diagnostics.FlushErrors
+	ctxt.Bso = bufio.NewWriter(os.Stdout)
 	testTarget = &ir.Package{
-		ArchInfo:   arch,
-		Ctxt:       base.Ctxt,
-		PtrSize:    arch.LinkArch.PtrSize,
-		RegSize:    arch.LinkArch.RegSize,
-		MaxWidth:   arch.MAXWIDTH,
-		LocalPkg:   types.NewPkgInstance("p", "local"),
-		BuiltinPkg: types.NewPkgInstance("go.builtin", ""),
-		UnsafePkg:  types.NewPkgInstance("unsafe", "unsafe"),
+		ArchInfo:    arch,
+		Ctxt:        ctxt,
+		Diagnostics: diagnostics,
+		PtrSize:     arch.LinkArch.PtrSize,
+		RegSize:     arch.LinkArch.RegSize,
+		MaxWidth:    arch.MAXWIDTH,
+		TypeContext: types.NewContext(arch.LinkArch.PtrSize, arch.LinkArch.RegSize, arch.MAXWIDTH),
 	}
+	testTarget.TypeContext.Link = ctxt
+	testTarget.TypeContext.Diagnostics = diagnostics
+	testTarget.LocalPkg = testTarget.Pkg("p", "local")
+	testTarget.BuiltinPkg = testTarget.Pkg("go.builtin", "")
+	testTarget.UnsafePkg = testTarget.Pkg("unsafe", "unsafe")
 	testTarget.LocalPkg.Local = true
 	testTarget.LocalPkg.Prefix = "p"
 	testTarget.BuiltinPkg.Prefix = "go:builtin"
-	types.PtrSize = arch.LinkArch.PtrSize
-	types.RegSize = arch.LinkArch.RegSize
 	typecheck.InitUniverse(testTarget)
 	configAMD64 = abi.NewABIConfig(testTarget, 9, 15, 0, 1)
 	os.Exit(m.Run())
@@ -60,7 +63,7 @@ func TestMain(m *testing.M) {
 func TestABIUtilsBasic1(t *testing.T) {
 
 	// func(x int32) int32
-	i32 := types.Types[types.TINT32]
+	i32 := testTarget.Type(types.TINT32)
 	ft := mkFuncType(nil, []*types.Type{i32}, []*types.Type{i32})
 
 	// expected results
@@ -82,14 +85,14 @@ func TestABIUtilsBasic2(t *testing.T) {
 	//      p21 complex64, p22 int8, p23 in16, p24 int32, p25 int64,
 	//      p26 int8, p27 in16, p28 int32, p29 int64)
 	//        (r1 int32, r2 float64, r3 float64) {
-	i8 := types.Types[types.TINT8]
-	i16 := types.Types[types.TINT16]
-	i32 := types.Types[types.TINT32]
-	i64 := types.Types[types.TINT64]
-	f32 := types.Types[types.TFLOAT32]
-	f64 := types.Types[types.TFLOAT64]
-	c64 := types.Types[types.TCOMPLEX64]
-	c128 := types.Types[types.TCOMPLEX128]
+	i8 := testTarget.Type(types.TINT8)
+	i16 := testTarget.Type(types.TINT16)
+	i32 := testTarget.Type(types.TINT32)
+	i64 := testTarget.Type(types.TINT64)
+	f32 := testTarget.Type(types.TFLOAT32)
+	f64 := testTarget.Type(types.TFLOAT64)
+	c64 := testTarget.Type(types.TCOMPLEX64)
+	c128 := testTarget.Type(types.TCOMPLEX128)
 	ft := mkFuncType(nil,
 		[]*types.Type{
 			i8, i16, i32, i64,
@@ -142,7 +145,7 @@ func TestABIUtilsBasic2(t *testing.T) {
 func TestABIUtilsArrays(t *testing.T) {
 	// func(p1 [1]int32, p2 [0]int32, p3 [1][1]int32, p4 [2]int32)
 	//         (r1 [2]int32, r2 [1]int32, r3 [0]int32, r4 [1][1]int32) {
-	i32 := types.Types[types.TINT32]
+	i32 := testTarget.Type(types.TINT32)
 	ae := types.NewArray(i32, 0)
 	a1 := types.NewArray(i32, 1)
 	a2 := types.NewArray(i32, 2)
@@ -169,10 +172,10 @@ func TestABIUtilsStruct1(t *testing.T) {
 	// type s struct { f1 int8; f2 int8; f3 struct {}; f4 int8; f5 int16) }
 	// func(p1 int6, p2 s, p3 int64)
 	//   (r1 s, r2 int8, r3 int32) {
-	i8 := types.Types[types.TINT8]
-	i16 := types.Types[types.TINT16]
-	i32 := types.Types[types.TINT32]
-	i64 := types.Types[types.TINT64]
+	i8 := testTarget.Type(types.TINT8)
+	i16 := testTarget.Type(types.TINT16)
+	i32 := testTarget.Type(types.TINT32)
+	i64 := testTarget.Type(types.TINT64)
 	s := mkstruct(i8, i8, mkstruct(), i8, i16)
 	ft := mkFuncType(nil, []*types.Type{i8, s, i64},
 		[]*types.Type{s, i8, i32})
@@ -195,8 +198,8 @@ func TestABIUtilsStruct2(t *testing.T) {
 	// type fs struct { f1 float64; f2 s; f3 struct { } }
 	// func(p1 s, p2 s, p3 fs)
 	//    (r1 fs, r2 fs)
-	f64 := types.Types[types.TFLOAT64]
-	i64 := types.Types[types.TINT64]
+	f64 := testTarget.Type(types.TFLOAT64)
+	i64 := testTarget.Type(types.TINT64)
 	s := mkstruct(i64, mkstruct())
 	fs := mkstruct(f64, s, mkstruct())
 	ft := mkFuncType(nil, []*types.Type{s, s, fs},
@@ -222,10 +225,10 @@ func TestABIUtilsEmptyFieldAtEndOfStruct(t *testing.T) {
 	// type s2 struct { f1 [3]int16; f2 struct { } }
 	// type fs struct { f1 float64; f s; f3 struct { } }
 	// func(p1 s, p2 s, p3 fs)  (r1 fs, r2 fs)
-	f64 := types.Types[types.TFLOAT64]
-	i64 := types.Types[types.TINT64]
-	i16 := types.Types[types.TINT16]
-	tb := types.Types[types.TBOOL]
+	f64 := testTarget.Type(types.TFLOAT64)
+	i64 := testTarget.Type(types.TINT64)
+	i16 := testTarget.Type(types.TINT16)
+	tb := testTarget.Type(types.TBOOL)
 	ab2 := types.NewArray(tb, 2)
 	a2 := types.NewArray(i64, 2)
 	a3 := types.NewArray(i16, 3)
@@ -261,11 +264,11 @@ func TestABIUtilsEmptyFieldAtEndOfStruct(t *testing.T) {
 func TestABIUtilsSliceString(t *testing.T) {
 	// func(p1 []int32, p2 int8, p3 []int32, p4 int8, p5 string,
 	//      p6 int64, p6 []intr32) (r1 string, r2 int64, r3 string, r4 []int32)
-	i32 := types.Types[types.TINT32]
+	i32 := testTarget.Type(types.TINT32)
 	sli32 := types.NewSlice(i32)
-	str := types.Types[types.TSTRING]
-	i8 := types.Types[types.TINT8]
-	i64 := types.Types[types.TINT64]
+	str := testTarget.Type(types.TSTRING)
+	i8 := testTarget.Type(types.TINT8)
+	i64 := testTarget.Type(types.TINT64)
 	ft := mkFuncType(nil, []*types.Type{sli32, i8, sli32, i8, str, i8, i64, sli32},
 		[]*types.Type{str, i64, str, sli32})
 
@@ -292,9 +295,9 @@ func TestABIUtilsMethod(t *testing.T) {
 	// type s1 struct { f1 int16; f2 int16; f3 int16 }
 	// func(p1 *s1, p2 [7]*s1, p3 float64, p4 int16, p5 int16, p6 int16)
 	//   (r1 [7]*s1, r2 float64, r3 int64)
-	i16 := types.Types[types.TINT16]
-	i64 := types.Types[types.TINT64]
-	f64 := types.Types[types.TFLOAT64]
+	i16 := testTarget.Type(types.TINT16)
+	i64 := testTarget.Type(types.TINT64)
+	f64 := testTarget.Type(types.TFLOAT64)
 	s1 := mkstruct(i16, i16, i16)
 	ps1 := types.NewPtr(s1)
 	a7 := types.NewArray(ps1, 7)
@@ -324,14 +327,14 @@ func TestABIUtilsInterfaces(t *testing.T) {
 	// func(p1 s1, p2 interface{}, p3 interface{}, p4 nei,
 	//      p5 *interface{}, p6 nei, p7 int64)
 	//    (r1 interface{}, r2 nei, r3 bool)
-	ei := types.Types[types.TINTER] // interface{}
-	pei := types.NewPtr(ei)         // *interface{}
-	fldt := mkFuncType(types.FakeRecvType(), []*types.Type{},
-		[]*types.Type{types.Types[types.TSTRING]})
+	ei := testTarget.Type(types.TINTER) // interface{}
+	pei := types.NewPtr(ei)             // *interface{}
+	fldt := mkFuncType(types.FakeRecvTypeFor(testTarget.TypeContext), []*types.Type{},
+		[]*types.Type{testTarget.Type(types.TSTRING)})
 	field := types.NewField(src.NoXPos, typecheck.Lookup(testTarget, "F"), fldt)
-	nei := types.NewInterface([]*types.Field{field})
-	i16 := types.Types[types.TINT16]
-	tb := types.Types[types.TBOOL]
+	nei := types.NewInterfaceIn(testTarget.TypeContext, []*types.Field{field})
+	i16 := testTarget.Type(types.TINT16)
+	tb := testTarget.Type(types.TBOOL)
 	s1 := mkstruct(i16, i16, tb)
 	ft := mkFuncType(nil, []*types.Type{s1, ei, ei, nei, pei, nei, i16},
 		[]*types.Type{ei, nei, pei})
@@ -354,14 +357,14 @@ func TestABIUtilsInterfaces(t *testing.T) {
 }
 
 func TestABINumParamRegs(t *testing.T) {
-	i8 := types.Types[types.TINT8]
-	i16 := types.Types[types.TINT16]
-	i32 := types.Types[types.TINT32]
-	i64 := types.Types[types.TINT64]
-	f32 := types.Types[types.TFLOAT32]
-	f64 := types.Types[types.TFLOAT64]
-	c64 := types.Types[types.TCOMPLEX64]
-	c128 := types.Types[types.TCOMPLEX128]
+	i8 := testTarget.Type(types.TINT8)
+	i16 := testTarget.Type(types.TINT16)
+	i32 := testTarget.Type(types.TINT32)
+	i64 := testTarget.Type(types.TINT64)
+	f32 := testTarget.Type(types.TFLOAT32)
+	f64 := testTarget.Type(types.TFLOAT64)
+	c64 := testTarget.Type(types.TCOMPLEX64)
+	c128 := testTarget.Type(types.TCOMPLEX128)
 
 	s := mkstruct(i8, i8, mkstruct(), i8, i16)
 	a := mkstruct(s, s, s)
@@ -380,10 +383,10 @@ func TestABINumParamRegs(t *testing.T) {
 
 func TestABIUtilsComputePadding(t *testing.T) {
 	// type s1 { f1 int8; f2 int16; f3 struct{}; f4 int32; f5 int64 }
-	i8 := types.Types[types.TINT8]
-	i16 := types.Types[types.TINT16]
-	i32 := types.Types[types.TINT32]
-	i64 := types.Types[types.TINT64]
+	i8 := testTarget.Type(types.TINT8)
+	i16 := testTarget.Type(types.TINT16)
+	i32 := testTarget.Type(types.TINT32)
+	i64 := testTarget.Type(types.TINT64)
 	emptys := mkstruct()
 	s1 := mkstruct(i8, i16, emptys, i32, i64)
 	// func (p1 int32, p2 s1, p3 emptys, p4 [1]int32)

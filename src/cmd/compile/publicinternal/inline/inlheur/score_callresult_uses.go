@@ -64,11 +64,11 @@ func (csa *callSiteAnalyzer) rescoreBasedOnCallResultUses(fn *ir.Func, resultNam
 		return false
 	}
 	doNode(fn)
-	disableDebugTrace()
+	disableDebugTrace(csa.ctx.Target)
 }
 
 func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[*ir.Name]resultPropAndCS) map[*ir.Name]resultPropAndCS {
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= examining call results for %q\n",
 			EncodeCallSiteKey(cs))
 	}
@@ -84,7 +84,7 @@ func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[
 		return resultNameTab
 	}
 
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= %d names defined\n", len(names))
 	}
 
@@ -97,7 +97,7 @@ func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[
 	for idx, n := range names {
 		rprop := props.ResultFlags[idx]
 
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= props for ret %d %q: %s\n",
 				idx, n.Sym().Name, rprop.String())
 		}
@@ -121,7 +121,7 @@ func (csa *callSiteAnalyzer) examineCallResults(cs *CallSite, resultNameTab map[
 		if autoTemps[idx] != nil {
 			resultNameTab[autoTemps[idx]] = entry
 		}
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= add resultNameTab table entry n=%v autotemp=%v props=%s\n", n, autoTemps[idx], rprop.String())
 		}
 	}
@@ -192,7 +192,7 @@ func namesDefined(ctx *Context, cs *CallSite) ([]*ir.Name, []*ir.Name, *FuncProp
 			if ir.IsAutoTmp(r) {
 				autoTemps[idx] = r.(*ir.Name)
 			}
-			if debugTrace&debugTraceScoring != 0 {
+			if debugTraceFor(ctx.Target)&debugTraceScoring != 0 {
 				fmt.Fprintf(os.Stderr, "=-= multi-ret namedef uv=%v at=%v\n",
 					x, autoTemps[idx])
 			}
@@ -211,12 +211,12 @@ func (rua *resultUseAnalyzer) nodeVisitPre(n ir.Node) {
 	rua.condLevelTracker.pre(n)
 	switch n.Op() {
 	case ir.OCALLINTER:
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= rescore examine iface call %v:\n", n)
 		}
 		rua.callTargetCheckResults(n)
 	case ir.OCALLFUNC:
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= rescore examine call %v:\n", n)
 		}
 		rua.callTargetCheckResults(n)
@@ -255,7 +255,7 @@ func (rua *resultUseAnalyzer) callTargetCheckResults(call ir.Node) {
 	if rname == nil {
 		return
 	}
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= staticvalue returns %v:\n",
 			rname)
 	}
@@ -264,7 +264,7 @@ func (rua *resultUseAnalyzer) callTargetCheckResults(call ir.Node) {
 	}
 	switch call.Op() {
 	case ir.OCALLINTER:
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= in %s checking %v for cci prop:\n",
 				rua.fn.Sym().Name, rname)
 		}
@@ -274,7 +274,7 @@ func (rua *resultUseAnalyzer) callTargetCheckResults(call ir.Node) {
 			cs.Score, cs.ScoreMask = adjustScore(rua.ctx, adj, cs.Score, cs.ScoreMask)
 		}
 	case ir.OCALLFUNC:
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= in %s checking %v for samefunc props:\n",
 				rua.fn.Sym().Name, rname)
 			v, ok := rua.resultNameTab[rname]
@@ -332,7 +332,7 @@ func (rua *resultUseAnalyzer) foldCheckResults(cond ir.Node) {
 			return
 		}
 	}
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 		nls := func(nl []*ir.Name) string {
 			r := ""
 			for _, n := range nl {
@@ -388,7 +388,7 @@ func (rua *resultUseAnalyzer) getCallResultName(ce *ir.CallExpr) *ir.Name {
 		return nil
 	}
 	r := ir.StaticValue(callTarg)
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(rua.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= staticname on %v returns %v:\n",
 			callTarg, r)
 	}

@@ -95,7 +95,7 @@ func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 }
 
 func printObjHeader(target *ir.Package, bout *bio.Writer) {
-	bout.WriteString(objabi.HeaderString())
+	bout.WriteString(objabi.HeaderStringFor(target.GOOS, target.GOARCH))
 	if target.Flags.BuildID != "" {
 		fmt.Fprintf(bout, "build id %q\n", target.Flags.BuildID)
 	}

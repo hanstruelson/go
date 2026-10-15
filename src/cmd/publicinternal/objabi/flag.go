@@ -7,11 +7,11 @@ package objabi
 import (
 	"flag"
 	"fmt"
-	"publicinternal/bisect"
-	"publicinternal/buildcfg"
 	"io"
 	"log"
 	"os"
+	"publicinternal/bisect"
+	"publicinternal/buildcfg"
 	"reflect"
 	"sort"
 	"strconv"
@@ -37,41 +37,34 @@ func Flagparse(usage func()) error {
 	return flag.CommandLine.Parse(os.Args[1:])
 }
 
-// expandArgs expands "response files" arguments in the provided slice.
-//
-// A "response file" argument starts with '@' and the rest of that
-// argument is a filename with arguments. Arguments are separated by
-// whitespace, and can use single quotes (literal) or double quotes
-// (with escape sequences). Each argument in the named files can also
-// contain response file arguments. See Issue 77177.
-//
-// The returned slice 'out' aliases 'in' if the input did not contain
-// any response file arguments.
-//
-// TODO: handle relative paths of recursive expansions in different directories?
-// Is there a spec for this? Are relative paths allowed?
+// expandArgs is the legacy process-level response-file adapter.
 func expandArgs(in []string) (out []string) {
-	// out is nil until we see a "@" argument.
-	for i, s := range in {
-		if strings.HasPrefix(s, "@") {
-			if out == nil {
-				out = make([]string, 0, len(in)*2)
-				out = append(out, in[:i]...)
-			}
-			slurp, err := os.ReadFile(s[1:])
-			if err != nil {
-				log.Fatal(err)
-			}
-			args := ParseArgs(slurp)
-			out = append(out, expandArgs(args)...)
-		} else if out != nil {
-			out = append(out, s)
+	args, err := ExpandArgs(in)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return args
+}
+
+// ExpandArgs expands response-file arguments without changing process state.
+func ExpandArgs(in []string) ([]string, error) {
+	var out []string
+	for _, arg := range in {
+		if !strings.HasPrefix(arg, "@") {
+			out = append(out, arg)
+			continue
 		}
+		data, err := os.ReadFile(arg[1:])
+		if err != nil {
+			return nil, err
+		}
+		args, err := ExpandArgs(ParseArgs(data))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, args...)
 	}
-	if out == nil {
-		return in
-	}
-	return
+	return out, nil
 }
 
 // ParseArgs parses response file content into arguments using GCC-compatible rules.
@@ -199,18 +192,27 @@ func ParseArgs(s []byte) []string {
 }
 
 func AddVersionFlag() {
-	flag.Var(versionFlag{}, "V", "print version and exit")
+	AddVersionFlagTo(flag.CommandLine, os.Args[0], os.Exit)
+}
+
+// AddVersionFlagTo installs the -V flag on fs. toolName and exit are supplied
+// by the caller so command-line tools can use an isolated FlagSet.
+func AddVersionFlagTo(fs *flag.FlagSet, toolName string, exit func(int)) {
+	fs.Var(versionFlag{toolName: toolName, exit: exit}, "V", "print version and exit")
 }
 
 var buildID string // filled in by linker
 
-type versionFlag struct{}
+type versionFlag struct {
+	toolName string
+	exit     func(int)
+}
 
 func (versionFlag) IsBoolFlag() bool { return true }
 func (versionFlag) Get() any         { return nil }
 func (versionFlag) String() string   { return "" }
-func (versionFlag) Set(s string) error {
-	name := os.Args[0]
+func (v versionFlag) Set(s string) error {
+	name := v.toolName
 	name = name[strings.LastIndex(name, `/`)+1:]
 	name = name[strings.LastIndex(name, `\`)+1:]
 	name = strings.TrimSuffix(name, ".exe")
@@ -235,7 +237,7 @@ func (versionFlag) Set(s string) error {
 	}
 
 	fmt.Printf("%s version %s%s\n", name, buildcfg.Version, p)
-	os.Exit(0)
+	v.exit(0)
 	return nil
 }
 

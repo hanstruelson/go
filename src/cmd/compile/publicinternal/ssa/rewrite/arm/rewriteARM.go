@@ -2,7 +2,6 @@
 
 package arm
 
-import "publicinternal/buildcfg"
 import "cmd/compile/publicinternal/types"
 import "cmd/compile/publicinternal/ssa/block"
 import "cmd/compile/publicinternal/ssa/ssaop"
@@ -1519,7 +1518,7 @@ func rewriteValue_OpARMADDD(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (ADDD a (MULD x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULAD a x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -1529,7 +1528,7 @@ func rewriteValue_OpARMADDD(v *ssa.Value) bool {
 			}
 			y := v_1.Args[1]
 			x := v_1.Args[0]
-			if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+			if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMMULAD)
@@ -1539,7 +1538,7 @@ func rewriteValue_OpARMADDD(v *ssa.Value) bool {
 		break
 	}
 	// match: (ADDD a (NMULD x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULSD a x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -1549,7 +1548,7 @@ func rewriteValue_OpARMADDD(v *ssa.Value) bool {
 			}
 			y := v_1.Args[1]
 			x := v_1.Args[0]
-			if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+			if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMMULSD)
@@ -1564,7 +1563,7 @@ func rewriteValue_OpARMADDF(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (ADDF a (MULF x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULAF a x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -1574,7 +1573,7 @@ func rewriteValue_OpARMADDF(v *ssa.Value) bool {
 			}
 			y := v_1.Args[1]
 			x := v_1.Args[0]
-			if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+			if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMMULAF)
@@ -1584,7 +1583,7 @@ func rewriteValue_OpARMADDF(v *ssa.Value) bool {
 		break
 	}
 	// match: (ADDF a (NMULF x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULSF a x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -1594,7 +1593,7 @@ func rewriteValue_OpARMADDF(v *ssa.Value) bool {
 			}
 			y := v_1.Args[1]
 			x := v_1.Args[0]
-			if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+			if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMMULSF)
@@ -2002,12 +2001,12 @@ func rewriteValue_OpARMADDconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ADDconst [c] x)
-	// cond: buildcfg.GOARM.Version==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && uint32(-c)<=0xffff
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && uint32(-c)<=0xffff
 	// result: (SUBconst [-c] x)
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && uint32(-c) <= 0xffff) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && uint32(-c) <= 0xffff) {
 			break
 		}
 		v.Reset(ssaop.OpARMSUBconst)
@@ -2122,7 +2121,7 @@ func rewriteValue_OpARMADDshiftLL(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ADDshiftLL <typ.UInt16> [8] (SRLconst <typ.UInt16> [24] (SLLconst [16] x)) x)
-	// cond: buildcfg.GOARM.Version>=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion>=6
 	// result: (REV16 x)
 	for {
 		if v.Type != typ.UInt16 || ssa.AuxIntToInt32(v.AuxInt) != 8 || v_0.Op != ssaop.OpARMSRLconst || v_0.Type != typ.UInt16 || ssa.AuxIntToInt32(v_0.AuxInt) != 24 {
@@ -2133,7 +2132,7 @@ func rewriteValue_OpARMADDshiftLL(v *ssa.Value) bool {
 			break
 		}
 		x := v_0_0.Args[0]
-		if x != v_1 || !(buildcfg.GOARM.Version >= 6) {
+		if x != v_1 || !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMREV16)
@@ -2574,12 +2573,12 @@ func rewriteValue_OpARMANDconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ANDconst [c] x)
-	// cond: buildcfg.GOARM.Version==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && ^uint32(c)<=0xffff
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && ^uint32(c)<=0xffff
 	// result: (BICconst [int32(^uint32(c))] x)
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && ^uint32(c) <= 0xffff) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && ^uint32(c) <= 0xffff) {
 			break
 		}
 		v.Reset(ssaop.OpARMBICconst)
@@ -3075,12 +3074,12 @@ func rewriteValue_OpARMBICconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (BICconst [c] x)
-	// cond: buildcfg.GOARM.Version==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && ^uint32(c)<=0xffff
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && ^uint32(c)<=0xffff
 	// result: (ANDconst [int32(^uint32(c))] x)
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && ^uint32(c) <= 0xffff) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && ^uint32(c) <= 0xffff) {
 			break
 		}
 		v.Reset(ssaop.OpARMANDconst)
@@ -7770,7 +7769,7 @@ func rewriteValue_OpARMMULD(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (MULD (NEGD x) y)
-	// cond: buildcfg.GOARM.Version >= 6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (NMULD x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -7779,7 +7778,7 @@ func rewriteValue_OpARMMULD(v *ssa.Value) bool {
 			}
 			x := v_0.Args[0]
 			y := v_1
-			if !(buildcfg.GOARM.Version >= 6) {
+			if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMNMULD)
@@ -7794,7 +7793,7 @@ func rewriteValue_OpARMMULF(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (MULF (NEGF x) y)
-	// cond: buildcfg.GOARM.Version >= 6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (NMULF x y)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -7803,7 +7802,7 @@ func rewriteValue_OpARMMULF(v *ssa.Value) bool {
 			}
 			x := v_0.Args[0]
 			y := v_1
-			if !(buildcfg.GOARM.Version >= 6) {
+			if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 				continue
 			}
 			v.Reset(ssaop.OpARMNMULF)
@@ -8427,7 +8426,7 @@ func rewriteValue_OpARMMVNshiftRLreg(v *ssa.Value) bool {
 func rewriteValue_OpARMNEGD(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	// match: (NEGD (MULD x y))
-	// cond: buildcfg.GOARM.Version >= 6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (NMULD x y)
 	for {
 		if v_0.Op != ssaop.OpARMMULD {
@@ -8435,7 +8434,7 @@ func rewriteValue_OpARMNEGD(v *ssa.Value) bool {
 		}
 		y := v_0.Args[1]
 		x := v_0.Args[0]
-		if !(buildcfg.GOARM.Version >= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMNMULD)
@@ -8447,7 +8446,7 @@ func rewriteValue_OpARMNEGD(v *ssa.Value) bool {
 func rewriteValue_OpARMNEGF(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	// match: (NEGF (MULF x y))
-	// cond: buildcfg.GOARM.Version >= 6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (NMULF x y)
 	for {
 		if v_0.Op != ssaop.OpARMMULF {
@@ -8455,7 +8454,7 @@ func rewriteValue_OpARMNEGF(v *ssa.Value) bool {
 		}
 		y := v_0.Args[1]
 		x := v_0.Args[0]
-		if !(buildcfg.GOARM.Version >= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMNMULF)
@@ -8763,7 +8762,7 @@ func rewriteValue_OpARMORshiftLL(v *ssa.Value) bool {
 		return true
 	}
 	// match: (ORshiftLL <typ.UInt16> [8] (SRLconst <typ.UInt16> [24] (SLLconst [16] x)) x)
-	// cond: buildcfg.GOARM.Version>=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion>=6
 	// result: (REV16 x)
 	for {
 		if v.Type != typ.UInt16 || ssa.AuxIntToInt32(v.AuxInt) != 8 || v_0.Op != ssaop.OpARMSRLconst || v_0.Type != typ.UInt16 || ssa.AuxIntToInt32(v_0.AuxInt) != 24 {
@@ -8774,7 +8773,7 @@ func rewriteValue_OpARMORshiftLL(v *ssa.Value) bool {
 			break
 		}
 		x := v_0_0.Args[0]
-		if x != v_1 || !(buildcfg.GOARM.Version >= 6) {
+		if x != v_1 || !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMREV16)
@@ -9228,7 +9227,7 @@ func rewriteValue_OpARMRSB(v *ssa.Value) bool {
 		return true
 	}
 	// match: (RSB (MUL x y) a)
-	// cond: buildcfg.GOARM.Version == 7
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7
 	// result: (MULS x y a)
 	for {
 		if v_0.Op != ssaop.OpARMMUL {
@@ -9237,7 +9236,7 @@ func rewriteValue_OpARMRSB(v *ssa.Value) bool {
 		y := v_0.Args[1]
 		x := v_0.Args[0]
 		a := v_1
-		if !(buildcfg.GOARM.Version == 7) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULS)
@@ -10714,7 +10713,7 @@ func rewriteValue_OpARMSRAconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SRAconst (SLLconst x [c]) [d])
-	// cond: buildcfg.GOARM.Version==7 && uint64(d)>=uint64(c) && uint64(d)<=31
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && uint64(d)>=uint64(c) && uint64(d)<=31
 	// result: (BFX [(d-c)|(32-d)<<8] x)
 	for {
 		d := ssa.AuxIntToInt32(v.AuxInt)
@@ -10723,7 +10722,7 @@ func rewriteValue_OpARMSRAconst(v *ssa.Value) bool {
 		}
 		c := ssa.AuxIntToInt32(v_0.AuxInt)
 		x := v_0.Args[0]
-		if !(buildcfg.GOARM.Version == 7 && uint64(d) >= uint64(c) && uint64(d) <= 31) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && uint64(d) >= uint64(c) && uint64(d) <= 31) {
 			break
 		}
 		v.Reset(ssaop.OpARMBFX)
@@ -10770,7 +10769,7 @@ func rewriteValue_OpARMSRLconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SRLconst (SLLconst x [c]) [d])
-	// cond: buildcfg.GOARM.Version==7 && uint64(d)>=uint64(c) && uint64(d)<=31
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && uint64(d)>=uint64(c) && uint64(d)<=31
 	// result: (BFXU [(d-c)|(32-d)<<8] x)
 	for {
 		d := ssa.AuxIntToInt32(v.AuxInt)
@@ -10779,7 +10778,7 @@ func rewriteValue_OpARMSRLconst(v *ssa.Value) bool {
 		}
 		c := ssa.AuxIntToInt32(v_0.AuxInt)
 		x := v_0.Args[0]
-		if !(buildcfg.GOARM.Version == 7 && uint64(d) >= uint64(c) && uint64(d) <= 31) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && uint64(d) >= uint64(c) && uint64(d) <= 31) {
 			break
 		}
 		v.Reset(ssaop.OpARMBFXU)
@@ -11010,7 +11009,7 @@ func rewriteValue_OpARMSUB(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SUB a (MUL x y))
-	// cond: buildcfg.GOARM.Version == 7
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7
 	// result: (MULS x y a)
 	for {
 		a := v_0
@@ -11019,7 +11018,7 @@ func rewriteValue_OpARMSUB(v *ssa.Value) bool {
 		}
 		y := v_1.Args[1]
 		x := v_1.Args[0]
-		if !(buildcfg.GOARM.Version == 7) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULS)
@@ -11032,7 +11031,7 @@ func rewriteValue_OpARMSUBD(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SUBD a (MULD x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULSD a x y)
 	for {
 		a := v_0
@@ -11041,7 +11040,7 @@ func rewriteValue_OpARMSUBD(v *ssa.Value) bool {
 		}
 		y := v_1.Args[1]
 		x := v_1.Args[0]
-		if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+		if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULSD)
@@ -11049,7 +11048,7 @@ func rewriteValue_OpARMSUBD(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SUBD a (NMULD x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULAD a x y)
 	for {
 		a := v_0
@@ -11058,7 +11057,7 @@ func rewriteValue_OpARMSUBD(v *ssa.Value) bool {
 		}
 		y := v_1.Args[1]
 		x := v_1.Args[0]
-		if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+		if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULAD)
@@ -11071,7 +11070,7 @@ func rewriteValue_OpARMSUBF(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SUBF a (MULF x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULSF a x y)
 	for {
 		a := v_0
@@ -11080,7 +11079,7 @@ func rewriteValue_OpARMSUBF(v *ssa.Value) bool {
 		}
 		y := v_1.Args[1]
 		x := v_1.Args[0]
-		if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+		if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULSF)
@@ -11088,7 +11087,7 @@ func rewriteValue_OpARMSUBF(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SUBF a (NMULF x y))
-	// cond: a.Uses == 1 && buildcfg.GOARM.Version >= 6
+	// cond: a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6
 	// result: (MULAF a x y)
 	for {
 		a := v_0
@@ -11097,7 +11096,7 @@ func rewriteValue_OpARMSUBF(v *ssa.Value) bool {
 		}
 		y := v_1.Args[1]
 		x := v_1.Args[0]
-		if !(a.Uses == 1 && buildcfg.GOARM.Version >= 6) {
+		if !(a.Uses == 1 && v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMMULAF)
@@ -11563,12 +11562,12 @@ func rewriteValue_OpARMSUBconst(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SUBconst [c] x)
-	// cond: buildcfg.GOARM.Version==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && uint32(-c)<=0xffff
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7 && !isARMImmRot(uint32(c)) && uint32(c)>0xffff && uint32(-c)<=0xffff
 	// result: (ADDconst [-c] x)
 	for {
 		c := ssa.AuxIntToInt32(v.AuxInt)
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && uint32(-c) <= 0xffff) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7 && !isARMImmRot(uint32(c)) && uint32(c) > 0xffff && uint32(-c) <= 0xffff) {
 			break
 		}
 		v.Reset(ssaop.OpARMADDconst)
@@ -12890,7 +12889,7 @@ func rewriteValue_OpARMXORshiftLL(v *ssa.Value) bool {
 		return true
 	}
 	// match: (XORshiftLL <typ.UInt16> [8] (SRLconst <typ.UInt16> [24] (SLLconst [16] x)) x)
-	// cond: buildcfg.GOARM.Version>=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion>=6
 	// result: (REV16 x)
 	for {
 		if v.Type != typ.UInt16 || ssa.AuxIntToInt32(v.AuxInt) != 8 || v_0.Op != ssaop.OpARMSRLconst || v_0.Type != typ.UInt16 || ssa.AuxIntToInt32(v_0.AuxInt) != 24 {
@@ -12901,7 +12900,7 @@ func rewriteValue_OpARMXORshiftLL(v *ssa.Value) bool {
 			break
 		}
 		x := v_0_0.Args[0]
-		if x != v_1 || !(buildcfg.GOARM.Version >= 6) {
+		if x != v_1 || !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMREV16)
@@ -13272,12 +13271,12 @@ func rewriteValue_OpBswap32(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	b := v.Block
 	// match: (Bswap32 <t> x)
-	// cond: buildcfg.GOARM.Version==5
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==5
 	// result: (XOR <t> (SRLconst <t> (BICconst <t> (XOR <t> x (SRRconst <t> [16] x)) [0xff0000]) [8]) (SRRconst <t> x [8]))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version == 5) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 5) {
 			break
 		}
 		v.Reset(ssaop.OpARMXOR)
@@ -13300,11 +13299,11 @@ func rewriteValue_OpBswap32(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Bswap32 x)
-	// cond: buildcfg.GOARM.Version>=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion>=6
 	// result: (REV x)
 	for {
 		x := v_0
-		if !(buildcfg.GOARM.Version >= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion >= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMREV)
@@ -13387,12 +13386,12 @@ func rewriteValue_OpCtz16(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Ctz16 <t> x)
-	// cond: buildcfg.GOARM.Version<=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion<=6
 	// result: (RSBconst [32] (CLZ <t> (SUBconst <typ.UInt32> (AND <typ.UInt32> (ORconst <typ.UInt32> [0x10000] x) (RSBconst <typ.UInt32> [0] (ORconst <typ.UInt32> [0x10000] x))) [1])))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version <= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion <= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMRSBconst)
@@ -13414,12 +13413,12 @@ func rewriteValue_OpCtz16(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Ctz16 <t> x)
-	// cond: buildcfg.GOARM.Version==7
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7
 	// result: (CLZ <t> (RBIT <typ.UInt32> (ORconst <typ.UInt32> [0x10000] x)))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7) {
 			break
 		}
 		v.Reset(ssaop.OpARMCLZ)
@@ -13438,12 +13437,12 @@ func rewriteValue_OpCtz32(v *ssa.Value) bool {
 	v_0 := v.Args[0]
 	b := v.Block
 	// match: (Ctz32 <t> x)
-	// cond: buildcfg.GOARM.Version<=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion<=6
 	// result: (RSBconst [32] (CLZ <t> (SUBconst <t> (AND <t> x (RSBconst <t> [0] x)) [1])))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version <= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion <= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMRSBconst)
@@ -13462,12 +13461,12 @@ func rewriteValue_OpCtz32(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Ctz32 <t> x)
-	// cond: buildcfg.GOARM.Version==7
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7
 	// result: (CLZ <t> (RBIT <t> x))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7) {
 			break
 		}
 		v.Reset(ssaop.OpARMCLZ)
@@ -13484,12 +13483,12 @@ func rewriteValue_OpCtz8(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (Ctz8 <t> x)
-	// cond: buildcfg.GOARM.Version<=6
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion<=6
 	// result: (RSBconst [32] (CLZ <t> (SUBconst <typ.UInt32> (AND <typ.UInt32> (ORconst <typ.UInt32> [0x100] x) (RSBconst <typ.UInt32> [0] (ORconst <typ.UInt32> [0x100] x))) [1])))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version <= 6) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion <= 6) {
 			break
 		}
 		v.Reset(ssaop.OpARMRSBconst)
@@ -13511,12 +13510,12 @@ func rewriteValue_OpCtz8(v *ssa.Value) bool {
 		return true
 	}
 	// match: (Ctz8 <t> x)
-	// cond: buildcfg.GOARM.Version==7
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOARMVersion==7
 	// result: (CLZ <t> (RBIT <typ.UInt32> (ORconst <typ.UInt32> [0x100] x)))
 	for {
 		t := v.Type
 		x := v_0
-		if !(buildcfg.GOARM.Version == 7) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOARMVersion == 7) {
 			break
 		}
 		v.Reset(ssaop.OpARMCLZ)

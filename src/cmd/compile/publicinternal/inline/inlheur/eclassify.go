@@ -68,6 +68,7 @@ func ShouldFoldIfNameConstant(n ir.Node, names []*ir.Name) bool {
 // "name" is the name node passed in, and "disposition" stores the
 // result of classifying a given IR node.
 type exprClassifier struct {
+	target      *ir.Package
 	names       map[*ir.Name]bool
 	disposition map[ir.Node]disp
 }
@@ -100,10 +101,15 @@ func (d disp) String() string {
 
 func makeExprClassifier(names []*ir.Name) *exprClassifier {
 	m := make(map[*ir.Name]bool, len(names))
+	var target *ir.Package
 	for _, n := range names {
 		m[n] = false
+		if target == nil && n.Curfn != nil {
+			target = n.Curfn.Target
+		}
 	}
 	return &exprClassifier{
+		target:      target,
 		names:       m,
 		disposition: make(map[ir.Node]disp),
 	}
@@ -128,7 +134,7 @@ func (ec *exprClassifier) Visit(n ir.Node) {
 
 	t := n.Type()
 	if t == nil {
-		if debugTrace&debugTraceExprClassify != 0 {
+		if debugTraceFor(ec.target)&debugTraceExprClassify != 0 {
 			fmt.Fprintf(os.Stderr, "=-= *** untyped op=%s\n",
 				n.Op().String())
 		}
@@ -176,7 +182,7 @@ func (ec *exprClassifier) Visit(n ir.Node) {
 			// compare ops
 			x, y := binparts(n)
 			ndisp = ec.dispmeet(x, y)
-			if debugTrace&debugTraceExprClassify != 0 {
+			if debugTraceFor(ec.target)&debugTraceExprClassify != 0 {
 				fmt.Fprintf(os.Stderr, "=-= meet(%s,%s) = %s for op=%s\n",
 					ec.getdisp(x), ec.getdisp(y), ec.dispmeet(x, y),
 					n.Op().String())
@@ -200,7 +206,7 @@ func (ec *exprClassifier) Visit(n ir.Node) {
 			ir.OANDAND,
 			ir.OOROR:
 			x, y := binparts(n)
-			if debugTrace&debugTraceExprClassify != 0 {
+			if debugTraceFor(ec.target)&debugTraceExprClassify != 0 {
 				fmt.Fprintf(os.Stderr, "=-= meet(%s,%s) = %s for op=%s\n",
 					ec.getdisp(x), ec.getdisp(y), ec.dispmeet(x, y),
 					n.Op().String())
@@ -209,7 +215,7 @@ func (ec *exprClassifier) Visit(n ir.Node) {
 		}
 	}
 
-	if debugTrace&debugTraceExprClassify != 0 {
+	if debugTraceFor(ec.target)&debugTraceExprClassify != 0 {
 		fmt.Fprintf(os.Stderr, "=-= op=%s disp=%v\n", n.Op().String(),
 			ndisp.String())
 	}

@@ -130,7 +130,7 @@ func (ra *resultsAnalyzer) nodeVisitPost(n ir.Node) {
 	if n.Op() != ir.ORETURN {
 		return
 	}
-	if debugTrace&debugTraceResults != 0 {
+	if debugTraceFor(ra.ctx.Target)&debugTraceResults != 0 {
 		fmt.Fprintf(os.Stderr, "=+= returns nodevis %v %s\n",
 			ir.LineFor(ra.ctx.Target, n), n.Op().String())
 	}
@@ -168,7 +168,7 @@ func (ra *resultsAnalyzer) analyzeResult(ii int, n ir.Node) {
 	var newcval constant.Value
 	var newfunc *ir.Name
 
-	if debugTrace&debugTraceResults != 0 {
+	if debugTraceFor(ra.ctx.Target)&debugTraceResults != 0 {
 		fmt.Fprintf(os.Stderr, "=-= %v: analyzeResult n=%s ismem=%v isconcconv=%v isconst=%v isnil=%v isfunc=%v isclo=%v\n", ir.LineFor(ra.ctx.Target, n), n.Op().String(), isAllocMem, isConcConvItf, isConst, isNil, isFunc, isClo)
 	}
 
@@ -230,7 +230,7 @@ func (ra *resultsAnalyzer) analyzeResult(ii int, n ir.Node) {
 	ra.values[ii].cval = newcval
 	ra.props[ii] = newp
 
-	if debugTrace&debugTraceResults != 0 {
+	if debugTraceFor(ra.ctx.Target)&debugTraceResults != 0 {
 		fmt.Fprintf(os.Stderr, "=-= %v: analyzeResult newp=%s\n",
 			ir.LineFor(ra.ctx.Target, n), newp)
 	}

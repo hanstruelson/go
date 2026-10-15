@@ -12,15 +12,13 @@ import (
 	"strconv"
 )
 
-var debugTrace = 0
-
-func enableDebugTrace(x int) {
-	debugTrace = x
-}
-
 func enableDebugTraceIfEnv(target *ir.Package) {
+	if target == nil || !target.LegacyEnvironment {
+		return
+	}
 	v := os.Getenv("DEBUG_TRACE_INLHEUR")
 	if v == "" {
+		target.InlineHeuristicsDebugTrace = 0
 		return
 	}
 	if v[0] == '*' {
@@ -33,9 +31,18 @@ func enableDebugTraceIfEnv(target *ir.Package) {
 	if err != nil {
 		return
 	}
-	debugTrace = i
+	target.InlineHeuristicsDebugTrace = i
 }
 
-func disableDebugTrace() {
-	debugTrace = 0
+func disableDebugTrace(target *ir.Package) {
+	if target != nil {
+		target.InlineHeuristicsDebugTrace = 0
+	}
+}
+
+func debugTraceFor(target *ir.Package) int {
+	if target == nil {
+		return 0
+	}
+	return target.InlineHeuristicsDebugTrace
 }

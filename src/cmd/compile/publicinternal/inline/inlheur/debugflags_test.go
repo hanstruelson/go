@@ -48,7 +48,7 @@ func TestInlScoreAdjFlagParse(t *testing.T) {
 	}
 
 	for _, scenario := range scenarios {
-		err := parseScoreAdj(scenario.value)
+		err := parseScoreAdj(NewContext(nil), scenario.value)
 		t.Logf("for value=%q err is %v\n", scenario.value, err)
 		if scenario.expok {
 			if err != nil {

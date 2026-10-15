@@ -38,7 +38,7 @@ func mkstruct(fieldtypes ...*types.Type) *types.Type {
 		f := types.NewField(src.NoXPos, nil, t)
 		fields[k] = f
 	}
-	s := types.NewStruct(fields)
+	s := types.NewStructIn(testTarget.TypeContext, fields)
 	return s
 }
 
@@ -56,7 +56,7 @@ func mkFuncType(rcvr *types.Type, ins []*types.Type, outs []*types.Type) *types.
 	if rcvr != nil {
 		rf = mkParamResultField(rcvr, q, ir.PPARAM)
 	}
-	return types.NewSignature(rf, inf, outf)
+	return types.NewSignatureIn(testTarget.TypeContext, rf, inf, outf)
 }
 
 type expectedDump struct {

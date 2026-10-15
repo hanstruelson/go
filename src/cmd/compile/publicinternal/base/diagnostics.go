@@ -25,6 +25,7 @@ import (
 type Diagnostics struct {
 	mu      sync.Mutex
 	flushMu sync.Mutex
+	bugStack *counter.StackCounter
 
 	Ctxt  *obj.Link
 	Flags CmdFlags
@@ -43,7 +44,23 @@ type Diagnostics struct {
 	}
 }
 
-var diagnosticsBugStack = counter.NewStack("compile/bug", 16)
+// ExitError is raised instead of terminating the process by an embedded
+// compiler request when diagnostics abort the compilation.
+type ExitError int
+
+func (e ExitError) Error() string { return "compiler exited" }
+
+type errorMsg struct {
+	pos  src.XPos
+	msg  string
+	code errors.Code
+}
+
+type byPos []errorMsg
+
+func (x byPos) Len() int           { return len(x) }
+func (x byPos) Less(i, j int) bool { return x[i].pos.Before(x[j].pos) }
+func (x byPos) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
 
 // NewDiagnostics creates a fresh diagnostic context writing to out. A nil
 // writer selects os.Stdout.
@@ -51,7 +68,7 @@ func NewDiagnostics(out io.Writer) *Diagnostics {
 	if out == nil {
 		out = os.Stdout
 	}
-	return &Diagnostics{Out: out}
+	return &Diagnostics{Out: out, bugStack: counter.NewStack("compile/bug", 16)}
 }
 
 // Configure associates diagnostics with the output and options for one target.
@@ -83,6 +100,19 @@ func (d *Diagnostics) SyntaxErrors() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.numSyntaxErrors
+}
+
+// Printf writes target-local compiler output without using process-global
+// standard streams. It is safe for concurrent compiler workers.
+func (d *Diagnostics) Printf(format string, args ...any) {
+	if d == nil {
+		return
+	}
+	d.flushMu.Lock()
+	defer d.flushMu.Unlock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	fmt.Fprintf(d.writer(), format, args...)
 }
 
 func (d *Diagnostics) FmtPos(pos src.XPos) string {
@@ -195,7 +225,7 @@ func (d *Diagnostics) FlushErrors() {
 // FatalfAt reports an internal compiler error and aborts this compilation.
 func (d *Diagnostics) FatalfAt(pos src.XPos, format string, args ...any) {
 	d.FlushErrors()
-	diagnosticsBugStack.Inc()
+	d.bugStack.Inc()
 	if d.Debug.Panic != 0 || d.Errors() == 0 {
 		fmt.Fprintf(d.writer(), "%v: internal compiler error: ", d.FmtPos(pos))
 		fmt.Fprintf(d.writer(), format, args...)

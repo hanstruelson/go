@@ -61,7 +61,7 @@ recheck:
 		GoVersion:          compileCtx.Target.Flags.Lang,
 		IgnoreBranchErrors: true, // parser already checked via syntax.CheckBranches mode
 		Importer:           &importer,
-		Sizes:              types2.SizesFor("gc", buildcfg.GOARCH),
+		Sizes:              types2.SizesFor("gc", compileCtx.Target.Ctxt.Arch.Name),
 	}
 	if compileCtx.Target.Flags.ErrorURL {
 		conf.ErrorURL = " [go.dev/e/%s]"

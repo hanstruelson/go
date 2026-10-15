@@ -156,7 +156,7 @@ func (ffa *funcFlagsAnalyzer) stateForList(list ir.Nodes) pstate {
 	for i := len(list) - 1; i >= 0; i-- {
 		n := list[i]
 		psi := ffa.getState(n)
-		if debugTrace&debugTraceFuncFlags != 0 {
+		if debugTraceFor(ffa.ctx.Target)&debugTraceFuncFlags != 0 {
 			fmt.Fprintf(os.Stderr, "=-= %v: stateForList n=%s ps=%s\n",
 				ir.LineFor(ffa.fn.Target, n), n.Op().String(), psi.String())
 		}
@@ -223,7 +223,7 @@ func shouldVisit(n ir.Node) bool {
 // called on a given node, it decides the disposition of that node
 // based on the state(s) of the node's children.
 func (ffa *funcFlagsAnalyzer) nodeVisitPost(n ir.Node) {
-	if debugTrace&debugTraceFuncFlags != 0 {
+	if debugTraceFor(ffa.ctx.Target)&debugTraceFuncFlags != 0 {
 		fmt.Fprintf(os.Stderr, "=+= nodevis %v %s should=%v\n",
 			ir.LineFor(ffa.fn.Target, n), n.Op().String(), shouldVisit(n))
 	}
@@ -346,7 +346,7 @@ func (ffa *funcFlagsAnalyzer) nodeVisitPost(n ir.Node) {
 		ffa.fn.Target.Diagnostics.Fatalf("%v: unhandled op %s in func %v",
 			ir.LineFor(ffa.fn.Target, n), n.Op().String(), ir.FuncName(ffa.fn))
 	}
-	if debugTrace&debugTraceFuncFlags != 0 {
+	if debugTraceFor(ffa.ctx.Target)&debugTraceFuncFlags != 0 {
 		fmt.Fprintf(os.Stderr, "=-= %v: visit n=%s returns %s\n",
 			ir.LineFor(ffa.fn.Target, n), n.Op().String(), st.String())
 	}

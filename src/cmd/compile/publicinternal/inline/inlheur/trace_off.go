@@ -8,13 +8,12 @@ package inlheur
 
 import "cmd/compile/publicinternal/ir"
 
-const debugTrace = 0
-
-func enableDebugTrace(x int) {
-}
-
 func enableDebugTraceIfEnv(target *ir.Package) {
 }
 
-func disableDebugTrace() {
+func disableDebugTrace(target *ir.Package) {
+}
+
+func debugTraceFor(target *ir.Package) int {
+	return 0
 }

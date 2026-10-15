@@ -56,13 +56,15 @@ func (c *Context) DumpInline(fn *ir.Func) {
 	}
 }
 
-func InitEnv(c *Context, target *ir.Package) {
+func InitEnv(c *Context, target *ir.Package, allowEnvironment bool) {
 	c.target = target
-	c.ssaDump = os.Getenv("GOSSAFUNC")
+	c.ssaDir = target.SSADumpDir
+	if allowEnvironment {
+		c.ssaDump = os.Getenv("GOSSAFUNC")
+	}
 	if c.ssaDump == "" {
 		c.ssaDump = target.Debug.Html
 	}
-	c.ssaDir = os.Getenv("GOSSADIR")
 	if c.ssaDump != "" {
 		if strings.HasSuffix(c.ssaDump, "+") {
 			c.ssaDump = c.ssaDump[:len(c.ssaDump)-1]
@@ -4313,7 +4315,7 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 			case sys.AMD64, sys.ARM64, sys.Loong64, sys.RISCV64:
 				hasIntrinsic = true
 			case sys.PPC64:
-				hasIntrinsic = buildcfg.GOPPC64 >= 9
+				hasIntrinsic = s.curfn.Target.ArchFeatures.GOPPC64 >= 9
 			case sys.S390X:
 				// FIXME: add check once GOS390X exists
 			}
@@ -4367,7 +4369,7 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 	}
 
 	if typ.IsInteger() {
-		if ArchInfoFor(s.curfn.Target).LinkArch.Family == sys.RISCV64 && buildcfg.GORISCV64 >= 22 && typ.Size() == 8 {
+		if ArchInfoFor(s.curfn.Target).LinkArch.Family == sys.RISCV64 && s.curfn.Target.ArchFeatures.GORISCV64 >= 22 && typ.Size() == 8 {
 			var op ssaop.Op
 			switch {
 			case typ.IsSigned() && n.Op() == ir.OMIN:
@@ -5257,7 +5259,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 // maybeNilCheckClosure checks if a nil check of a closure is needed in some
 // architecture-dependent situations and, if so, emits the nil check.
 func (s *state) maybeNilCheckClosure(closure *ssa.Value, k callKind) {
-	if ArchInfoFor(s.curfn.Target).LinkArch.Family == sys.Wasm || buildcfg.GOOS == "aix" && k != callGo {
+	if ArchInfoFor(s.curfn.Target).LinkArch.Family == sys.Wasm || s.curfn.Target.GOOS == "aix" && k != callGo {
 		// On AIX, the closure needs to be verified as fn can be nil, except if it's a call go. This needs to be handled by the runtime to have the "go of nil func value" error.
 		// TODO(neelance): On other architectures this should be eliminated by the optimization steps
 		s.nilCheck(closure)
@@ -8080,7 +8082,7 @@ func (e *ssafn) SplitSlot(parent *ssa.LocalSlot, suffix string, offset int64, t 
 // Logf logs a message from the compiler.
 func (e *ssafn) Logf(msg string, args ...any) {
 	if e.log {
-		fmt.Printf(msg, args...)
+		e.curfn.Target.Diagnostics.Printf(msg, args...)
 	}
 }
 

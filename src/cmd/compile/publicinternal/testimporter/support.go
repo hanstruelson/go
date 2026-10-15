@@ -7,14 +7,15 @@
 package testimporter
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types2"
 	"go/token"
 	"publicinternal/pkgbits"
 )
 
 func assert(p bool) {
-	base.Assert(p)
+	if !p {
+		panic("test importer invariant violated")
+	}
 }
 
 const deltaNewFile = -64 // see cmd/compile/publicinternal/gc/bexport.go

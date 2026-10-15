@@ -5,7 +5,6 @@
 package ssacompile
 
 import (
-	"fmt"
 	"math"
 
 	"cmd/compile/publicinternal/ssa"
@@ -20,7 +19,7 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 	pendingLines.Clear()
 	debug := f.Pass.Debug
 	if debug > 1 {
-		fmt.Printf("%s: rewriting for %s\n", f.Pass.Name, f.Name)
+		f.Config.Target.Diagnostics.Printf("%s: rewriting for %s\n", f.Pass.Name, f.Name)
 	}
 	// if the number of rewrite iterations reaches itersLimit we will
 	// at that point turn on cycle detection. Instead of a fixed limit,
@@ -31,14 +30,14 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 	var states map[string]bool
 	for {
 		if debug > 1 {
-			fmt.Printf("%s: iter %d\n", f.Pass.Name, iters)
+			f.Config.Target.Diagnostics.Printf("%s: iter %d\n", f.Pass.Name, iters)
 		}
 		change := false
 		deadChange := false
 		for _, b := range f.Blocks {
 			var b0 *ssa.Block
 			if debug > 1 {
-				fmt.Printf("%s: start block\n", f.Pass.Name)
+				f.Config.Target.Diagnostics.Printf("%s: start block\n", f.Pass.Name)
 				b0 = new(ssa.Block)
 				*b0 = *b
 				b0.Succs = append([]ssa.Edge{}, b.Succs...) // make a new copy, not aliasing
@@ -52,12 +51,12 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 			if rb(b) {
 				change = true
 				if debug > 1 {
-					fmt.Printf("rewriting %s  ->  %s\n", b0.LongString(), b.LongString())
+					f.Config.Target.Diagnostics.Printf("rewriting %s  ->  %s\n", b0.LongString(), b.LongString())
 				}
 			}
 			for j, v := range b.Values {
 				if debug > 1 {
-					fmt.Printf("%s: consider %v\n", f.Pass.Name, v.LongString())
+					f.Config.Target.Diagnostics.Printf("%s: consider %v\n", f.Pass.Name, v.LongString())
 				}
 				var v0 *ssa.Value
 				if debug > 1 {
@@ -80,7 +79,7 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 
 				vchange := ssa.PhiElimValue(v)
 				if vchange && debug > 1 {
-					fmt.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
+					f.Config.Target.Diagnostics.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
 				}
 
 				// Eliminate copy inputs.
@@ -123,7 +122,7 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 					}
 				}
 				if vchange && debug > 1 {
-					fmt.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
+					f.Config.Target.Diagnostics.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
 				}
 
 				// apply rewrite function
@@ -140,7 +139,7 @@ func applyRewrite(f *ssa.Func, rb ssa.BlockRewriter, rv ssa.ValueRewriter, deadc
 
 				change = change || vchange
 				if vchange && debug > 1 {
-					fmt.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
+					f.Config.Target.Diagnostics.Printf("rewriting %s  ->  %s\n", v0.LongString(), v.LongString())
 				}
 			}
 		}

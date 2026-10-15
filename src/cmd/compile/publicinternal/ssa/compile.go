@@ -57,7 +57,7 @@ func (f *Func) DumpFileForPhase(phaseName string) io.WriteCloser {
 	fname = strings.ReplaceAll(fname, "/", "_")
 	fname = strings.ReplaceAll(fname, ":", "_")
 
-	if ssaDir := os.Getenv("GOSSADIR"); ssaDir != "" {
+	if ssaDir := f.Config.Target.SSADumpDir; ssaDir != "" {
 		fname = filepath.Join(ssaDir, fname)
 	}
 

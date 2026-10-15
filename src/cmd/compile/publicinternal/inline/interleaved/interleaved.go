@@ -55,7 +55,7 @@ func DevirtualizeAndInlinePackage(pkg *ir.Package, profile *pgoir.Profile, inlin
 	for _, fn := range pkg.Funcs {
 		bigCaller := pkg.Flags.LowerL != 0 && inline.IsBigFunc(fn)
 		if bigCaller && pkg.Flags.LowerM > 1 {
-			fmt.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.LineFor(fn.Target, fn), fn)
+			fn.Target.Diagnostics.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.LineFor(fn.Target, fn), fn)
 		}
 
 		s := &inlClosureState{bigCaller: bigCaller, profile: profile, inliner: inliner, inlineCall: inlineCall, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: calleeUseCounts}
@@ -165,7 +165,7 @@ func DevirtualizeAndInlineFunc(fn *ir.Func, profile *pgoir.Profile, inliner *inl
 
 		bigCaller := fn.Target.Flags.LowerL != 0 && inline.IsBigFunc(fn)
 		if bigCaller && fn.Target.Flags.LowerM > 1 {
-			fmt.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.LineFor(fn.Target, fn), fn)
+			fn.Target.Diagnostics.Printf("%v: function %v considered 'big'; reducing max cost of inlinees\n", ir.LineFor(fn.Target, fn), fn)
 		}
 
 		s := &inlClosureState{bigCaller: bigCaller, profile: profile, inliner: inliner, inlineCall: inlineCall, fn: fn, callSites: make(map[*ir.ParenExpr]bool), useCounts: make(map[*ir.Func]int)}

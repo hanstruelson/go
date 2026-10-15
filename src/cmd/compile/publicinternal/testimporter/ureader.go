@@ -6,12 +6,11 @@ package testimporter
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
-	"cmd/publicinternal/src"
 	"publicinternal/pkgbits"
 )
 
@@ -250,8 +249,7 @@ func (pr *pkgReader) typIdx(info typeInfo, dict *readerDict) types2.Type {
 func (r *reader) doTyp() (res types2.Type) {
 	switch tag := pkgbits.CodeType(r.Code(pkgbits.SyncType)); tag {
 	default:
-		base.FatalfAt(src.NoXPos, "unhandled type tag: %v", tag)
-		panic("unreachable")
+		panic(fmt.Sprintf("unhandled type tag: %v", tag))
 
 	case pkgbits.TypeBasic:
 		return types2.Typ[r.Len()]
@@ -411,7 +409,9 @@ func (pr *pkgReader) objIdx(idx pkgbits.Index) (*types2.Package, string) {
 	}
 
 	if tag == pkgbits.ObjStub {
-		base.Assertf(objPkg == nil || objPkg == types2.Unsafe, "unexpected stub package: %v", objPkg)
+		if objPkg != nil && objPkg != types2.Unsafe {
+			panic(fmt.Sprintf("unexpected stub package: %v", objPkg))
+		}
 		return objPkg, objName
 	}
 
@@ -543,7 +543,7 @@ func (pr *pkgReader) objDictIdx(idx pkgbits.Index) *readerDict {
 		r := pr.tempReader(pkgbits.SectionObjDict, idx, pkgbits.SyncObject1)
 
 		if implicits := r.Len(); implicits != 0 {
-			base.Fatalf("unexpected object with %v implicit type parameter(s)", implicits)
+			panic(fmt.Sprintf("unexpected object with %v implicit type parameter(s)", implicits))
 		}
 
 		nreceivers := 0

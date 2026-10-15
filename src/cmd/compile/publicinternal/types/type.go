@@ -94,38 +94,15 @@ const (
 	Cboth ChanDir = Crecv | Csend
 )
 
-// Types stores pointers to predeclared named types.
-//
-// It also stores pointers to several special types:
-//   - Types[TANY] is the placeholder "any" type recognized by SubstArgTypes.
-//   - Types[TBLANK] represents the blank variable's type.
-//   - Types[TINTER] is the canonical "interface{}" type.
-//   - Types[TNIL] represents the predeclared "nil" value's type.
-//   - Types[TUNSAFEPTR] is package unsafe's Pointer type.
-var Types [NTYPE]*Type
-
 var (
-	// Predeclared alias types. These are actually created as distinct
-	// defined types for better error messages, but are then specially
-	// treated as identical to their respective underlying types.
-	AnyType  *Type
-	ByteType *Type
-	RuneType *Type
-
-	// Predeclared error interface type.
-	ErrorType *Type
-	// Predeclared comparable interface type.
-	ComparableType *Type
-
-	// Types to represent untyped string and boolean constants.
-	UntypedString = newType(TSTRING)
-	UntypedBool   = newType(TBOOL)
-
-	// Types to represent untyped numeric constants.
-	UntypedInt     = newType(TIDEAL)
-	UntypedRune    = newType(TIDEAL)
-	UntypedFloat   = newType(TIDEAL)
-	UntypedComplex = newType(TIDEAL)
+	// Context-free sentinels for untyped constants. They contain no target
+	// layout or mutable invocation state.
+	UntypedString  = newContextlessType(TSTRING)
+	UntypedBool    = newContextlessType(TBOOL)
+	UntypedInt     = newContextlessType(TIDEAL)
+	UntypedRune    = newContextlessType(TIDEAL)
+	UntypedFloat   = newContextlessType(TIDEAL)
+	UntypedComplex = newContextlessType(TIDEAL)
 )
 
 // UntypedTypes maps from a constant.Kind to its untyped Type
@@ -492,11 +469,18 @@ func (f *fields) Set(s []*Field) {
 }
 
 // newType returns a new Type of the specified kind.
-func newType(et Kind) *Type {
-	return newTypeIn(defaultContext, et)
+func newTypeIn(context *Context, et Kind) *Type {
+	if context == nil {
+		panic("new type requires a compilation context")
+	}
+	return newTypeRaw(context, et)
 }
 
-func newTypeIn(context *Context, et Kind) *Type {
+func newContextlessType(et Kind) *Type {
+	return newTypeRaw(nil, et)
+}
+
+func newTypeRaw(context *Context, et Kind) *Type {
 	t := &Type{
 		context: context,
 		kind:    et,
@@ -583,7 +567,7 @@ func NewChan(elem *Type, dir ChanDir) *Type {
 }
 
 func NewTuple(t1, t2 *Type) *Type {
-	t := newTypeIn(contextForType(t1), TTUPLE)
+	t := newTypeIn(contextForTypes([]*Type{t1, t2}), TTUPLE)
 	t.extra.(*Tuple).first = t1
 	t.extra.(*Tuple).second = t2
 	if t1.HasShape() || t2.HasShape() {
@@ -592,11 +576,7 @@ func NewTuple(t1, t2 *Type) *Type {
 	return t
 }
 
-func newResults(types []*Type) *Type {
-	context := defaultContext
-	if len(types) > 0 {
-		context = contextForType(types[0])
-	}
+func newResultsIn(context *Context, types []*Type) *Type {
 	t := newTypeIn(context, TRESULTS)
 	t.extra.(*Results).Types = types
 	return t
@@ -606,11 +586,17 @@ func NewResults(types []*Type) *Type {
 	if len(types) == 1 && types[0] == TypeMem {
 		return TypeResultMem
 	}
-	return newResults(types)
+	return newResultsIn(contextForTypes(types), types)
+}
+
+// NewResultsIn creates a multi-result type in context, including for an empty
+// result list.
+func NewResultsIn(context *Context, types []*Type) *Type {
+	return newResultsIn(context, types)
 }
 
 func newSSA(name string) *Type {
-	t := newType(TSSA)
+	t := newContextlessType(TSSA)
 	t.extra = name
 	return t
 }
@@ -1623,11 +1609,11 @@ func (t *Type) HasPointers() bool {
 
 // FakeRecvType returns the singleton type used for interface method receivers.
 func FakeRecvType() *Type {
-	return FakeRecvTypeFor(defaultContext)
+	panic("FakeRecvType was removed; use FakeRecvTypeFor with an explicit context")
 }
 
 func FakeRecv() *Field {
-	return NewField(src.NoXPos, nil, FakeRecvType())
+	panic("FakeRecv was removed; use FakeRecvFor with an explicit context")
 }
 
 // FakeRecvTypeFor returns the fake receiver pointer type owned by context.
@@ -1654,8 +1640,12 @@ var (
 	TypeVec256    = newSIMD("vec256")
 	TypeVec512    = newSIMD("vec512")
 	TypeMask      = newSIMD("mask") // not a vector, not 100% sure what this should be.
-	TypeResultMem = newResults([]*Type{TypeMem})
+	TypeResultMem = newContextlessType(TRESULTS)
 )
+
+func init() {
+	TypeResultMem.extra.(*Results).Types = []*Type{TypeMem}
+}
 
 func init() {
 	TypeInt128.width = 16
@@ -1678,10 +1668,10 @@ func init() {
 // maintained until the type is filled in, so those references can be updated when
 // the type is complete.
 func NewNamed(obj Object) *Type {
-	context := defaultContext
-	if sym := obj.Sym(); sym != nil && sym.Pkg != nil && sym.Pkg.Context != nil {
-		context = sym.Pkg.Context
+	if obj == nil || obj.Sym() == nil || obj.Sym().Pkg == nil || obj.Sym().Pkg.Context == nil {
+		panic("NewNamed requires an object owned by a package with a compilation context")
 	}
+	context := obj.Sym().Pkg.Context
 	t := newTypeIn(context, TFORW)
 	t.obj = obj
 	sym := obj.Sym()

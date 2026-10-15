@@ -197,11 +197,11 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 
 			r := l.Key
 			r = Expr(curfunc, r)
-			l.Key = AssignConv(r, t.Key(), "map key")
+			l.Key = AssignConvFor(targetForFunc(curfunc), r, t.Key(), "map key")
 
 			r = l.Value
 			r = Expr(curfunc, r)
-			l.Value = AssignConv(r, t.Elem(), "map value")
+			l.Value = AssignConvFor(targetForFunc(curfunc), r, t.Elem(), "map value")
 		}
 
 		n.SetOp(ir.OMAPLIT)
@@ -243,7 +243,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 					}
 				}
 				// No pushtype allowed here. Must name fields for that.
-				n1 = AssignConv(n1, f.Type, "field value")
+				n1 = AssignConvFor(targetForFunc(curfunc), n1, f.Type, "field value")
 				ls[i] = ir.NewStructKeyExpr(ir.CurrentPos(curfunc), f, n1)
 			}
 			if len(ls) < t.NumFields() {
@@ -279,7 +279,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 
 				// No pushtype allowed here. Tried and rejected.
 				sk.Value = Expr(curfunc, sk.Value)
-				sk.Value = AssignConv(sk.Value, sk.Field.Type, "field value")
+				sk.Value = AssignConvFor(targetForFunc(curfunc), sk.Value, sk.Field.Type, "field value")
 				ls[i] = sk
 			}
 		}
@@ -630,7 +630,7 @@ func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 		}
 
 	case types.TMAP:
-		n.Index = AssignConv(n.Index, t.Key(), "map index")
+		n.Index = AssignConvFor(targetForFunc(curfunc), n.Index, t.Key(), "map index")
 		n.SetType(t.Elem())
 		n.SetOp(ir.OINDEXMAP)
 		n.Assigned = false

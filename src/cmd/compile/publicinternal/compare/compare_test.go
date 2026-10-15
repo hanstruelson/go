@@ -16,18 +16,19 @@ import (
 )
 
 var testTarget *ir.Package
+var testArch *obj.LinkArch
 
 type typefn func() *types.Type
 
 func init() {
-	// These are the few constants that need to be initialized in order to use
-	// the types package without using the typecheck package by calling
-	// typecheck.InitUniverse() (the normal way to initialize the types package).
-	types.PtrSize = 8
-	types.RegSize = 8
-	types.MaxWidth = 1 << 50
-	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
-	testTarget = &ir.Package{LocalPkg: types.NewPkgInstance("compare/test", "test")}
+	testArch = &obj.LinkArch{Arch: &sys.Arch{PtrSize: 8, RegSize: 8, Alignment: 1, CanMergeLoads: true}}
+	link := &obj.Link{Arch: testArch}
+	testTarget = &ir.Package{Ctxt: link, TypeContext: types.NewContext(8, 8, 1<<50)}
+	testTarget.TypeContext.Link = link
+	testTarget.TypeContext.Diagnostics = base.NewDiagnostics(nil)
+	testTarget.LocalPkg = testTarget.Pkg("compare/test", "test")
+	testTarget.BuiltinPkg = testTarget.Pkg("go.builtin", "")
+	testTarget.UnsafePkg = testTarget.Pkg("unsafe", "unsafe")
 	testTarget.LocalPkg.Local = true
 	typecheck.InitUniverse(testTarget)
 }
@@ -48,33 +49,33 @@ func TestEqStructCost(t *testing.T) {
 		fieldTypes       []*types.Type
 	}{
 		{"struct without fields", 0, 0, nil},
-		{"struct with 1 byte field", 1, 1, repeat(1, types.ByteType)},
-		{"struct with 8 byte fields", 1, 8, repeat(8, types.ByteType)},
-		{"struct with 16 byte fields", 2, 16, repeat(16, types.ByteType)},
-		{"struct with 32 byte fields", 4, 32, repeat(32, types.ByteType)},
-		{"struct with 2 int32 fields", 1, 2, repeat(2, types.Types[types.TINT32])},
+		{"struct with 1 byte field", 1, 1, repeat(1, testTarget.ByteType)},
+		{"struct with 8 byte fields", 1, 8, repeat(8, testTarget.ByteType)},
+		{"struct with 16 byte fields", 2, 16, repeat(16, testTarget.ByteType)},
+		{"struct with 32 byte fields", 4, 32, repeat(32, testTarget.ByteType)},
+		{"struct with 2 int32 fields", 1, 2, repeat(2, testTarget.Type(types.TINT32))},
 		{"struct with 2 int32 fields and 1 int64", 2, 3,
 			[]*types.Type{
-				types.Types[types.TINT32],
-				types.Types[types.TINT32],
-				types.Types[types.TINT64],
+				testTarget.Type(types.TINT32),
+				testTarget.Type(types.TINT32),
+				testTarget.Type(types.TINT64),
 			},
 		},
 		{"struct with 1 int field and 1 string", 3, 3,
 			[]*types.Type{
-				types.Types[types.TINT64],
-				types.Types[types.TSTRING],
+				testTarget.Type(types.TINT64),
+				testTarget.Type(types.TSTRING),
 			},
 		},
-		{"struct with 2 strings", 4, 4, repeat(2, types.Types[types.TSTRING])},
+		{"struct with 2 strings", 4, 4, repeat(2, testTarget.Type(types.TSTRING))},
 		{"struct with 1 large byte array field", 26, 101,
 			[]*types.Type{
-				types.NewArray(types.Types[types.TUINT16], 101),
+				types.NewArray(testTarget.Type(types.TUINT16), 101),
 			},
 		},
 		{"struct with string array field", 4, 4,
 			[]*types.Type{
-				types.NewArray(types.Types[types.TSTRING], 2),
+				types.NewArray(testTarget.Type(types.TSTRING), 2),
 			},
 		},
 	}
@@ -85,19 +86,19 @@ func TestEqStructCost(t *testing.T) {
 			for i, ftyp := range tc.fieldTypes {
 				fields[i] = types.NewField(src.NoXPos, typecheck.LookupNum(testTarget, "f", i), ftyp)
 			}
-			typ := types.NewStruct(fields)
+			typ := types.NewStructIn(testTarget.TypeContext, fields)
 			types.CalcSize(typ)
 
 			want := tc.cost
-			base.Ctxt.Arch.CanMergeLoads = true
-			actual := EqStructCost(base.Ctxt.Arch, typ)
+			testArch.CanMergeLoads = true
+			actual := EqStructCost(testArch, typ)
 			if actual != want {
 				t.Errorf("CanMergeLoads=true EqStructCost(%v) = %d, want %d", typ, actual, want)
 			}
 
-			base.Ctxt.Arch.CanMergeLoads = false
+			testArch.CanMergeLoads = false
 			want = tc.nonMergeLoadCost
-			actual = EqStructCost(base.Ctxt.Arch, typ)
+			actual = EqStructCost(testArch, typ)
 			if actual != want {
 				t.Errorf("CanMergeLoads=false EqStructCost(%v) = %d, want %d", typ, actual, want)
 			}

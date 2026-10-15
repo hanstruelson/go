@@ -1372,7 +1372,7 @@ func TestIntrinsics(t *testing.T) {
 		goppc64:   10,
 		goriscv64: 23,
 	}
-	initIntrinsics(nil, cfg)
+	intrinsics := initIntrinsics(nil, cfg)
 
 	if *updateIntrinsics {
 		var updatedIntrinsics []*testIntrinsicKey
@@ -1413,7 +1413,7 @@ func TestIntrinsics(t *testing.T) {
 
 func TestIntrinsicBuilders(t *testing.T) {
 	cfg := &intrinsicBuildConfig{}
-	initIntrinsics(nil, cfg)
+	intrinsics := initIntrinsics(nil, cfg)
 
 	for _, arch := range sys.Archs {
 		if intrinsics.lookup(arch, "publicinternal/runtime/sys", "GetCallerSP") == nil {
@@ -1443,7 +1443,7 @@ func TestIntrinsicBuilders(t *testing.T) {
 	cfg.goppc64 = 10
 	cfg.instrumenting = true
 
-	initIntrinsics(nil, cfg)
+	intrinsics = initIntrinsics(nil, cfg)
 
 	if intrinsics.lookup(sys.ArchAMD64, "runtime", "slicebytetostringtmp") != nil {
 		t.Error("Intrinsic incorrectly exists for runtime.slicebytetostringtmp")

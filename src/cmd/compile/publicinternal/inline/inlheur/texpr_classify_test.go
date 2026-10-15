@@ -22,21 +22,21 @@ var f *ir.Func
 var target *ir.Package
 
 func init() {
-	types.PtrSize = 8
-	types.RegSize = 8
-	types.MaxWidth = 1 << 50
-	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
-
-	local = types.NewPkgInstance("", "")
+	link := &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
+	target = &ir.Package{Ctxt: link, TypeContext: types.NewContext(8, 8, 1<<50)}
+	target.TypeContext.Link = link
+	target.TypeContext.Diagnostics = base.NewDiagnostics(nil)
+	local = target.Pkg("", "")
 	local.Local = true
-	target = &ir.Package{LocalPkg: local}
+	target.LocalPkg = local
+	target.BuiltinPkg = target.Pkg("go.builtin", "")
+	target.UnsafePkg = target.Pkg("unsafe", "unsafe")
 	typecheck.InitUniverse(target)
 	fsym := &types.Sym{
-		Pkg:  types.NewPkgInstance("my/import/path", "path"),
+		Pkg:  target.Pkg("my/import/path", "path"),
 		Name: "function",
 	}
-	f = ir.NewFunc(nil, src.NoXPos, src.NoXPos, fsym, nil)
-	f.Target = target
+	f = ir.NewFunc(target, src.NoXPos, src.NoXPos, fsym, nil)
 }
 
 type state struct {
@@ -66,11 +66,11 @@ func un(op ir.Op, x ir.Node) ir.Node {
 }
 
 func liti(i int64) ir.Node {
-	return ir.NewBasicLit(pos, types.Types[types.TINT64], constant.MakeInt64(i))
+	return ir.NewBasicLit(pos, target.Type(types.TINT64), constant.MakeInt64(i))
 }
 
 func lits(s string) ir.Node {
-	return ir.NewBasicLit(pos, types.Types[types.TSTRING], constant.MakeString(s))
+	return ir.NewBasicLit(pos, target.Type(types.TSTRING), constant.MakeString(s))
 }
 
 func (s *state) nm(name string, t *types.Type) *ir.Name {
@@ -87,11 +87,11 @@ func (s *state) nm(name string, t *types.Type) *ir.Name {
 }
 
 func (s *state) nmi64(name string) *ir.Name {
-	return s.nm(name, types.Types[types.TINT64])
+	return s.nm(name, target.Type(types.TINT64))
 }
 
 func (s *state) nms(name string) *ir.Name {
-	return s.nm(name, types.Types[types.TSTRING])
+	return s.nm(name, target.Type(types.TSTRING))
 }
 
 func TestClassifyIntegerCompare(t *testing.T) {
@@ -107,7 +107,7 @@ func TestClassifyIntegerCompare(t *testing.T) {
 	noror1 := logical(nlt10, ir.OOROR, ngt100) // n < 10 || n > 100
 	noror2 := logical(nge12, ir.OOROR, nle99)  // n >= 12 || n <= 99
 	noror3 := logical(noror2, ir.OOROR, nne101)
-	nandand := typecheck.Expr(nil, logical(noror1, ir.OANDAND, noror3))
+	nandand := typecheck.Expr(f, logical(noror1, ir.OANDAND, noror3))
 
 	wantv := true
 	v := ShouldFoldIfNameConstant(nandand, []*ir.Name{nn})
@@ -125,7 +125,7 @@ func TestClassifyStringCompare(t *testing.T) {
 	sltoob := bin(nn, ir.OLT, lits("ooblek"))  // s < "ooblek"
 	sgtpk := bin(nn, ir.OGT, lits("plarkish")) // s > "plarkish"
 	nandand := logical(snefoo, ir.OANDAND, sltoob)
-	top := typecheck.Expr(nil, logical(nandand, ir.OANDAND, sgtpk))
+	top := typecheck.Expr(f, logical(nandand, ir.OANDAND, sgtpk))
 
 	wantv := true
 	v := ShouldFoldIfNameConstant(top, []*ir.Name{nn})
@@ -150,7 +150,7 @@ func TestClassifyIntegerArith(t *testing.T) {
 	c3add := bin(c2mul, ir.OADD, nls9)
 	c4add := bin(c3add, ir.OADD, nrs2)
 	c5sub := bin(c4add, ir.OSUB, nan7)
-	top := typecheck.Expr(nil, c5sub)
+	top := typecheck.Expr(f, c5sub)
 
 	wantv := true
 	v := ShouldFoldIfNameConstant(top, []*ir.Name{nn})
@@ -169,7 +169,7 @@ func TestClassifyAssortedShifts(t *testing.T) {
 	}
 	for _, bc := range badcases {
 		wantv := false
-		v := ShouldFoldIfNameConstant(typecheck.Expr(nil, bc), []*ir.Name{nn})
+		v := ShouldFoldIfNameConstant(typecheck.Expr(f, bc), []*ir.Name{nn})
 		if v != wantv {
 			t.Errorf("wanted shouldfold(%v) %v, got %v", bc, wantv, v)
 		}
@@ -179,13 +179,13 @@ func TestClassifyAssortedShifts(t *testing.T) {
 func TestClassifyFloat(t *testing.T) {
 	// float32(n) + float32(10)
 	s := mkstate()
-	nn := s.nm("n", types.Types[types.TUINT32])
-	f1 := conv(nn, types.Types[types.TFLOAT32])
-	f2 := conv(liti(10), types.Types[types.TFLOAT32])
+	nn := s.nm("n", target.Type(types.TUINT32))
+	f1 := conv(nn, target.Type(types.TFLOAT32))
+	f2 := conv(liti(10), target.Type(types.TFLOAT32))
 	add := bin(f1, ir.OADD, f2)
 
 	wantv := false
-	v := ShouldFoldIfNameConstant(typecheck.Expr(nil, add), []*ir.Name{nn})
+	v := ShouldFoldIfNameConstant(typecheck.Expr(f, add), []*ir.Name{nn})
 	if v != wantv {
 		t.Errorf("wanted shouldfold(%v) %v, got %v", add, wantv, v)
 	}
@@ -198,7 +198,7 @@ func TestMultipleNamesAllUsed(t *testing.T) {
 	nm := s.nmi64("m")
 	nne101 := bin(nn, ir.ONE, liti(101)) // n != 101
 	mlt2 := bin(nm, ir.OLT, liti(2))     // m < 2
-	nandand := typecheck.Expr(nil, logical(nne101, ir.OANDAND, mlt2))
+	nandand := typecheck.Expr(f, logical(nne101, ir.OANDAND, mlt2))
 
 	// all names used
 	wantv := true

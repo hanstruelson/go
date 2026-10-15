@@ -8,15 +8,14 @@ import (
 	"bufio"
 	"fmt"
 	"go/build"
-	"publicinternal/exportdata"
-	"publicinternal/pkgbits"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"publicinternal/exportdata"
+	"publicinternal/pkgbits"
 	"strings"
 	"sync"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types2"
 )
 
@@ -58,7 +57,9 @@ func (imp *Importer) Import(path string) (*types2.Package, error) {
 
 // ImportFrom implements types2.ImportFrom.
 func (imp *Importer) ImportFrom(path, srcDir string, mode types2.ImportMode) (*types2.Package, error) {
-	base.Assert(mode == 0)
+	if mode != 0 {
+		panic("unsupported import mode")
+	}
 	if path == "unsafe" {
 		return types2.Unsafe, nil
 	}
@@ -68,7 +69,9 @@ func (imp *Importer) ImportFrom(path, srcDir string, mode types2.ImportMode) (*t
 	}
 	// srcDir is only relevant if the package is not in GOROOT.
 	if !bld.Goroot {
-		base.Assert(filepath.IsAbs(srcDir)) // see #14282
+		if !filepath.IsAbs(srcDir) { // see #14282
+			panic("source directory must be absolute")
+		}
 	}
 	path = bld.ImportPath
 	// If the package was already read (fully), avoid reading it again.
@@ -117,7 +120,8 @@ func (imp *Importer) compile(path, dir string) (string, error) {
 	once.Do(func() {
 		// We're first, do the build.
 		out := filepath.Join(imp.dir, strings.ReplaceAll(path, "/", "_")+".a")
-		cmd := exec.Command(filepath.Join(build.Default.GOROOT, "bin", "go"), "build", "-o", out, dir)
+		cmd := exec.Command(filepath.Join(build.Default.GOROOT, "bin", "go"), "build", "-o", out, ".")
+		cmd.Dir = dir
 		var res *bldResult
 		if bytes, err := cmd.CombinedOutput(); err != nil {
 			res = &bldResult{err: fmt.Errorf("building %s failed: %s", path, bytes)}

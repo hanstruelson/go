@@ -5,12 +5,9 @@
 package x86
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/obj/x86"
 	"fmt"
-	"publicinternal/buildcfg"
-	"os"
 )
 
 func Init(arch *ssagen.ArchInfo) {
@@ -19,16 +16,16 @@ func Init(arch *ssagen.ArchInfo) {
 	arch.SSAGenValue = ssaGenValue
 	arch.SSAGenBlock = ssaGenBlock
 	arch.MAXWIDTH = (1 << 32) - 1
-	switch v := buildcfg.GO386; v {
+	switch v := arch.TargetFeatures.GO386; v {
 	case "sse2":
 	case "softfloat":
 		arch.SoftFloat = true
 	case "387":
-		fmt.Fprintf(os.Stderr, "unsupported setting GO386=387. Consider using GO386=softfloat instead.\n")
-		base.Exit(1)
+		arch.InitError = fmt.Errorf("unsupported setting GO386=387. Consider using GO386=softfloat instead")
+		return
 	default:
-		fmt.Fprintf(os.Stderr, "unsupported setting GO386=%s\n", v)
-		base.Exit(1)
+		arch.InitError = fmt.Errorf("unsupported setting GO386=%s", v)
+		return
 
 	}
 

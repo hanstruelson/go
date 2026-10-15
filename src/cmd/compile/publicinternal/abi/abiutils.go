@@ -102,6 +102,12 @@ type ABIParamAssignment struct {
 	offset    int32
 }
 
+// NewABIParamAssignment constructs an ABI parameter assignment for compiler
+// generated parameters that do not originate in a source function signature.
+func NewABIParamAssignment(target *ir.Package, typ *types.Type, name *ir.Name, registers []RegIndex) ABIParamAssignment {
+	return ABIParamAssignment{Type: typ, target: target, Name: name, Registers: registers}
+}
+
 // Offset returns the stack offset for addressing the parameter that "a" describes.
 // This will panic if "a" describes a register-allocated parameter.
 func (a *ABIParamAssignment) Offset() int32 {

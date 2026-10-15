@@ -680,11 +680,7 @@ func BuildFuncDebugNoOptimized(ctxt *obj.Link, f *ssa.Func, loggingEnabled bool,
 	}
 	if needCloCtx {
 		addVarSlot(f.CloSlot, f.CloSlot.Type())
-		cloAssign := abi.ABIParamAssignment{
-			Type:      f.CloSlot.Type(),
-			Name:      f.CloSlot,
-			Registers: []abi.RegIndex{0}, // dummy
-		}
+		cloAssign := abi.NewABIParamAssignment(f.Config.Target, f.CloSlot.Type(), f.CloSlot, []abi.RegIndex{0}) // dummy register
 		params = append(params, cloAssign)
 	}
 

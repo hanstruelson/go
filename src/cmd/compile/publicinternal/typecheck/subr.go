@@ -16,7 +16,14 @@ import (
 )
 
 func AssignConv(n ir.Node, t *types.Type, context string) ir.Node {
-	return assignconvfn(n, t, func() string { return context })
+	return AssignConvFor(ir.TargetOf(n), n, t, context)
+}
+
+// AssignConvFor converts n to t using target's type universe and diagnostics.
+// Compiler paths should use this target-aware form rather than AssignConv so
+// conversion of untyped constants cannot fall back to the process universe.
+func AssignConvFor(target *ir.Package, n ir.Node, t *types.Type, context string) ir.Node {
+	return assignconvfnFor(target, n, t, func() string { return context })
 }
 
 // LookupNum returns target.LocalPkg.LookupNum(prefix, n).
@@ -220,20 +227,24 @@ func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase 
 
 // Convert node n for assignment to type t.
 func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
+	return assignconvfnFor(ir.TargetOf(n), n, t, context)
+}
+
+func assignconvfnFor(target *ir.Package, n ir.Node, t *types.Type, context func() string) ir.Node {
 	if n == nil || n.Type() == nil {
 		return n
 	}
 
 	if t.Kind() == types.TBLANK && n.Type().Kind() == types.TNIL {
-		errorf(ir.TargetOf(n), "use of untyped nil")
+		errorf(target, "use of untyped nil")
 	}
 
-	n = convlit1(nil, n, t, false, context)
+	n = convlit1(target, n, t, false, context)
 	if n.Type() == nil {
-		fatalf(ir.TargetOf(n), "cannot assign %v to %v", n, t)
+		fatalf(target, "cannot assign %v to %v", n, t)
 	}
 	if n.Type().IsUntyped() {
-		fatalf(ir.TargetOf(n), "%L has untyped type", n)
+		fatalf(target, "%L has untyped type", n)
 	}
 	if t.Kind() == types.TBLANK {
 		return n
@@ -244,7 +255,7 @@ func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
 
 	op, why := assignOp(n.Type(), t)
 	if op == ir.OXXX {
-		errorf(ir.TargetOf(n), "cannot use %L as type %v in %s%s", n, t, context(), why)
+		errorf(target, "cannot use %L as type %v in %s%s", n, t, context(), why)
 		op = ir.OCONV
 	}
 

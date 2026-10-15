@@ -5,7 +5,6 @@
 package types
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/obj"
 	"strings"
 	"unicode"
@@ -87,16 +86,13 @@ func (sym *Sym) LinksymABI(abi obj.ABI) *obj.LSym {
 	if sym == nil {
 		panic("nil symbol")
 	}
-	if sym.Pkg != nil && sym.Pkg.Context != nil {
-		if sym.Linkname != "" {
-			return sym.Pkg.Context.Linkname(sym.Linkname, abi)
-		}
-		return sym.Pkg.Context.LinkSym(sym.Pkg.Prefix, sym.Name, abi)
+	if sym.Pkg == nil || sym.Pkg.Context == nil {
+		panic("symbol has no compilation context")
 	}
 	if sym.Linkname != "" {
-		return base.Linkname(sym.Linkname, abi)
+		return sym.Pkg.Context.Linkname(sym.Linkname, abi)
 	}
-	return base.PkgLinksym(sym.Pkg.Prefix, sym.Name, abi)
+	return sym.Pkg.Context.LinkSym(sym.Pkg.Prefix, sym.Name, abi)
 }
 
 // CompareSyms return the ordering of a and b, as for [cmp.Compare].

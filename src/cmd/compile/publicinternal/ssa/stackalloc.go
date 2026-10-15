@@ -7,8 +7,6 @@
 package ssa
 
 import (
-	"fmt"
-
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -109,7 +107,7 @@ func (s *StackAllocState) Init(f *Func, spillLive [][]ID) {
 			s.values[v.ID].isArg = hasAnyArgOp(v)
 			s.values[v.ID].defBlock = b.ID
 			if f.Pass.Debug > StackDebug && s.values[v.ID].needSlot {
-				fmt.Printf("%s needs a stack slot\n", v)
+				f.Config.Target.Diagnostics.Printf("%s needs a stack slot\n", v)
 			}
 			if v.Op == ssaop.OpStoreReg {
 				s.values[v.Args[0].ID].spill = v
@@ -146,21 +144,21 @@ func (s *StackAllocState) Stackalloc() {
 				// Never let an arg be bound to a differently named thing.
 				if name.N != aux.Name || name.Off != aux.Offset {
 					if f.Pass.Debug > StackDebug {
-						fmt.Printf("stackalloc register arg %s skipping name %s\n", v, name)
+						f.Config.Target.Diagnostics.Printf("stackalloc register arg %s skipping name %s\n", v, name)
 					}
 					continue
 				}
 			} else if name.N.Class == ir.PPARAM && v.Op != ssaop.OpArg {
 				// PPARAM's only bind to OpArg
 				if f.Pass.Debug > StackDebug {
-					fmt.Printf("stackalloc PPARAM name %s skipping non-Arg %s\n", name, v)
+					f.Config.Target.Diagnostics.Printf("stackalloc PPARAM name %s skipping non-Arg %s\n", name, v)
 				}
 				continue
 			}
 
 			if names[v.ID] == empty {
 				if f.Pass.Debug > StackDebug {
-					fmt.Printf("stackalloc value %s to name %s\n", v, name)
+					f.Config.Target.Diagnostics.Printf("stackalloc value %s to name %s\n", v, name)
 				}
 				names[v.ID] = name
 			}
@@ -178,7 +176,7 @@ func (s *StackAllocState) Stackalloc() {
 		if v.Op == ssaop.OpArg {
 			loc := LocalSlot{N: v.Aux.(*ir.Name), Type: v.Type, Off: v.AuxInt}
 			if f.Pass.Debug > StackDebug {
-				fmt.Printf("stackalloc OpArg %s to %s\n", v, loc)
+				f.Config.Target.Diagnostics.Printf("stackalloc OpArg %s to %s\n", v, loc)
 			}
 			f.SetHome(v, loc)
 			continue
@@ -252,7 +250,7 @@ func (s *StackAllocState) Stackalloc() {
 					}
 				}
 				if f.Pass.Debug > StackDebug {
-					fmt.Printf("stackalloc %s to %s\n", v, name)
+					f.Config.Target.Diagnostics.Printf("stackalloc %s to %s\n", v, name)
 				}
 				s.NNamedSlot++
 				f.SetHome(v, name)
@@ -290,7 +288,7 @@ func (s *StackAllocState) Stackalloc() {
 			// Use the stack variable at that index for v.
 			loc := locs[i]
 			if f.Pass.Debug > StackDebug {
-				fmt.Printf("stackalloc %s to %s\n", v, loc)
+				f.Config.Target.Diagnostics.Printf("stackalloc %s to %s\n", v, loc)
 			}
 			f.SetHome(v, loc)
 			slots[v.ID] = i
@@ -385,7 +383,7 @@ func (s *StackAllocState) computeLive(spillLive [][]ID) {
 
 	if s.f.Pass.Debug > StackDebug {
 		for _, b := range s.f.Blocks {
-			fmt.Printf("stacklive %s %v\n", b, s.Live[b.ID])
+			s.f.Config.Target.Diagnostics.Printf("stacklive %s %v\n", b, s.Live[b.ID])
 		}
 	}
 }
@@ -452,11 +450,11 @@ func (s *StackAllocState) buildInterferenceGraph() {
 	if f.Pass.Debug > StackDebug {
 		for vid, i := range s.interfere {
 			if len(i) > 0 {
-				fmt.Printf("v%d interferes with", vid)
+				f.Config.Target.Diagnostics.Printf("v%d interferes with", vid)
 				for _, x := range i {
-					fmt.Printf(" v%d", x)
+					f.Config.Target.Diagnostics.Printf(" v%d", x)
 				}
-				fmt.Println()
+				f.Config.Target.Diagnostics.Printf("\n")
 			}
 		}
 	}

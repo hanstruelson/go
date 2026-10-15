@@ -4,12 +4,8 @@
 
 package midway
 
-import (
-	"publicinternal/buildcfg"
-)
-
-func rewriteSizes() []int {
-	switch buildcfg.GOARCH {
+func rewriteSizes(arch string) []int {
+	switch arch {
 	case "wasm":
 		return []int{0, 128}
 	case "amd64":

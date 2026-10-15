@@ -34,13 +34,12 @@ import (
 func NewConfig(target *ir.Package, softFloat bool) *ssa.Config {
 	types_ := ssa.NewTypes(target)
 	cfg := newConfig(target, target.Ctxt.Arch.Name, *types_, target.Ctxt, target.Flags.N == 0, softFloat)
-	cfg.Target = target
 	return cfg
 }
 
 // newConfig returns a new configuration object for the given architecture.
 func newConfig(target *ir.Package, arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat bool) *ssa.Config {
-	c := &ssa.Config{Arch: arch, Types: types}
+	c := &ssa.Config{Target: target, Arch: arch, Types: types}
 	switch arch {
 	case "amd64":
 		c.PtrSize = 8

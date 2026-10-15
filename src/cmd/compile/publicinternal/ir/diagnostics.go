@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 	"publicinternal/types/errors"
@@ -16,7 +15,7 @@ func fatalfTarget(target *Package, format string, args ...any) {
 		target.Diagnostics.Fatalf(format, args...)
 		return
 	}
-	base.Fatalf(format, args...)
+	panic("IR diagnostic without a compilation target")
 }
 
 func fatalfAtTarget(target *Package, pos src.XPos, format string, args ...any) {
@@ -24,7 +23,7 @@ func fatalfAtTarget(target *Package, pos src.XPos, format string, args ...any) {
 		target.Diagnostics.FatalfAt(pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("IR diagnostic without a compilation target")
 }
 
 func errorfAtTarget(target *Package, pos src.XPos, code errors.Code, format string, args ...any) {
@@ -32,7 +31,7 @@ func errorfAtTarget(target *Package, pos src.XPos, code errors.Code, format stri
 		target.Diagnostics.ErrorfAt(pos, code, format, args...)
 		return
 	}
-	base.ErrorfAt(pos, code, format, args...)
+	panic("IR diagnostic without a compilation target")
 }
 
 func warnfAtTarget(target *Package, pos src.XPos, format string, args ...any) {
@@ -40,7 +39,7 @@ func warnfAtTarget(target *Package, pos src.XPos, format string, args ...any) {
 		target.Diagnostics.WarnfAt(pos, format, args...)
 		return
 	}
-	base.WarnfAt(pos, format, args...)
+	panic("IR diagnostic without a compilation target")
 }
 
 func fatalfType(typ *types.Type, pos src.XPos, format string, args ...any) {
@@ -48,7 +47,7 @@ func fatalfType(typ *types.Type, pos src.XPos, format string, args ...any) {
 		typ.Context().Diagnostics.FatalfAt(pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("type diagnostic without a compilation context")
 }
 
 func errorfType(typ *types.Type, pos src.XPos, code errors.Code, format string, args ...any) {
@@ -56,5 +55,5 @@ func errorfType(typ *types.Type, pos src.XPos, code errors.Code, format string, 
 		typ.Context().Diagnostics.ErrorfAt(pos, code, format, args...)
 		return
 	}
-	base.ErrorfAt(pos, code, format, args...)
+	panic("type diagnostic without a compilation context")
 }

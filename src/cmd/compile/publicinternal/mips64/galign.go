@@ -8,17 +8,17 @@ import (
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/obj/mips"
-	"publicinternal/buildcfg"
 )
 
 func Init(arch *ssagen.ArchInfo) {
 	arch.LinkArch = &mips.Linkmips64
-	if buildcfg.GOARCH == "mips64le" {
+	goarch := arch.TargetArch
+	if goarch == "mips64le" {
 		arch.LinkArch = &mips.Linkmips64le
 	}
 	arch.REGSP = mips.REGSP
 	arch.MAXWIDTH = 1 << 50
-	arch.SoftFloat = buildcfg.GOMIPS64 == "softfloat"
+	arch.SoftFloat = arch.TargetFeatures.GOMIPS64 == "softfloat"
 	arch.ZeroRange = zerorange
 	arch.Ginsnop = ginsnop
 

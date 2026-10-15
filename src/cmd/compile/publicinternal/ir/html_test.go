@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
@@ -16,8 +15,7 @@ import (
 )
 
 func TestHTMLWriter(t *testing.T) {
-	// Initialize base.Ctxt to avoid panics
-	base.Ctxt = new(obj.Link)
+	target := &Package{Ctxt: new(obj.Link)}
 
 	// Setup a temporary directory for output
 	tmpDir := t.TempDir()
@@ -27,6 +25,7 @@ func TestHTMLWriter(t *testing.T) {
 		Nname: &Name{
 			sym: &types.Sym{Name: "TestFunc"},
 		},
+		Target: target,
 	}
 	// Func embeds miniExpr, so we might need to set op if checked
 	fn.op = ODCLFUNC
@@ -52,7 +51,7 @@ func TestHTMLWriter(t *testing.T) {
 		Class: PAUTO,
 	}
 	n.op = ONAME
-	n.pos = base.Ctxt.PosTable.XPos(pos)
+	n.pos = target.Ctxt.PosTable.XPos(pos)
 
 	// Add another phase which actually dumps something interesting
 	fn.Body = []Node{n}

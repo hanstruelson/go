@@ -5,8 +5,6 @@
 package ssa
 
 import (
-	"fmt"
-
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -207,9 +205,9 @@ func (f *Func) ComputeZeroMap(select1 []*Value) map[ID]ZeroRegion {
 		}
 	}
 	if f.Pass.Debug > 0 {
-		fmt.Printf("func %s\n", f.Name)
+		f.Config.Target.Diagnostics.Printf("func %s\n", f.Name)
 		for mem, z := range zeroes {
-			fmt.Printf("  memory=v%d ptr=%v zeromask=%b\n", mem, z.Base, z.Mask)
+			f.Config.Target.Diagnostics.Printf("  memory=v%d ptr=%v zeromask=%b\n", mem, z.Base, z.Mask)
 		}
 	}
 	return zeroes

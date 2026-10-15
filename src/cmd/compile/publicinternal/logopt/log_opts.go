@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -251,46 +250,44 @@ type Context struct {
 // NewContext returns an optimizer-logging context with logging disabled.
 func NewContext() *Context { return new(Context) }
 
-// defaultContext adapts the historical package-level functions for command
-// callers that have not yet been given an explicit compilation context.
-var defaultContext = NewContext()
-
-// LogJsonOption parses and validates the version,directory value attached to the -json compiler flag.
-func LogJsonOption(flagValue string) {
-	defaultContext.LogJsonOption(flagValue)
-}
-
 // LogJsonOption parses and validates the version,directory value attached to
 // the -json compiler flag.
-func (c *Context) LogJsonOption(flagValue string) {
+func (c *Context) LogJsonOption(flagValue string) error {
 	if c == nil {
-		return
+		return fmt.Errorf("nil optimizer logging context")
 	}
-	version, directory := parseLogFlag(c, "json", flagValue)
+	version, directory, err := parseLogFlag(c, "json", flagValue)
+	if err != nil {
+		return err
+	}
 	if version != 0 {
-		log.Fatal("-json version must be 0")
+		return fmt.Errorf("-json version must be 0")
 	}
-	c.dest = checkLogPath(directory)
+	c.dest, err = checkLogPath(directory)
+	if err != nil {
+		return err
+	}
 	c.format = Json0
+	return nil
 }
 
 // parseLogFlag checks the flag passed to -json
 // for version,destination format and returns the two parts.
-func parseLogFlag(c *Context, flag, value string) (version int, directory string) {
+func parseLogFlag(c *Context, flag, value string) (version int, directory string, err error) {
 	if c.format != None {
-		log.Fatal("Cannot repeat -json flag")
+		return 0, "", fmt.Errorf("cannot repeat -json flag")
 	}
 	commaAt := strings.Index(value, ",")
 	if commaAt <= 0 {
-		log.Fatalf("-%s option should be '<version>,<destination>' where <version> is a number", flag)
+		return 0, "", fmt.Errorf("-%s option should be '<version>,<destination>' where <version> is a number", flag)
 	}
 	v, err := strconv.Atoi(value[:commaAt])
 	if err != nil {
-		log.Fatalf("-%s option should be '<version>,<destination>' where <version> is a number: err=%v", flag, err)
+		return 0, "", fmt.Errorf("-%s option should be '<version>,<destination>' where <version> is a number: %w", flag, err)
 	}
 	version = v
 	directory = value[commaAt+1:]
-	return
+	return version, directory, nil
 }
 
 // isWindowsDriveURIPath returns true if the file URI is of the format used by
@@ -328,16 +325,16 @@ func parseLogPath(destination string) (string, string) {
 // checkLogPath does superficial early checking of the string specifying
 // the directory to which optimizer logging is directed, and if
 // it passes the test, stores the string in LO_dir.
-func checkLogPath(destination string) string {
+func checkLogPath(destination string) (string, error) {
 	path, complaint := parseLogPath(destination)
 	if complaint != "" {
-		log.Fatal(complaint)
+		return "", fmt.Errorf("%s", complaint)
 	}
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
-		log.Fatalf("optimizer logging destination '<version>,<directory>' but could not create <directory>: err=%v", err)
+		return "", fmt.Errorf("optimizer logging destination '<version>,<directory>' but could not create <directory>: %w", err)
 	}
-	return path
+	return path, nil
 }
 
 // NewLoggedOpt allocates a new LoggedOpt, to later be passed to either NewLoggedOpt or LogOpt as "args".
@@ -347,13 +344,6 @@ func checkLogPath(destination string) string {
 func NewLoggedOpt(pos, lastPos src.XPos, what, pass, funcName string, args ...any) *LoggedOpt {
 	pass = strings.ReplaceAll(pass, " ", "_")
 	return &LoggedOpt{pos, lastPos, pass, funcName, what, args}
-}
-
-// LogOpt logs information about a (usually missed) optimization performed by the compiler.
-// Pos is the source position (including inlining), what is the message, pass is which pass created the message,
-// funcName is the name of the function.
-func LogOpt(pos src.XPos, what, pass, funcName string, args ...any) {
-	defaultContext.LogOpt(pos, what, pass, funcName, args...)
 }
 
 // LogOpt records one optimization event in this compilation.
@@ -367,12 +357,6 @@ func (c *Context) LogOpt(pos src.XPos, what, pass, funcName string, args ...any)
 	c.loggedOpts = append(c.loggedOpts, lo)
 }
 
-// LogOptRange is the same as LogOpt, but includes the ability to express a range of positions,
-// not just a point.
-func LogOptRange(pos, lastPos src.XPos, what, pass, funcName string, args ...any) {
-	defaultContext.LogOptRange(pos, lastPos, what, pass, funcName, args...)
-}
-
 // LogOptRange records one optimization event that spans a source range.
 func (c *Context) LogOptRange(pos, lastPos src.XPos, what, pass, funcName string, args ...any) {
 	if !c.Enabled() {
@@ -382,11 +366,6 @@ func (c *Context) LogOptRange(pos, lastPos src.XPos, what, pass, funcName string
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.loggedOpts = append(c.loggedOpts, lo)
-}
-
-// Enabled returns whether optimization logging is enabled.
-func Enabled() bool {
-	return defaultContext.Enabled()
 }
 
 // Enabled reports whether this compilation is collecting optimizer logs.
@@ -415,7 +394,7 @@ func (x byPos) Less(i, j int) bool {
 }
 func (x byPos) Swap(i, j int) { x.a[i], x.a[j] = x.a[j], x.a[i] }
 
-func writerForLSP(subdirpath, file string) io.WriteCloser {
+func writerForLSP(subdirpath, file string) (io.WriteCloser, error) {
 	basename := file
 	lastslash := strings.LastIndexAny(basename, "\\/")
 	if lastslash != -1 {
@@ -431,9 +410,9 @@ func writerForLSP(subdirpath, file string) io.WriteCloser {
 	p := filepath.Join(subdirpath, basename+".json")
 	w, err := os.Create(p)
 	if err != nil {
-		log.Fatalf("Could not create file %s for logging optimizer actions, %v", p, err)
+		return nil, fmt.Errorf("could not create file %s for logging optimizer actions: %w", p, err)
 	}
-	return w
+	return w, nil
 }
 
 func fixSlash(f string) string {
@@ -463,15 +442,10 @@ func uprootedPath(filename string) string {
 	return buildcfg.GOROOT + filename[len("$GOROOT"):]
 }
 
-// FlushLoggedOpts flushes all the accumulated optimization log entries.
-func FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
-	defaultContext.FlushLoggedOpts(ctxt, slashPkgPath)
-}
-
 // FlushLoggedOpts writes and clears the optimizer records for this package.
-func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
+func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) error {
 	if c == nil || c.format == None {
-		return
+		return nil
 	}
 	c.mu.Lock()
 	loggedOpts := c.loggedOpts
@@ -492,7 +466,7 @@ func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
 		subdirpath := filepath.Join(c.dest, url.PathEscape(slashPkgPath))
 		err := os.MkdirAll(subdirpath, 0755)
 		if err != nil {
-			log.Fatalf("Could not create directory %s for logging optimizer actions, %v", subdirpath, err)
+			return fmt.Errorf("could not create directory %s for logging optimizer actions: %w", subdirpath, err)
 		}
 		diagnostic := Diagnostic{Source: "go compiler", Severity: SeverityInformation}
 
@@ -505,12 +479,19 @@ func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
 
 			if currentFile != p0f {
 				if w != nil {
-					w.Close()
+					if err := w.Close(); err != nil {
+						return err
+					}
 				}
 				currentFile = p0f
-				w = writerForLSP(subdirpath, currentFile)
+				w, err = writerForLSP(subdirpath, currentFile)
+				if err != nil {
+					return err
+				}
 				encoder = json.NewEncoder(w)
-				encoder.Encode(VersionHeader{Version: 0, Package: slashPkgPath, Goos: buildcfg.GOOS, Goarch: buildcfg.GOARCH, GcVersion: buildcfg.Version, File: currentFile})
+				if err := encoder.Encode(VersionHeader{Version: 0, Package: slashPkgPath, Goos: buildcfg.GOOS, Goarch: buildcfg.GOARCH, GcVersion: buildcfg.Version, File: currentFile}); err != nil {
+					return err
+				}
 			}
 
 			// The first "target" is the most important one.
@@ -545,12 +526,17 @@ func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
 				}
 			}
 
-			encoder.Encode(diagnostic)
+			if err := encoder.Encode(diagnostic); err != nil {
+				return err
+			}
 		}
 		if w != nil {
-			w.Close()
+			if err := w.Close(); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // newRange returns a single-position Range for the compiler source location p.

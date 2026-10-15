@@ -5,7 +5,6 @@
 package types
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/src"
 	"publicinternal/types/errors"
 )
@@ -15,7 +14,7 @@ func errorfContext(context *Context, pos src.XPos, code errors.Code, format stri
 		context.Diagnostics.ErrorfAt(pos, code, format, args...)
 		return
 	}
-	base.ErrorfAt(pos, code, format, args...)
+	panic("type diagnostic without a compilation context")
 }
 
 func fatalfContext(context *Context, pos src.XPos, format string, args ...any) {
@@ -23,7 +22,7 @@ func fatalfContext(context *Context, pos src.XPos, format string, args ...any) {
 		context.Diagnostics.FatalfAt(pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("type diagnostic without a compilation context")
 }
 
 func fatalfType(t *Type, pos src.XPos, format string, args ...any) {
@@ -31,7 +30,7 @@ func fatalfType(t *Type, pos src.XPos, format string, args ...any) {
 		fatalfContext(contextForType(t), pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("type diagnostic without a compilation context")
 }
 
 func assertfContext(context *Context, condition bool, format string, args ...any) {
@@ -39,5 +38,5 @@ func assertfContext(context *Context, condition bool, format string, args ...any
 		context.Diagnostics.Assertf(condition, format, args...)
 		return
 	}
-	base.Assertf(condition, format, args...)
+	panic("type assertion without a compilation context")
 }

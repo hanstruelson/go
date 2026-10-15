@@ -18,8 +18,6 @@ import (
 	"cmd/publicinternal/sys"
 )
 
-var intrinsics intrinsicBuilders
-
 // An intrinsicBuilder converts a call node n into an ssa value that
 // implements that call as an intrinsic. args is a list of arguments to the func.
 type intrinsicBuilder func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value
@@ -96,18 +94,27 @@ func (ib intrinsicBuilders) lookup(arch *sys.Arch, pkg, fn string) intrinsicBuil
 	return ib[intrinsicKey{arch, pkg, fn}]
 }
 
-func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
+func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) intrinsicBuilders {
 	if cfg == nil {
-		cfg = &intrinsicBuildConfig{
-			instrumenting: target.Flags.Cfg.Instrumenting,
-			go386:         buildcfg.GO386,
-			goamd64:       buildcfg.GOAMD64,
-			goarm:         buildcfg.GOARM,
-			goarm64:       buildcfg.GOARM64,
-			gomips:        buildcfg.GOMIPS,
-			gomips64:      buildcfg.GOMIPS64,
-			goppc64:       buildcfg.GOPPC64,
-			goriscv64:     buildcfg.GORISCV64,
+		if target == nil {
+			cfg = &intrinsicBuildConfig{
+				go386: buildcfg.GO386, goamd64: buildcfg.GOAMD64, goarm: buildcfg.GOARM,
+				goarm64: buildcfg.GOARM64, gomips: buildcfg.GOMIPS, gomips64: buildcfg.GOMIPS64,
+				goppc64: buildcfg.GOPPC64, goriscv64: buildcfg.GORISCV64,
+			}
+		} else {
+			features := target.ArchFeatures
+			cfg = &intrinsicBuildConfig{
+				instrumenting: target.Flags.Cfg.Instrumenting,
+				go386:         features.GO386,
+				goamd64:       features.GOAMD64,
+				goarm:         buildcfg.GoarmFeatures{Version: features.GOARMVersion, SoftFloat: features.GOARMSoftFloat},
+				goarm64:       buildcfg.Goarm64Features{Version: features.GOARM64Version, LSE: features.GOARM64LSE, Crypto: features.GOARM64Crypto},
+				gomips:        features.GOMIPS,
+				gomips64:      features.GOMIPS64,
+				goppc64:       features.GOPPC64,
+				goriscv64:     features.GORISCV64,
+			}
 		}
 	}
 	ib := intrinsicBuilders{}
@@ -1473,7 +1480,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 
 			// Broadcast h2 into each byte of a word.
 			var broadcast *ssa.Value
-			if buildcfg.GOAMD64 >= 4 {
+			if cfg.goamd64 >= 4 {
 				// VPBROADCASTB saves 1 instruction vs PSHUFB
 				// because the input can come from a GP
 				// register, while PSHUFB requires moving into
@@ -1485,7 +1492,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 				// a control mask of 0, and the register ABI
 				// already defines X15 as a zero register.
 				broadcast = s.newValue1(ssaop.OpAMD64VPBROADCASTB, types.TypeInt128, h) // use gp copy of h
-			} else if buildcfg.GOAMD64 >= 2 {
+			} else if cfg.goamd64 >= 2 {
 				// PSHUFB performs a byte broadcast when given
 				// a control input of 0.
 				broadcast = s.newValue1(ssaop.OpAMD64PSHUFBbroadcast, types.TypeInt128, hfp)
@@ -1545,7 +1552,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 			// https://go.dev/issue/70451.
 			gfp := s.newValue1(ssaop.OpAMD64MOVQi2f, types.TypeInt128, g)
 
-			if buildcfg.GOAMD64 >= 2 {
+			if cfg.goamd64 >= 2 {
 				// "PSIGNB negates each data element of the
 				// destination operand (the first operand) if
 				// the signed integer value of the
@@ -1726,7 +1733,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 		// Only enable intrinsics, if SIMD experiment.
 		simdAMD64Intrinsics(target, addF)
 		simdARM64Intrinsics(target, addF)
-		initWasmSIMD()
+		initWasmSIMD(ib)
 		simdARM64SVEIntrinsics(target, addF)
 		// Hand-written SVE infra intrinsic (not generated from a type op): vl
 		// reads the runtime vector length so the package can bound-check it.
@@ -1874,10 +1881,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 	}
 
 	if target == nil {
-		// Keep the table available to the intrinsic table tests, which call
-		// initIntrinsics without constructing a compiler target.
-		intrinsics = ib
-		return
+		return ib
 	}
 	target.IntrinsicBuilder = func(sym *types.Sym) any {
 		if sym == nil || sym.Pkg == nil {
@@ -1892,6 +1896,7 @@ func initIntrinsics(target *ir.Package, cfg *intrinsicBuildConfig) {
 		}
 		return ib.lookup(target.Ctxt.Arch.Arch, pkg, sym.Name)
 	}
+	return ib
 }
 
 const simdPackage = "simd/archsimd"
@@ -2676,7 +2681,7 @@ func IsIntrinsicSym(target *ir.Package, sym *types.Sym) bool {
 // to fn.
 func GenIntrinsicBody(fn *ir.Func) {
 	if fn.Target.Flags.LowerR != 0 {
-		fmt.Println("generate intrinsic for", ir.FuncName(fn))
+		fn.Target.Diagnostics.Printf("generate intrinsic for %s\n", ir.FuncName(fn))
 	}
 
 	pos := fn.Pos()

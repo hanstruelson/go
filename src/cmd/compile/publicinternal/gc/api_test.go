@@ -20,12 +20,16 @@ import (
 	s390xcompile "cmd/compile/publicinternal/s390x"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/compile/publicinternal/syntax"
+	"cmd/compile/publicinternal/types"
 	wasmcompile "cmd/compile/publicinternal/wasm"
+	"cmd/publicinternal/src"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -46,22 +50,169 @@ func TestPublicInternalParserParsesAndPrintsGo(t *testing.T) {
 	}
 }
 
+func TestCompileContainsArchitectureInitializationFailures(t *testing.T) {
+	request := func(init func(*ssagen.ArchInfo)) gc.Request {
+		return gc.Request{
+			ArchInit:    init,
+			GOARCH:      "amd64",
+			PackagePath: "example/initfailure",
+			Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return 42 }\n"}},
+		}
+	}
+
+	_, err := gc.Compile(request(func(arch *ssagen.ArchInfo) {
+		arch.InitError = fmt.Errorf("unsupported test architecture setting")
+	}))
+	var compileErr *gc.CompileError
+	if !errors.As(err, &compileErr) {
+		t.Fatalf("Compile error = %v, want *gc.CompileError", err)
+	}
+	if compileErr.Status != 1 || !strings.Contains(compileErr.Diagnostics, "unsupported test architecture setting") {
+		t.Fatalf("Compile error = %#v, want status 1 and initialization diagnostic", compileErr)
+	}
+
+	_, err = gc.Compile(request(func(*ssagen.ArchInfo) {
+		panic("test architecture initializer panic")
+	}))
+	if !errors.As(err, &compileErr) {
+		t.Fatalf("Compile error = %v, want *gc.CompileError", err)
+	}
+	if compileErr.Status != 2 || !strings.Contains(compileErr.Diagnostics, "test architecture initializer panic") {
+		t.Fatalf("Compile error = %#v, want recovered initialization panic", compileErr)
+	}
+
+	result, err := gc.Compile(request(amd64.Init))
+	if err != nil {
+		t.Fatalf("Compile after initialization failures: %v", err)
+	}
+	if len(result.Object) == 0 {
+		t.Fatal("Compile after initialization failures returned an empty object")
+	}
+}
+
+func TestCompileIgnoresProcessSSAEnvironment(t *testing.T) {
+	dumpDir := t.TempDir()
+	t.Setenv("GOSSAFUNC", "F")
+	t.Setenv("GOSSADIR", dumpDir)
+
+	_, err := gc.Compile(gc.Request{
+		ArchInit:    amd64.Init,
+		GOARCH:      "amd64",
+		PackagePath: "example/no-ssadump",
+		Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return 42 }\n"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dumpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("reusable compilation wrote SSA debug output from process environment: %v", entries)
+	}
+}
+
+func TestCompileReturnsMalformedHashDebugOptionError(t *testing.T) {
+	request := gc.Request{
+		ArchInit:    amd64.Init,
+		GOARCH:      "amd64",
+		PackagePath: "example/bad-hash-debug",
+		Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return 42 }\n"}},
+		Options:     []string{"-d=gossahash=not-a-valid-selector"},
+	}
+	_, err := gc.Compile(request)
+	var compileErr *gc.CompileError
+	if !errors.As(err, &compileErr) {
+		t.Fatalf("Compile error = %v, want *CompileError", err)
+	}
+	if !strings.Contains(compileErr.Diagnostics, "gossahash: invalid pattern syntax") {
+		t.Fatalf("Compile diagnostics = %q, want malformed gossahash selector", compileErr.Diagnostics)
+	}
+
+	request.Options = nil
+	if result, err := gc.Compile(request); err != nil {
+		t.Fatalf("Compile after malformed option: %v", err)
+	} else if len(result.Object) == 0 {
+		t.Fatal("Compile after malformed option returned an empty object")
+	}
+}
+
+func TestCompileRejectsProcessLevelSSADebugOutput(t *testing.T) {
+	_, err := gc.Compile(gc.Request{
+		ArchInit:    amd64.Init,
+		GOARCH:      "amd64",
+		PackagePath: "example/ssa-debug-output",
+		Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return 42 }\n"}},
+		Options:     []string{"-d=ssa/regalloc/debug=1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "process-level SSA debug output") {
+		t.Fatalf("Compile error = %v, want process-level SSA output rejection", err)
+	}
+}
+
+func TestCompileReturnsTypeErrorsAndCanContinue(t *testing.T) {
+	request := gc.Request{
+		ArchInit:    amd64.Init,
+		GOARCH:      "amd64",
+		PackagePath: "example/type-error",
+		Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return \"wrong\" }\n"}},
+	}
+	_, err := gc.Compile(request)
+	var compileErr *gc.CompileError
+	if !errors.As(err, &compileErr) {
+		t.Fatalf("Compile error = %v, want *CompileError", err)
+	}
+	if compileErr.Status != 2 || !strings.Contains(compileErr.Diagnostics, "cannot use") {
+		t.Fatalf("Compile error = %#v, want a returned type error", compileErr)
+	}
+
+	request.PackagePath = "example/type-error-recovery"
+	request.Files[0].Data = "package p\nfunc F() int { return 42 }\n"
+	if result, err := gc.Compile(request); err != nil {
+		t.Fatalf("Compile after type error: %v", err)
+	} else if len(result.Object) == 0 {
+		t.Fatal("Compile after type error returned an empty object")
+	}
+}
+
+func TestCompileCapturesInlineDiagnostics(t *testing.T) {
+	result, err := gc.Compile(gc.Request{
+		ArchInit:    amd64.Init,
+		GOARCH:      "amd64",
+		PackagePath: "example/inline-diagnostics",
+		Files:       []noder.SourceFile{{Name: "input.go", Data: "package p\nfunc F() int { return 42 }\n"}},
+		Options:     []string{"-m=1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Diagnostics, "can inline F") {
+		t.Fatalf("Compile diagnostics = %q, want inline optimization report", result.Diagnostics)
+	}
+}
+
 func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 	targets := []struct {
-		name string
-		init func(*ssagen.ArchInfo)
-		code string
+		name    string
+		goarch  string
+		ptrSize int
+		init    func(*ssagen.ArchInfo)
+		code    string
 	}{
-		{"amd64", amd64.Init, "package p\nfunc F(m map[string]int) (n int) { defer func() { n++ }(); return m[\"answer\"] }\n"},
-		{"arm", armcompile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"arm64", arm64compile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"loong64", loong64compile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"mips", mipscompile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"mips64", mips64compile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"ppc64", ppc64compile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"riscv64", riscv64compile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"s390x", s390xcompile.Init, "package p\nfunc F() int { return 42 }\n"},
-		{"wasm", wasmcompile.Init, "package p\nfunc F() int { return 42 }\n"},
+		{name: "amd64", goarch: "amd64", ptrSize: 8, init: amd64.Init, code: "func F(m map[string]int) (n int) { defer func() { n++ }(); return m[\"answer\"] }\n"},
+		{name: "arm", goarch: "arm", ptrSize: 4, init: armcompile.Init, code: "func F() int { return 42 }\n"},
+		{name: "arm64", goarch: "arm64", ptrSize: 8, init: arm64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "loong64", goarch: "loong64", ptrSize: 8, init: loong64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "mips", goarch: "mips", ptrSize: 4, init: mipscompile.Init, code: "func F() int { return 42 }\n"},
+		{name: "mipsle", goarch: "mipsle", ptrSize: 4, init: mipscompile.Init, code: "func F() int { return 42 }\n"},
+		{name: "mips64", goarch: "mips64", ptrSize: 8, init: mips64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "mips64le", goarch: "mips64le", ptrSize: 8, init: mips64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "ppc64", goarch: "ppc64", ptrSize: 8, init: ppc64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "ppc64le", goarch: "ppc64le", ptrSize: 8, init: ppc64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "riscv64", goarch: "riscv64", ptrSize: 8, init: riscv64compile.Init, code: "func F() int { return 42 }\n"},
+		{name: "s390x", goarch: "s390x", ptrSize: 8, init: s390xcompile.Init, code: "func F() int { return 42 }\n"},
+		{name: "wasm", goarch: "wasm", ptrSize: 8, init: wasmcompile.Init, code: "//go:wasmimport env imported\nfunc imported()\nfunc F() { imported() }\n"},
 	}
 	const requestsPerTarget = 2
 	requests := len(targets) * requestsPerTarget
@@ -70,7 +221,65 @@ func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 	oldFlagSet := flag.CommandLine
 	oldUsage := flag.Usage
 	oldLogWriter := log.Writer()
+	processFlags := base.Flag
+	processPos := base.Pos
+	processTypeLayout := struct {
+		ptrSize, regSize   int
+		maxWidth           int64
+		calcSizeDisabled   bool
+		slicePtr, sliceLen int64
+		sliceCap, sliceSz  int64
+		stringSz           int64
+	}{
+		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
+		calcSizeDisabled: types.CalcSizeDisabled,
+		slicePtr:         types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
+		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
+	}
+	base.Flag.K = 1 // A reusable request must use target-local diagnostic flags.
+	var processPosTable src.PosTable
+	base.Pos = processPosTable.XPos(src.MakePos(src.NewFileBase("process-global.go", "process-global.go"), 1, 1))
+	types.PtrSize = 4
+	types.RegSize = 4
+	types.MaxWidth = 1 << 30
+	types.CalcSizeDisabled = true
+	types.SlicePtrOffset = 100
+	types.SliceLenOffset = 104
+	types.SliceCapOffset = 108
+	types.SliceSize = 112
+	types.StringSize = 108
+	defer func() {
+		base.Flag = processFlags
+		base.Pos = processPos
+		types.PtrSize = processTypeLayout.ptrSize
+		types.RegSize = processTypeLayout.regSize
+		types.MaxWidth = processTypeLayout.maxWidth
+		types.CalcSizeDisabled = processTypeLayout.calcSizeDisabled
+		types.SlicePtrOffset = processTypeLayout.slicePtr
+		types.SliceLenOffset = processTypeLayout.sliceLen
+		types.SliceCapOffset = processTypeLayout.sliceCap
+		types.SliceSize = processTypeLayout.sliceSz
+		types.StringSize = processTypeLayout.stringSz
+	}()
 	oldCtxt, oldFlags, oldDebug, oldPos := base.Ctxt, base.Flag, base.Debug, base.Pos
+	oldTypeGlobals := struct {
+		ptrSize, regSize   int
+		maxWidth           int64
+		calcSizeDisabled   bool
+		types              [types.NTYPE]*types.Type
+		any, byte, rune    *types.Type
+		error, comparable  *types.Type
+		slicePtr, sliceLen int64
+		sliceCap, sliceSz  int64
+		stringSz           int64
+	}{
+		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
+		calcSizeDisabled: types.CalcSizeDisabled, types: types.Types,
+		any: types.AnyType, byte: types.ByteType, rune: types.RuneType,
+		error: types.ErrorType, comparable: types.ComparableType,
+		slicePtr: types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
+		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
+	}
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, requests)
@@ -81,14 +290,21 @@ func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 			target := targets[i/requestsPerTarget]
 			result, err := gc.Compile(gc.Request{
 				ArchInit:    target.init,
+				GOARCH:      target.goarch,
 				PackagePath: fmt.Sprintf("example/concurrent/%s%d", target.name, i),
 				Files: []noder.SourceFile{{
 					Name: "input.go",
-					Data: target.code,
+					Data: fmt.Sprintf("package p\nimport \"unsafe\"\nconst packageConstant = 42\ntype packageLayout struct { a int; b uintptr }\nvar packageValue = packageLayout{a: packageConstant, b: uintptr(packageConstant)}\nvar _ [%d-unsafe.Sizeof(uintptr(0))]byte\nvar _ [%d-unsafe.Sizeof([]byte{})]byte\nvar _ [%d-unsafe.Sizeof(string(\"\"))]byte\n", target.ptrSize, target.ptrSize*3, target.ptrSize*2) + target.code,
 				}},
 			})
 			if err == nil && len(result.Object) == 0 {
 				err = fmt.Errorf("request %d returned an empty object", i)
+			}
+			if err == nil && result.Diagnostics != "" {
+				err = fmt.Errorf("request %d read process-global diagnostic flags: %s", i, result.Diagnostics)
+			}
+			if err == nil && !bytes.Contains(result.Object, []byte("go object "+runtime.GOOS+" "+target.goarch+" ")) {
+				err = fmt.Errorf("request %d (%s) emitted an object header for the wrong target", i, target.name)
 			}
 			if err != nil {
 				errCh <- fmt.Errorf("request %d (%s): %w", i, target.name, err)
@@ -115,5 +331,26 @@ func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 	}
 	if oldCtxt != base.Ctxt || !reflect.DeepEqual(oldFlags, base.Flag) || !reflect.DeepEqual(oldDebug, base.Debug) || oldPos != base.Pos {
 		t.Errorf("Compile changed legacy base compiler state")
+	}
+	newTypeGlobals := struct {
+		ptrSize, regSize   int
+		maxWidth           int64
+		calcSizeDisabled   bool
+		types              [types.NTYPE]*types.Type
+		any, byte, rune    *types.Type
+		error, comparable  *types.Type
+		slicePtr, sliceLen int64
+		sliceCap, sliceSz  int64
+		stringSz           int64
+	}{
+		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
+		calcSizeDisabled: types.CalcSizeDisabled, types: types.Types,
+		any: types.AnyType, byte: types.ByteType, rune: types.RuneType,
+		error: types.ErrorType, comparable: types.ComparableType,
+		slicePtr: types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
+		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
+	}
+	if !reflect.DeepEqual(oldTypeGlobals, newTypeGlobals) {
+		t.Errorf("Compile changed legacy types package state")
 	}
 }

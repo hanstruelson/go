@@ -40,13 +40,13 @@ func Loopnestfor(f *Func) *LoopNest {
 	sawIrred := false
 
 	if f.Pass.Debug > 2 {
-		fmt.Printf("loop finding in %s\n", f.Name)
+		f.Config.Target.Diagnostics.Printf("loop finding in %s\n", f.Name)
 	}
 
 	// Reducible-loop-nest-finding.
 	for _, b := range po {
 		if f.Pass != nil && f.Pass.Debug > 3 {
-			fmt.Printf("loop finding at %s\n", b)
+			f.Config.Target.Diagnostics.Printf("loop finding at %s\n", b)
 		}
 
 		var innermost *Loop // innermost header reachable from this block
@@ -67,7 +67,7 @@ func Loopnestfor(f *Func) *LoopNest {
 
 			if sdom.IsAncestorEq(bb, b) { // Found a loop header
 				if f.Pass != nil && f.Pass.Debug > 4 {
-					fmt.Printf("loop finding    succ %s of %s is header\n", bb.String(), b.String())
+					f.Config.Target.Diagnostics.Printf("loop finding    succ %s of %s is header\n", bb.String(), b.String())
 				}
 				if l == nil {
 					l = &Loop{Header: bb, IsInner: true}
@@ -77,7 +77,7 @@ func Loopnestfor(f *Func) *LoopNest {
 			} else if !visited[bb.ID] { // Found an irreducible loop
 				sawIrred = true
 				if f.Pass != nil && f.Pass.Debug > 4 {
-					fmt.Printf("loop finding    succ %s of %s is IRRED, in %s\n", bb.String(), b.String(), f.Name)
+					f.Config.Target.Diagnostics.Printf("loop finding    succ %s of %s is IRRED, in %s\n", bb.String(), b.String(), f.Name)
 				}
 			} else if l != nil {
 				// TODO handle case where l is irreducible.
@@ -89,14 +89,14 @@ func Loopnestfor(f *Func) *LoopNest {
 				}
 				if f.Pass != nil && f.Pass.Debug > 4 {
 					if l == nil {
-						fmt.Printf("loop finding    succ %s of %s has no loop\n", bb.String(), b.String())
+						f.Config.Target.Diagnostics.Printf("loop finding    succ %s of %s has no loop\n", bb.String(), b.String())
 					} else {
-						fmt.Printf("loop finding    succ %s of %s provides loop with header %s\n", bb.String(), b.String(), l.Header.String())
+						f.Config.Target.Diagnostics.Printf("loop finding    succ %s of %s provides loop with header %s\n", bb.String(), b.String(), l.Header.String())
 					}
 				}
 			} else { // No loop
 				if f.Pass != nil && f.Pass.Debug > 4 {
-					fmt.Printf("loop finding    succ %s of %s has no loop\n", bb.String(), b.String())
+					f.Config.Target.Diagnostics.Printf("loop finding    succ %s of %s has no loop\n", bb.String(), b.String())
 				}
 
 			}
@@ -182,23 +182,23 @@ func Loopnestfor(f *Func) *LoopNest {
 	}
 
 	if f.Pass != nil && f.Pass.Debug > 1 && len(loops) > 0 {
-		fmt.Printf("Loops in %s:\n", f.Name)
+		f.Config.Target.Diagnostics.Printf("Loops in %s:\n", f.Name)
 		for _, l := range loops {
-			fmt.Printf("%s, b=", l.LongString())
+			f.Config.Target.Diagnostics.Printf("%s, b=", l.LongString())
 			for _, b := range f.Blocks {
 				if b2l[b.ID] == l {
-					fmt.Printf(" %s", b)
+					f.Config.Target.Diagnostics.Printf(" %s", b)
 				}
 			}
-			fmt.Print("\n")
+			f.Config.Target.Diagnostics.Printf("\n")
 		}
-		fmt.Printf("Nonloop blocks in %s:", f.Name)
+		f.Config.Target.Diagnostics.Printf("Nonloop blocks in %s:", f.Name)
 		for _, b := range f.Blocks {
 			if b2l[b.ID] == nil {
-				fmt.Printf(" %s", b)
+				f.Config.Target.Diagnostics.Printf(" %s", b)
 			}
 		}
-		fmt.Print("\n")
+		f.Config.Target.Diagnostics.Printf("\n")
 	}
 	return ln
 }

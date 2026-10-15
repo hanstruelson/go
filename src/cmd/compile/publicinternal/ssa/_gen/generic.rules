@@ -888,7 +888,7 @@
 	(Store {t2} p2 _
 		mem:(Zero [n] p3 _)))
 	&& o1 >= 0 && o1+t1.Size() <= n && ssa.IsSamePtr(p1, p3)
-	&& ssa.CanSSA(t1)
+	&& ssa.CanSSA(v.Block.Func.Config.PtrSize, t1)
 	&& ssa.Disjoint(op1, t1, p2, t2)
 	=> @mem.Block (Load <t1> (OffPtr <op1.Type> [o1] p3) mem)
 (Load <t1> op1:(OffPtr [o1] p1)
@@ -896,7 +896,7 @@
 		(Store {t3} p3 _
 			mem:(Zero [n] p4 _))))
 	&& o1 >= 0 && o1+t1.Size() <= n && ssa.IsSamePtr(p1, p4)
-	&& ssa.CanSSA(t1)
+	&& ssa.CanSSA(v.Block.Func.Config.PtrSize, t1)
 	&& ssa.Disjoint(op1, t1, p2, t2)
 	&& ssa.Disjoint(op1, t1, p3, t3)
 	=> @mem.Block (Load <t1> (OffPtr <op1.Type> [o1] p4) mem)
@@ -906,7 +906,7 @@
 			(Store {t4} p4 _
 				mem:(Zero [n] p5 _)))))
 	&& o1 >= 0 && o1+t1.Size() <= n && ssa.IsSamePtr(p1, p5)
-	&& ssa.CanSSA(t1)
+	&& ssa.CanSSA(v.Block.Func.Config.PtrSize, t1)
 	&& ssa.Disjoint(op1, t1, p2, t2)
 	&& ssa.Disjoint(op1, t1, p3, t3)
 	&& ssa.Disjoint(op1, t1, p4, t4)
@@ -918,7 +918,7 @@
 				(Store {t5} p5 _
 					mem:(Zero [n] p6 _))))))
 	&& o1 >= 0 && o1+t1.Size() <= n && ssa.IsSamePtr(p1, p6)
-	&& ssa.CanSSA(t1)
+	&& ssa.CanSSA(v.Block.Func.Config.PtrSize, t1)
 	&& ssa.Disjoint(op1, t1, p2, t2)
 	&& ssa.Disjoint(op1, t1, p3, t3)
 	&& ssa.Disjoint(op1, t1, p4, t4)
@@ -1022,10 +1022,10 @@
 
 // struct operations
 (StructSelect [i] x:(StructMake ___)) => x.Args[i]
-(Load <t> _ _) && t.IsStruct() && t.Size() > 0 && ssa.CanSSA(t) && !t.IsSIMD() => rewriteStructLoad(v)
+(Load <t> _ _) && t.IsStruct() && t.Size() > 0 && ssa.CanSSA(v.Block.Func.Config.PtrSize, t) && !t.IsSIMD() => rewriteStructLoad(v)
 (Store _ (StructMake ___) _) => ssa.RewriteStructStore(v)
 
-(StructSelect [i] x:(Load <t> ptr mem)) && !ssa.CanSSA(t) =>
+(StructSelect [i] x:(Load <t> ptr mem)) && !ssa.CanSSA(v.Block.Func.Config.PtrSize, t) =>
   @x.Block (Load <v.Type> (OffPtr <v.Type.PtrTo()> [t.FieldOff(int(i))] ptr) mem)
 
 // Putting struct{*byte} and similar into direct interfaces.
@@ -1034,15 +1034,15 @@
 (StructSelect (IData x)) && v.Type.Size() == 0 => (Empty)
 
 // un-SSAable values use mem->mem copies
-(Store {t} dst (Load src mem) mem) && !ssa.CanSSA(t) =>
+(Store {t} dst (Load src mem) mem) && !ssa.CanSSA(v.Block.Func.Config.PtrSize, t) =>
 	(Move {t} [t.Size()] dst src mem)
-(Store {t} dst (Load src mem) (VarDef {x} mem)) && !ssa.CanSSA(t) =>
+(Store {t} dst (Load src mem) (VarDef {x} mem)) && !ssa.CanSSA(v.Block.Func.Config.PtrSize, t) =>
 	(Move {t} [t.Size()] dst src (VarDef {x} mem))
 
 // array ops
 (ArraySelect (ArrayMake1 x)) => x
 
-(Load <t> ptr mem) && t.IsArray() && t.NumElem() == 1 && t.Size() > 0 && ssa.CanSSA(t) =>
+(Load <t> ptr mem) && t.IsArray() && t.NumElem() == 1 && t.Size() > 0 && ssa.CanSSA(v.Block.Func.Config.PtrSize, t) =>
   (ArrayMake1 (Load <t.Elem()> ptr mem))
 
 (Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e mem)

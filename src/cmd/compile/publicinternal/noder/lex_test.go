@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"testing"
 
+	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 )
 
@@ -89,7 +90,7 @@ func TestPragcgo(t *testing.T) {
 
 	}
 
-	var p noder
+	p := noder{target: &ir.Package{GOOS: runtime.GOOS}}
 	var nopos syntax.Pos
 	for _, tt := range tests {
 

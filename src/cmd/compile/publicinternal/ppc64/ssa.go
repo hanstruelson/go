@@ -16,7 +16,6 @@ import (
 	"cmd/publicinternal/obj/ppc64"
 	"math"
 	"publicinternal/abi"
-	"publicinternal/buildcfg"
 	"strings"
 )
 
@@ -2004,7 +2003,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Sym = s.Target().Symbols.PanicBounds
 
 	case ssaop.OpPPC64LoweredNilCheck:
-		if buildcfg.GOOS == "aix" {
+		if s.Target().GOOS == "aix" {
 			// CMP Rarg0, $0
 			// BNE 2(PC)
 			// STW R0, 0(R0)

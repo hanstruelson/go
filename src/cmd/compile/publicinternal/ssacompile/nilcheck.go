@@ -5,8 +5,6 @@
 package ssacompile
 
 import (
-	"publicinternal/buildcfg"
-
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -195,9 +193,6 @@ func nilcheckelim(f *ssa.Func) {
 // This should agree with minLegalPointer in the runtime.
 const minZeroPage = 4096
 
-// faultOnLoad is true if a load to an address below minZeroPage will trigger a SIGSEGV.
-var faultOnLoad = buildcfg.GOOS != "aix"
-
 // nilcheckelim2 eliminates unnecessary nil checks.
 // Runs after lowering and scheduling.
 func nilcheckelim2(f *ssa.Func) {
@@ -275,6 +270,7 @@ func nilcheckelim2(f *ssa.Func) {
 			// Find any pointers that this op is guaranteed to fault on if nil.
 			var ptrstore [2]*ssa.Value
 			ptrs := ptrstore[:0]
+			faultOnLoad := f.Config.Target.GOOS != "aix"
 			if ssaop.OpcodeTable[v.Op].FaultOnNilArg0 && (faultOnLoad || v.Type.IsMemory()) {
 				// On AIX, only writing will fault.
 				ptrs = append(ptrs, v.Args[0])

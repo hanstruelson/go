@@ -18,7 +18,6 @@ import (
 	"cmp"
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"strings"
 
@@ -1012,7 +1011,7 @@ func (lv *Liveness) enableClobber() {
 		// don't do that. Special case the wrappers to not clobber its arguments.
 		lv.noClobberArgs = true
 	}
-	if h := os.Getenv("GOCLOBBERDEADHASH"); h != "" {
+	if h := lv.fn.Target.ClobberDeadHash; h != "" {
 		// Clobber only functions where the hash of the function name matches a pattern.
 		// Useful for binary searching for a miscompiled function.
 		hstr := ""

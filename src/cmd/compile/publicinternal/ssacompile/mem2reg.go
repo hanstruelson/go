@@ -20,7 +20,6 @@ import (
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
-	"publicinternal/buildcfg"
 	"slices"
 )
 
@@ -208,8 +207,8 @@ var reinterpretOpMap = map[[2]types.Kind]ssaop.Op{
 
 // reinterpretOp returns a t1 => t2 reinterpret op if available in [reinterpretOpMap].
 // Otherwise it returns OpInvalid.
-func reinterpretOp(t1, t2 *types.Type) ssaop.Op {
-	if buildcfg.GOARCH != "amd64" {
+func reinterpretOp(arch string, t1, t2 *types.Type) ssaop.Op {
+	if arch != "amd64" {
 		// Currently only amd64 has the proper lowering rules for these ops.
 		return ssaop.OpInvalid
 	}
@@ -399,7 +398,7 @@ NextVar:
 				}
 				reinter := ssaop.OpInvalid
 				if !copyCompatibleType(v.Type, curV.Type) {
-					reinter = reinterpretOp(curV.Type, v.Type)
+					reinter = reinterpretOp(f.Config.Arch, curV.Type, v.Type)
 					if reinter == ssaop.OpInvalid {
 						// Not something we can optimize, bailout the variable and
 						// continue to the next variable.

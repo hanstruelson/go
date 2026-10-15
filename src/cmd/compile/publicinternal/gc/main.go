@@ -41,13 +41,15 @@ import (
 	"os"
 	"publicinternal/buildcfg"
 	"runtime"
+	"strconv"
+	"strings"
 )
 
 // handlePanic ensures that we print out an "internal compiler error" for any panic
 // or runtime exception during front-end compiler processing (unless there have
 // already been some compiler errors). It may also be invoked from the explicit panic in
 // hcrash(), in which case, we pass the panic on through.
-func handlePanic(target *ir.Package) {
+func handlePanic(target *ir.Package, reusable bool) {
 	ir.CloseHTMLWriters(target)
 	noder.CloseHTMLWriters(target)
 	if err := recover(); err != nil {
@@ -62,24 +64,78 @@ func handlePanic(target *ir.Package) {
 		if target != nil && target.Diagnostics != nil {
 			target.Diagnostics.Fatalf("panic: %v", err)
 		}
-		base.Fatalf("panic: %v", err) // no target exists before compiler context initialization
+		if reusable {
+			panic(err)
+		}
+		fmt.Fprintf(os.Stderr, "compile: panic before compiler context initialization: %v\n", err)
+		os.Exit(2)
 	}
 }
 
 // Main parses flags and Go source files specified in the command-line
 // arguments, type-checks the parsed Go package, compiles functions to machine
 // code, and finally writes the compiled package definition to disk.
-func Main(archInit func(*ssagen.ArchInfo)) {
-	mainWithSources(archInit, nil, false, nil)
+// Main runs the command-line compiler using arguments copied by the process
+// entry point. Parsing and compilation state is owned by this invocation.
+func Main(archInit func(*ssagen.ArchInfo), toolName string, args []string) {
+	args, err := objabi.ExpandArgs(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "compile: %v\n", err)
+		os.Exit(2)
+	}
+	mainWithConfig(archInit, nil, false, nil, "", os.Stdout, nil, &commandLine{toolName: toolName, args: args})
 }
 
-func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, onTarget func(*ir.Package)) {
-	mainWithConfig(archInit, sourceFiles, reusable, nil, "", os.Stdout, onTarget)
+func targetArchFeatures(goarch string, useProcessConfig bool) ir.ArchFeatures {
+	if useProcessConfig {
+		return ir.ArchFeatures{
+			GO386: buildcfg.GO386, GOAMD64: buildcfg.GOAMD64,
+			GOARMVersion: buildcfg.GOARM.Version, GOARMSoftFloat: buildcfg.GOARM.SoftFloat,
+			GOARM64Version: buildcfg.GOARM64.Version, GOARM64LSE: buildcfg.GOARM64.LSE, GOARM64Crypto: buildcfg.GOARM64.Crypto,
+			GOMIPS: buildcfg.GOMIPS, GOMIPS64: buildcfg.GOMIPS64,
+			GOPPC64: buildcfg.GOPPC64, GORISCV64: buildcfg.GORISCV64,
+			GOWASM: buildcfg.GOWASM.String(),
+		}
+	}
+
+	var features ir.ArchFeatures
+	switch goarch {
+	case "386":
+		features.GO386 = buildcfg.DefaultGO386
+	case "amd64":
+		features.GOAMD64, _ = strconv.Atoi(strings.TrimPrefix(buildcfg.DefaultGOAMD64, "v"))
+	case "arm":
+		arm := buildcfg.DefaultGOARM
+		features.GOARMVersion, _ = strconv.Atoi(arm[:1])
+		features.GOARMSoftFloat = features.GOARMVersion == 5 || strings.Contains(arm, "softfloat")
+	case "arm64":
+		arm64, _ := buildcfg.ParseGoarm64(buildcfg.DefaultGOARM64)
+		features.GOARM64Version = arm64.Version
+		features.GOARM64LSE = arm64.LSE
+		features.GOARM64Crypto = arm64.Crypto
+	case "mips", "mipsle":
+		features.GOMIPS = buildcfg.DefaultGOMIPS
+	case "mips64", "mips64le":
+		features.GOMIPS64 = buildcfg.DefaultGOMIPS64
+	case "ppc64", "ppc64le":
+		features.GOPPC64, _ = strconv.Atoi(strings.TrimPrefix(buildcfg.DefaultGOPPC64, "power"))
+	case "riscv64":
+		value := strings.TrimPrefix(buildcfg.DefaultGORISCV64, "rva")
+		value = strings.TrimSuffix(value, "u64")
+		features.GORISCV64, _ = strconv.Atoi(value)
+	}
+	return features
 }
 
-func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, request *Request, outputPath string, output io.Writer, onTarget func(*ir.Package)) {
+type commandLine struct {
+	toolName string
+	args     []string
+}
+
+func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, request *Request, outputPath string, output io.Writer, onTarget func(*ir.Package), command *commandLine) {
 	var compilequeue []*ir.Func
 	var target *ir.Package
+	var commandFiles []string
 	timer := &base.Timings{}
 	backend := ssagen.NewContext()
 	if output == nil {
@@ -91,12 +147,43 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		counter.Inc("compile/invocations")
 	}
 
-	defer func() { handlePanic(target) }()
+	defer func() { handlePanic(target, reusable) }()
 
 	arch := new(ssagen.ArchInfo)
+	if request != nil {
+		arch.TargetArch = request.GOARCH
+	} else {
+		arch.TargetArch = buildcfg.GOARCH
+	}
+	arch.TargetFeatures = targetArchFeatures(arch.TargetArch, request == nil || arch.TargetArch == buildcfg.GOARCH)
 	archInit(arch)
+	if arch.InitError != nil {
+		if reusable {
+			fmt.Fprintln(output, arch.InitError)
+			panic(base.ExitError(1))
+		}
+		fmt.Fprintln(os.Stderr, arch.InitError)
+		os.Exit(1)
+	}
+	if arch.LinkArch == nil || arch.LinkArch.Arch == nil {
+		fmt.Fprintln(output, "architecture initializer did not select a target architecture")
+		panic(base.ExitError(1))
+	}
+	selectedArch := arch.LinkArch.Arch.Name
+	if request != nil && request.GOARCH != "" && request.GOARCH != selectedArch {
+		fmt.Fprintf(output, "requested GOARCH %q, but architecture initializer selected %q\n", request.GOARCH, selectedArch)
+		panic(base.ExitError(1))
+	}
+	arch.TargetArch = selectedArch
 
 	target = new(ir.Package)
+	if request == nil {
+		target.GOOS = buildcfg.GOOS
+	} else {
+		target.GOOS = runtime.GOOS
+	}
+	target.GOARCH = selectedArch
+	target.ArchFeatures = arch.TargetFeatures
 	target.LogOpt = logopt.NewContext()
 	target.Diagnostics = base.NewDiagnostics(output)
 	target.Diagnostics.PanicOnExit = reusable
@@ -106,9 +193,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	target.TypeContext = types.NewContext(arch.LinkArch.PtrSize, arch.LinkArch.RegSize, arch.MAXWIDTH)
 	target.TypeContext.Link = target.Ctxt
 	target.TypeContext.Diagnostics = target.Diagnostics
-	if request == nil {
-		base.Ctxt = target.Ctxt
-	} else {
+	if request != nil {
 		target.Ctxt.Pkgpath = request.PackagePath
 	}
 	target.Ctxt.DiagFunc = target.Diagnostics.Diagf
@@ -125,20 +210,31 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	target.Ctxt.UseBASEntries = target.Ctxt.Headtype != objabi.Hdarwin
 
 	ssaOptions := ssacompile.NewOptions()
-	if request == nil {
-		base.ParseFlagsWithDebugSSA(ssaOptions.PhaseOption)
-		target.Flags = base.Flag
-		target.Debug = base.Debug
-		target.PGOHash = base.PGOHash
-		target.LoopVarHash = base.LoopVarHash
-		target.GossaHash = base.NewHashDebug("gossahash", target.Debug.Gossahash, nil)
-		target.ConvertHash = base.ConvertHash
-		target.FmaHash = base.FmaHash
-		target.LiteralAllocHash = base.LiteralAllocHash
-		target.VariableMakeHash = base.VariableMakeHash
-		target.MergeLocalsHash = base.MergeLocalsHash
-	} else {
-		options, err := base.ParseCompileConfig(target.Ctxt, request.Options, ssaOptions.PhaseOption, output)
+	if command != nil {
+		options, files, err := base.ParseCommandLineConfig(target.GOOS, target.Ctxt, command.args, ssaOptions.PhaseOption, os.Stderr, command.toolName)
+		if err != nil {
+			if err == flag.ErrHelp {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "compile: %v\n", err)
+			os.Exit(2)
+		}
+		commandFiles = files
+		target.Flags = options.Flags
+		target.Debug = options.Debug
+		target.LegacyEnvironment = true
+		target.ClobberDeadHash = os.Getenv("GOCLOBBERDEADHASH")
+		target.SSADumpDir = os.Getenv("GOSSADIR")
+		target.GossaHash = options.GossaHash
+		target.PGOHash = options.PGOHash
+		target.LoopVarHash = options.LoopVarHash
+		target.ConvertHash = options.ConvertHash
+		target.FmaHash = options.FmaHash
+		target.LiteralAllocHash = options.LiteralAllocHash
+		target.VariableMakeHash = options.VariableMakeHash
+		target.MergeLocalsHash = options.MergeLocalsHash
+	} else if request != nil {
+		options, err := base.ParseCompileConfig(target.GOOS, target.Ctxt, request.Options, ssaOptions.PhaseOption, output)
 		if err != nil {
 			target.Diagnostics.Fatalf("invalid compiler options: %v", err)
 		}
@@ -164,7 +260,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 			if flagGCStart > 0 {
 				startHeapMB = int64(flagGCStart)
 			}
-			base.AdjustStartingHeap(uint64(startHeapMB)<<20, 0, 0, 0, target.Debug.GCAdjust == 1)
+			base.AdjustStartingHeap(uint64(startHeapMB)<<20, 0, 0, 0, target.Debug.GCAdjust == 1, target.AddCleanup)
 		}
 	}
 
@@ -261,13 +357,15 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	}
 
 	if target.Flags.JSON != "" { // parse version,destination from json logging optimization.
-		target.LogOpt.LogJsonOption(target.Flags.JSON)
+		if err := target.LogOpt.LogJsonOption(target.Flags.JSON); err != nil {
+			target.Diagnostics.Fatalf("invalid -json option: %v", err)
+		}
 	}
 
 	target.EscFmt = escape.Fmt
 	target.IntrinsicCall = func(call *ir.CallExpr) bool { return ssagen.IsIntrinsicCall(target, call) }
 	target.IntrinsicSym = func(sym *types.Sym) bool { return ssagen.IsIntrinsicSym(target, sym) }
-	ssagen.InitEnv(backend, target)
+	ssagen.InitEnv(backend, target, !reusable)
 	target.SoftFloat = arch.SoftFloat
 
 	target.PtrSize = arch.LinkArch.PtrSize
@@ -288,8 +386,8 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 
 	// Parse and typecheck input.
 	var frontend *noder.Context
-	if sourceFiles == nil {
-		frontend = noder.LoadPackage(flag.Args(), target, timer)
+	if command != nil {
+		frontend = noder.LoadPackage(commandFiles, target, timer)
 	} else {
 		frontend = noder.LoadPackageFromSourceFiles(sourceFiles, target, timer)
 	}
@@ -480,7 +578,9 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		target.Diagnostics.Fatalf("%d uncompiled functions", len(compilequeue))
 	}
 
-	target.LogOpt.FlushLoggedOpts(target.Ctxt, target.Ctxt.Pkgpath)
+	if err := target.LogOpt.FlushLoggedOpts(target.Ctxt, target.Ctxt.Pkgpath); err != nil {
+		target.Diagnostics.Fatalf("cannot write optimizer log: %v", err)
+	}
 	target.Diagnostics.ExitIfErrors()
 
 	target.Diagnostics.FlushErrors()
@@ -491,6 +591,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 			target.Diagnostics.Fatalf("cannot write benchmark data: %v", err)
 		}
 	}
+	target.RunCleanup()
 }
 
 func writebench(timer *base.Timings, pkgpath, filename string) error {

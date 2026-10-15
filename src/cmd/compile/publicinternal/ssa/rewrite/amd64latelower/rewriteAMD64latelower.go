@@ -2,7 +2,6 @@
 
 package amd64latelower
 
-import "publicinternal/buildcfg"
 import "cmd/compile/publicinternal/ssa/ssaop"
 import "cmd/compile/publicinternal/ssa"
 
@@ -78,12 +77,12 @@ func rewriteValue_OpAMD64SARL(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SARL x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SARXL x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SARXL)
@@ -96,12 +95,12 @@ func rewriteValue_OpAMD64SARQ(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SARQ x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SARXQ x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SARXQ)
@@ -114,12 +113,12 @@ func rewriteValue_OpAMD64SHLL(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SHLL x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SHLXL x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SHLXL)
@@ -132,12 +131,12 @@ func rewriteValue_OpAMD64SHLQ(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SHLQ x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SHLXQ x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SHLXQ)
@@ -150,12 +149,12 @@ func rewriteValue_OpAMD64SHRL(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SHRL x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SHRXL x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SHRXL)
@@ -168,12 +167,12 @@ func rewriteValue_OpAMD64SHRQ(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (SHRQ x y)
-	// cond: buildcfg.GOAMD64 >= 3
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3
 	// result: (SHRXQ x y)
 	for {
 		x := v_0
 		y := v_1
-		if !(buildcfg.GOAMD64 >= 3) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOAMD64 >= 3) {
 			break
 		}
 		v.Reset(ssaop.OpAMD64SHRXQ)

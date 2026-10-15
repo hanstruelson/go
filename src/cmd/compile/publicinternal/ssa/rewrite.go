@@ -12,9 +12,9 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
-	"publicinternal/buildcfg"
 	"strings"
 
+	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -1432,10 +1432,10 @@ func SubFlags64(x, y int64) FlagConstant {
 	return fcb.Encode()
 }
 
-func SupportsPPC64PCRel() bool {
+func SupportsPPC64PCRel(target *ir.Package) bool {
 	// PCRel is currently supported for >= power10, linux only
 	// Internal and external linking supports this on ppc64le; internal linking on ppc64.
-	return buildcfg.GOPPC64 >= 10 && buildcfg.GOOS == "linux"
+	return target != nil && target.ArchFeatures.GOPPC64 >= 10 && target.GOOS == "linux"
 }
 
 // SymIsRO reports whether sym is a read-only global.

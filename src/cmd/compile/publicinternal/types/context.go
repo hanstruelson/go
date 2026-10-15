@@ -13,10 +13,6 @@ import (
 // compiler invocation. Types created in this context retain it so layout and
 // universe queries do not depend on whichever target was initialized most
 // recently.
-//
-// The package-level layout variables and constructors remain as compatibility
-// entry points for compiler utilities that do not have an explicit target.
-// Compiler paths should use a Context and the target-aware constructors.
 type Context struct {
 	Link *obj.Link
 	// Diagnostics owns errors for compilations that use this type universe.
@@ -47,18 +43,24 @@ type Context struct {
 	deferredTypeStack []*Type
 }
 
-var defaultContext = &Context{}
-
 // NewContext creates a type context with layout for one target architecture.
 func NewContext(ptrSize, regSize int, maxWidth int64) *Context {
 	return &Context{PtrSize: ptrSize, RegSize: regSize, MaxWidth: maxWidth}
+}
+
+// Type returns the canonical type of kind k in this compilation context.
+func (c *Context) Type(k Kind) *Type {
+	if c == nil {
+		panic("nil type context")
+	}
+	return c.Types[k]
 }
 
 // LinkSym returns the linker symbol for name in pkgPrefix. Reserved compiler
 // packages use the toolchain's special colon separator.
 func (c *Context) LinkSym(pkgPrefix, name string, abi obj.ABI) *obj.LSym {
 	if c == nil || c.Link == nil {
-		return base.PkgLinksym(pkgPrefix, name, abi)
+		panic("type context has no linker context")
 	}
 	sep := "."
 	if pkgPrefix == "go" || pkgPrefix == "type" {
@@ -70,16 +72,15 @@ func (c *Context) LinkSym(pkgPrefix, name string, abi obj.ABI) *obj.LSym {
 // Linkname returns the linker symbol for an explicit //go:linkname name.
 func (c *Context) Linkname(name string, abi obj.ABI) *obj.LSym {
 	if c == nil || c.Link == nil {
-		return base.Linkname(name, abi)
+		panic("type context has no linker context")
 	}
 	return c.Link.LookupABIInit(name, abi, func(sym *obj.LSym) { sym.Pkg = "_" })
 }
 
-// Context returns the target context that owns t. Types created by legacy
-// package-level helpers use the default context.
+// Context returns the target context that owns t.
 func (t *Type) Context() *Context {
 	if t == nil || t.context == nil {
-		return defaultContext
+		panic("type has no compilation context")
 	}
 	return t.context
 }
@@ -94,33 +95,33 @@ func contextForFields(fields []*Field) *Context {
 			return contextForType(f.Type)
 		}
 	}
-	return defaultContext
+	panic("cannot infer compilation context from empty fields")
 }
 
 func ptrSizeFor(c *Context) int {
-	if c == defaultContext {
-		return PtrSize
+	if c == nil {
+		panic("nil type context")
 	}
 	return c.PtrSize
 }
 
 func regSizeFor(c *Context) int {
-	if c == defaultContext {
-		return RegSize
+	if c == nil {
+		panic("nil type context")
 	}
 	return c.RegSize
 }
 
 func maxWidthFor(c *Context) int64 {
-	if c == defaultContext {
-		return MaxWidth
+	if c == nil {
+		panic("nil type context")
 	}
 	return c.MaxWidth
 }
 
 func calcSizeDisabledFor(c *Context) bool {
-	if c == defaultContext {
-		return CalcSizeDisabled
+	if c == nil {
+		panic("nil type context")
 	}
 	return c.CalcSizeDisabled
 }

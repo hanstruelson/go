@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
-	"publicinternal/buildcfg"
 
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
@@ -291,7 +290,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.OpARMANDconst, ssaop.OpARMBICconst:
 		// try to optimize ANDconst and BICconst to BFC, which saves bytes and ticks
 		// BFC is only available on ARMv7, and its result and source are in the same register
-		if buildcfg.GOARM.Version == 7 && v.Reg() == v.Args[0].Reg() {
+		if s.Target().ArchFeatures.GOARMVersion == 7 && v.Reg() == v.Args[0].Reg() {
 			var val uint32
 			if v.Op == ssaop.OpARMANDconst {
 				val = ^uint32(v.AuxInt)
@@ -648,7 +647,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			default:
 			}
 		}
-		if buildcfg.GOARM.Version >= 6 {
+		if s.Target().ArchFeatures.GOARMVersion >= 6 {
 			// generate more efficient "MOVB/MOVBU/MOVH/MOVHU Reg@>0, Reg" on ARMv6 & ARMv7
 			genshift(s, v, v.Op.Asm(), 0, v.Args[0].Reg(), v.Reg(), arm.SHIFT_RR, 0)
 			return

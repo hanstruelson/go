@@ -158,7 +158,7 @@ assignOK:
 	for i, r := range rhs {
 		checkLHS(i, r.Type())
 		if lhs[i].Type() != nil {
-			rhs[i] = AssignConv(r, lhs[i].Type(), "assignment")
+			rhs[i] = AssignConvFor(targetForFunc(curfunc), r, lhs[i].Type(), "assignment")
 		}
 	}
 }
@@ -531,7 +531,7 @@ func tcSend(curfunc *ir.Func, n *ir.SendStmt) ir.Node {
 		return n
 	}
 
-	n.Value = AssignConv(n.Value, t.Elem(), "send")
+	n.Value = AssignConvFor(targetForFunc(curfunc), n.Value, t.Elem(), "send")
 	if n.Value.Type() == nil {
 		return n
 	}

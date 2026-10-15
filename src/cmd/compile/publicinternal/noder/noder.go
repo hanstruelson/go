@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"publicinternal/buildcfg"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/sys"
 )
 
 // SourceFile is a Go source file supplied directly to the compiler.
@@ -295,7 +295,7 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 			break
 		}
 
-		if buildcfg.GOARCH == "wasm" {
+		if p.target.Ctxt.Arch.Family == sys.Wasm {
 			// Only actually use them if we're compiling to WASM though.
 			pragma.WasmImport = &WasmImport{
 				Pos:    pos,
@@ -312,7 +312,7 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 			break
 		}
 
-		if buildcfg.GOARCH == "wasm" {
+		if p.target.Ctxt.Arch.Family == sys.Wasm {
 			// Only actually use them if we're compiling to WASM though.
 			pragma.WasmExport = &WasmExport{
 				Pos:  pos,

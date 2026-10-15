@@ -14,27 +14,27 @@
 (Sub32F ...) => (FSUBS ...)
 (Sub64F ...) => (FSUB ...)
 
-(Min(32|64)F x y) && buildcfg.GOPPC64 >= 9 => (XSMINJDP x y)
-(Max(32|64)F x y) && buildcfg.GOPPC64 >= 9 => (XSMAXJDP x y)
+(Min(32|64)F x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (XSMINJDP x y)
+(Max(32|64)F x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (XSMAXJDP x y)
 
 // Combine 64 bit integer multiply and adds
-(ADD            z  l:(MULLD            x  y)) && buildcfg.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD                        x    y                        z   )
-(ADD            z  l:(MULLDconst <mt> [x] y)) && buildcfg.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD (MOVDconst <mt> [int64(x)]) y                        z   )
-(ADDconst <at> [z] l:(MULLD            x  y)) && buildcfg.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD                        x    y (MOVDconst <at> [int64(z)]))
-(ADDconst <at> [z] l:(MULLDconst <mt> [x] y)) && buildcfg.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD (MOVDconst <mt> [int64(x)]) y (MOVDconst <at> [int64(z)]))
+(ADD            z  l:(MULLD            x  y)) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD                        x    y                        z   )
+(ADD            z  l:(MULLDconst <mt> [x] y)) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD (MOVDconst <mt> [int64(x)]) y                        z   )
+(ADDconst <at> [z] l:(MULLD            x  y)) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD                        x    y (MOVDconst <at> [int64(z)]))
+(ADDconst <at> [z] l:(MULLDconst <mt> [x] y)) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 && l.Uses == 1 && ssa.Clobber(l) => (MADDLD (MOVDconst <mt> [int64(x)]) y (MOVDconst <at> [int64(z)]))
 
 (Mod16 x y) => (Mod32 (SignExt16to32 x) (SignExt16to32 y))
 (Mod16u x y) => (Mod32u (ZeroExt16to32 x) (ZeroExt16to32 y))
 (Mod8 x y) => (Mod32 (SignExt8to32 x) (SignExt8to32 y))
 (Mod8u x y) => (Mod32u (ZeroExt8to32 x) (ZeroExt8to32 y))
-(Mod64 x y) && buildcfg.GOPPC64 >=9 => (MODSD x y)
-(Mod64 x y) && buildcfg.GOPPC64 <=8 => (SUB x (MULLD y (DIVD x y)))
-(Mod64u x y) && buildcfg.GOPPC64 >= 9 => (MODUD x y)
-(Mod64u x y) && buildcfg.GOPPC64 <= 8 => (SUB x (MULLD y (DIVDU x y)))
-(Mod32 x y) && buildcfg.GOPPC64 >= 9 => (MODSW x y)
-(Mod32 x y) && buildcfg.GOPPC64 <= 8 => (SUB x (MULLW y (DIVW x y)))
-(Mod32u x y) && buildcfg.GOPPC64 >= 9 => (MODUW x y)
-(Mod32u x y) && buildcfg.GOPPC64 <= 8 => (SUB x (MULLW y (DIVWU x y)))
+(Mod64 x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >=9 => (MODSD x y)
+(Mod64 x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <=8 => (SUB x (MULLD y (DIVD x y)))
+(Mod64u x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (MODUD x y)
+(Mod64u x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (SUB x (MULLD y (DIVDU x y)))
+(Mod32 x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (MODSW x y)
+(Mod32 x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (SUB x (MULLW y (DIVW x y)))
+(Mod32u x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (MODUW x y)
+(Mod32u x y) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (SUB x (MULLW y (DIVWU x y)))
 
 // (x + y) / 2 with x>=y => (x - y) / 2 + y
 (Avg64u <t> x y) => (ADD (SRDconst <t> (SUB <t> x y) [1]) y)
@@ -269,15 +269,15 @@
 
 (Ctz(64|32|16|8)NonZero ...) => (Ctz64 ...)
 
-(Ctz64 x) && buildcfg.GOPPC64 <= 8 => (POPCNTD (ANDN <typ.Int64> (ADDconst <typ.Int64> [-1] x) x))
-(Ctz32 x) && buildcfg.GOPPC64 <= 8 => (POPCNTW (MOVWZreg (ANDN <typ.Int> (ADDconst <typ.Int> [-1] x) x)))
-(Ctz16 x) && buildcfg.GOPPC64 <= 8 => (POPCNTW (MOVHZreg (ANDN <typ.Int16> (ADDconst <typ.Int16> [-1] x) x)))
-(Ctz8  x) && buildcfg.GOPPC64 <= 8 => (POPCNTB (MOVBZreg (ANDN <typ.UInt8> (ADDconst <typ.UInt8> [-1] x) x)))
+(Ctz64 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (POPCNTD (ANDN <typ.Int64> (ADDconst <typ.Int64> [-1] x) x))
+(Ctz32 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (POPCNTW (MOVWZreg (ANDN <typ.Int> (ADDconst <typ.Int> [-1] x) x)))
+(Ctz16 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (POPCNTW (MOVHZreg (ANDN <typ.Int16> (ADDconst <typ.Int16> [-1] x) x)))
+(Ctz8  x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (POPCNTB (MOVBZreg (ANDN <typ.UInt8> (ADDconst <typ.UInt8> [-1] x) x)))
 
-(Ctz64 x) && buildcfg.GOPPC64 >= 9 => (CNTTZD x)
-(Ctz32 x) && buildcfg.GOPPC64 >= 9 => (CNTTZW (MOVWZreg x))
-(Ctz16 x) && buildcfg.GOPPC64 >= 9 => (CNTTZD (OR <typ.UInt64> x (MOVDconst [1<<16])))
-(Ctz8  x) && buildcfg.GOPPC64 >= 9 => (CNTTZD (OR <typ.UInt64> x (MOVDconst [1<<8])))
+(Ctz64 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (CNTTZD x)
+(Ctz32 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (CNTTZW (MOVWZreg x))
+(Ctz16 x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (CNTTZD (OR <typ.UInt64> x (MOVDconst [1<<16])))
+(Ctz8  x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (CNTTZD (OR <typ.UInt64> x (MOVDconst [1<<8])))
 
 (BitLen64 x) => (SUBFCconst [64] (CNTLZD <typ.Int> x))
 (BitLen32 x) => (SUBFCconst [32] (CNTLZW <typ.Int> x))
@@ -506,10 +506,10 @@
 // Handle cases not handled above
 // Lowered Short cases do not generate loops, and as a result don't clobber
 // the address registers or flags.
-(Zero [s] ptr mem) && buildcfg.GOPPC64 <= 8 && s < 64 => (LoweredZeroShort [s] ptr mem)
-(Zero [s] ptr mem) && buildcfg.GOPPC64 <= 8 => (LoweredZero [s] ptr mem)
-(Zero [s] ptr mem) && s < 128 && buildcfg.GOPPC64 >= 9 => (LoweredQuadZeroShort [s] ptr mem)
-(Zero [s] ptr mem) && buildcfg.GOPPC64 >= 9 => (LoweredQuadZero [s] ptr mem)
+(Zero [s] ptr mem) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 && s < 64 => (LoweredZeroShort [s] ptr mem)
+(Zero [s] ptr mem) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 => (LoweredZero [s] ptr mem)
+(Zero [s] ptr mem) && s < 128 && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (LoweredQuadZeroShort [s] ptr mem)
+(Zero [s] ptr mem) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (LoweredQuadZero [s] ptr mem)
 
 // moves
 (Move [0] _ _ mem) => mem
@@ -537,11 +537,11 @@
 
 // Large move uses a loop. Since the address is computed and the
 // offset is zero, any alignment can be used.
-(Move [s] dst src mem) && s > 8 && buildcfg.GOPPC64 <= 8 && ssa.LogLargeCopyValue(v, s) =>
+(Move [s] dst src mem) && s > 8 && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 8 && ssa.LogLargeCopyValue(v, s) =>
         (LoweredMove [s] dst src mem)
-(Move [s] dst src mem) && s > 8 && s <= 64 && buildcfg.GOPPC64 >= 9 =>
+(Move [s] dst src mem) && s > 8 && s <= 64 && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 =>
         (LoweredQuadMoveShort [s] dst src mem)
-(Move [s] dst src mem) && s > 8 && buildcfg.GOPPC64 >= 9 && ssa.LogLargeCopyValue(v, s) =>
+(Move [s] dst src mem) && s > 8 && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 && ssa.LogLargeCopyValue(v, s) =>
         (LoweredQuadMove [s] dst src mem)
 
 // Calls
@@ -760,9 +760,9 @@
 // instructions for non-indexed ops depending on the value of the offset.
 //
 // Fold offsets for stores.
-(MOV(D|W|H|B)store [off1] {sym} (ADDconst [off2] x) val mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1)+off2))) => (MOV(D|W|H|B)store [off1+int32(off2)] {sym} x val mem)
+(MOV(D|W|H|B)store [off1] {sym} (ADDconst [off2] x) val mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1)+off2))) => (MOV(D|W|H|B)store [off1+int32(off2)] {sym} x val mem)
 
-(FMOV(S|D)store [off1] {sym} (ADDconst [off2] ptr) val mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1)+off2))) => (FMOV(S|D)store [off1+int32(off2)] {sym} ptr val mem)
+(FMOV(S|D)store [off1] {sym} (ADDconst [off2] ptr) val mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1)+off2))) => (FMOV(S|D)store [off1+int32(off2)] {sym} ptr val mem)
 
 // Fold address into load/store.
 // If power10 with PCRel is not available, then
@@ -771,56 +771,56 @@
 // the temp register. So don't fold address of global in that case if there is more than
 // one use.
 (MOV(B|H|W|D)store [off1] {sym1} p:(MOVDaddr [off2] {sym2} ptr) val mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
         (MOV(B|H|W|D)store [off1+off2] {ssa.MergeSym(sym1,sym2)} ptr val mem)
 
 (FMOV(S|D)store [off1] {sym1} p:(MOVDaddr [off2] {sym2} ptr) val mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
         (FMOV(S|D)store [off1+off2] {ssa.MergeSym(sym1,sym2)} ptr val mem)
 
 (MOV(B|H|W)Zload [off1] {sym1} p:(MOVDaddr [off2] {sym2} ptr) mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
         (MOV(B|H|W)Zload [off1+off2] {ssa.MergeSym(sym1,sym2)} ptr mem)
 (MOV(H|W|D)load [off1] {sym1} p:(MOVDaddr [off2] {sym2} ptr) mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
         (MOV(H|W|D)load [off1+off2] {ssa.MergeSym(sym1,sym2)} ptr mem)
 (FMOV(S|D)load [off1] {sym1} p:(MOVDaddr [off2] {sym2} ptr) mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (ptr.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
         (FMOV(S|D)load [off1+off2] {ssa.MergeSym(sym1,sym2)} ptr mem)
 
 // Fold offsets for loads.
-(FMOV(S|D)load [off1] {sym} (ADDconst [off2] ptr) mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1)+off2))) => (FMOV(S|D)load [off1+int32(off2)] {sym} ptr mem)
+(FMOV(S|D)load [off1] {sym} (ADDconst [off2] ptr) mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1)+off2))) => (FMOV(S|D)load [off1+int32(off2)] {sym} ptr mem)
 
-(MOV(D|W|WZ|H|HZ|BZ)load [off1] {sym} (ADDconst [off2] x) mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1)+off2))) => (MOV(D|W|WZ|H|HZ|BZ)load [off1+int32(off2)] {sym} x mem)
+(MOV(D|W|WZ|H|HZ|BZ)load [off1] {sym} (ADDconst [off2] x) mem) && (ssa.Is16Bit(int64(off1)+off2) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1)+off2))) => (MOV(D|W|WZ|H|HZ|BZ)load [off1+int32(off2)] {sym} x mem)
 
 // Determine load + addressing that can be done as a register indexed load
 (MOV(D|W|WZ|H|HZ|BZ)load [0] {sym} p:(ADD ptr idx) mem) && sym == nil && p.Uses == 1 => (MOV(D|W|WZ|H|HZ|BZ)loadidx ptr idx mem)
 
 // See comments above concerning selection of indexed vs. non-indexed ops.
 // These cases don't have relocation.
-(MOV(D|W)loadidx ptr (MOVDconst [c]) mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(D|W)load [int32(c)] ptr mem)
-(MOV(WZ|H|HZ|BZ)loadidx ptr (MOVDconst [c]) mem) && (ssa.Is16Bit(c) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(WZ|H|HZ|BZ)load [int32(c)] ptr mem)
-(MOV(D|W)loadidx (MOVDconst [c]) ptr mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(D|W)load [int32(c)] ptr mem)
-(MOV(WZ|H|HZ|BZ)loadidx (MOVDconst [c]) ptr mem) && (ssa.Is16Bit(c) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(WZ|H|HZ|BZ)load [int32(c)] ptr mem)
+(MOV(D|W)loadidx ptr (MOVDconst [c]) mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(D|W)load [int32(c)] ptr mem)
+(MOV(WZ|H|HZ|BZ)loadidx ptr (MOVDconst [c]) mem) && (ssa.Is16Bit(c) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(WZ|H|HZ|BZ)load [int32(c)] ptr mem)
+(MOV(D|W)loadidx (MOVDconst [c]) ptr mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(D|W)load [int32(c)] ptr mem)
+(MOV(WZ|H|HZ|BZ)loadidx (MOVDconst [c]) ptr mem) && (ssa.Is16Bit(c) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(WZ|H|HZ|BZ)load [int32(c)] ptr mem)
 
 // Store of zero => storezero
 (MOV(D|W|H|B)store [off] {sym} ptr (MOVDconst [0]) mem) => (MOV(D|W|H|B)storezero [off] {sym} ptr mem)
 
 // Fold offsets for storezero
-(MOV(D|W|H|B)storezero [off1] {sym} (ADDconst [off2] x) mem) && ((ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1)+off2)) || (ssa.Is16Bit(int64(off1)+off2))) =>
+(MOV(D|W|H|B)storezero [off1] {sym} (ADDconst [off2] x) mem) && ((ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1)+off2)) || (ssa.Is16Bit(int64(off1)+off2))) =>
     (MOV(D|W|H|B)storezero [off1+int32(off2)] {sym} x mem)
 
 // Stores with addressing that can be done as indexed stores
 (MOV(D|W|H|B)store [0] {sym} p:(ADD ptr idx) val mem) && sym == nil && p.Uses == 1 => (MOV(D|W|H|B)storeidx ptr idx val mem)
 
-(MOVDstoreidx ptr (MOVDconst [c]) val mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOVDstore [int32(c)] ptr val mem)
-(MOV(W|H|B)storeidx ptr (MOVDconst [c]) val mem) && (ssa.Is16Bit(c) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(W|H|B)store [int32(c)] ptr val mem)
-(MOVDstoreidx (MOVDconst [c]) ptr val mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOVDstore [int32(c)] ptr val mem)
-(MOV(W|H|B)storeidx (MOVDconst [c]) ptr val mem) && (ssa.Is16Bit(c) || (buildcfg.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(W|H|B)store [int32(c)] ptr val mem)
+(MOVDstoreidx ptr (MOVDconst [c]) val mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOVDstore [int32(c)] ptr val mem)
+(MOV(W|H|B)storeidx ptr (MOVDconst [c]) val mem) && (ssa.Is16Bit(c) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(W|H|B)store [int32(c)] ptr val mem)
+(MOVDstoreidx (MOVDconst [c]) ptr val mem) && ((ssa.Is16Bit(c) && c%4 == 0) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOVDstore [int32(c)] ptr val mem)
+(MOV(W|H|B)storeidx (MOVDconst [c]) ptr val mem) && (ssa.Is16Bit(c) || (v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 10 && ssa.Is32Bit(c))) => (MOV(W|H|B)store [int32(c)] ptr val mem)
 
 // Fold symbols into storezero
 (MOV(D|W|H|B)storezero [off1] {sym1} p:(MOVDaddr [off2] {sym2} x) mem) && ssa.CanMergeSym(sym1,sym2)
-	&& ((ssa.Is16Bit(int64(off1+off2)) && (x.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel() && ssa.Is32Bit(int64(off1+off2)))) =>
+	&& ((ssa.Is16Bit(int64(off1+off2)) && (x.Op != ssaop.OpSB || p.Uses == 1)) || (ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && ssa.Is32Bit(int64(off1+off2)))) =>
     (MOV(D|W|H|B)storezero [off1+off2] {ssa.MergeSym(sym1,sym2)} x mem)
 
 // atomic intrinsics
@@ -888,7 +888,7 @@
 // (x + x) << c  →  x << (c+1)
 (SLWconst [c] (ADD x x)) && c < 31 => (SLWconst [c+1] x)
 // special case for power9
-(SL(W|D)const [c] z:(MOVWreg x)) && c < 32 && buildcfg.GOPPC64 >= 9 => (EXTSWSLconst [c] x)
+(SL(W|D)const [c] z:(MOVWreg x)) && c < 32 && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 >= 9 => (EXTSWSLconst [c] x)
 
 // Lose widening ops fed to stores
 (MOVBstore [off] {sym} ptr (MOV(B|BZ|H|HZ|W|WZ)reg x) mem) => (MOVBstore [off] {sym} ptr x mem)
@@ -1040,7 +1040,7 @@
 (PrefetchCacheStreamed ptr mem)  => (DCBT ptr mem [16])
 
 // Use byte reverse instructions on Power10
-(Bswap(16|32|64) x) && buildcfg.GOPPC64>=10 => (BR(H|W|D) x)
+(Bswap(16|32|64) x) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64>=10 => (BR(H|W|D) x)
 
 // Fold bit reversal into loads.
 (BR(W|H) x:(MOV(W|H)Zload [off] {sym} ptr mem)) && x.Uses == 1 => @x.Block (MOV(W|H)BRload (MOVDaddr <ptr.Type> [off] {sym} ptr) mem)

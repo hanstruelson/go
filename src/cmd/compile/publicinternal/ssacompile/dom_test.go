@@ -50,7 +50,7 @@ func genFwdBack(size int) []bloc {
 	blocs = append(blocs,
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto(blockn(0)),
 		),
 	)
@@ -80,7 +80,7 @@ func genManyPred(size int) []bloc {
 	blocs = append(blocs,
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto(blockn(0)),
 		),
 	)
@@ -91,15 +91,15 @@ func genManyPred(size int) []bloc {
 		switch i % 3 {
 		case 0:
 			blocs = append(blocs, Bloc(blockn(i),
-				Valu("a", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+				Valu("a", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 				Goto(blockn(i+1))))
 		case 1:
 			blocs = append(blocs, Bloc(blockn(i),
-				Valu("a", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+				Valu("a", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 				If("p", blockn(i+1), blockn(0))))
 		case 2:
 			blocs = append(blocs, Bloc(blockn(i),
-				Valu("a", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+				Valu("a", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 				If("p", blockn(i+1), blockn(size))))
 		}
 	}
@@ -118,7 +118,7 @@ func genMaxPred(size int) []bloc {
 	blocs = append(blocs,
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto(blockn(0)),
 		),
 	)
@@ -143,14 +143,14 @@ func genMaxPredValue(size int) []bloc {
 	blocs = append(blocs,
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto(blockn(0)),
 		),
 	)
 
 	for i := 0; i < size; i++ {
 		blocs = append(blocs, Bloc(blockn(i),
-			Valu("a", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("a", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			If("p", blockn(i+1), "exit")))
 	}
 
@@ -273,7 +273,7 @@ func TestDominatorsMultPredFwd(t *testing.T) {
 	fun := c.Fun("entry",
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			If("p", "a", "c")),
 		Bloc("a",
 			If("p", "b", "c")),
@@ -301,7 +301,7 @@ func TestDominatorsDeadCode(t *testing.T) {
 	fun := c.Fun("entry",
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 0, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 0, nil),
 			If("p", "b3", "b5")),
 		Bloc("b2", Exit("mem")),
 		Bloc("b3", Goto("b2")),
@@ -326,7 +326,7 @@ func TestDominatorsMultPredRev(t *testing.T) {
 			Goto("first")),
 		Bloc("first",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto("a")),
 		Bloc("a",
 			If("p", "b", "first")),
@@ -355,7 +355,7 @@ func TestDominatorsMultPred(t *testing.T) {
 	fun := c.Fun("entry",
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			If("p", "a", "c")),
 		Bloc("a",
 			If("p", "b", "c")),
@@ -384,7 +384,7 @@ func TestInfiniteLoop(t *testing.T) {
 	fun := c.Fun("entry",
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto("a")),
 		Bloc("a",
 			Goto("b")),
@@ -421,7 +421,7 @@ func TestDomTricky(t *testing.T) {
 		fun := cfg.Fun("1",
 			Bloc("1",
 				Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-				Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+				Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 				Goto("4")),
 			Bloc("2",
 				Goto("11")),
@@ -497,7 +497,7 @@ func testDominatorsPostTricky(t *testing.T, b7then, b7else, b12then, b12else, b1
 	fun := c.Fun("b1",
 		Bloc("b1",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("p", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("p", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			If("p", "b3", "b2")),
 		Bloc("b3",
 			If("p", "b5", "b6")),

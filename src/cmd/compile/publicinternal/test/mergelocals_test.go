@@ -10,15 +10,15 @@ import (
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
-	"publicinternal/testenv"
 	"path/filepath"
+	"publicinternal/testenv"
 	"sort"
 	"strings"
 	"testing"
 )
 
 func mkiv(name string) *ir.Name {
-	i32 := types.Types[types.TINT32]
+	i32 := testTarget.Type(types.TINT32)
 	s := typecheck.Lookup(testTarget, name)
 	v := ir.NewNameAt(src.NoXPos, s, i32)
 	return v

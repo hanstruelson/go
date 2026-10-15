@@ -6,9 +6,8 @@ package noder
 
 import (
 	"bytes"
-	"fmt"
-	"publicinternal/goexperiment"
 	"io"
+	"publicinternal/goexperiment"
 
 	"cmd/publicinternal/bio"
 )
@@ -29,6 +28,6 @@ func WriteExports(ctx *Context, out *bio.Writer) {
 	out.WriteString("\n$$\n")
 
 	if ctx.Target.Debug.Export != 0 {
-		fmt.Printf("BenchmarkExportSize:%s 1 %d bytes\n", ctx.Target.Ctxt.Pkgpath, data.Len())
+		ctx.Target.Diagnostics.Printf("BenchmarkExportSize:%s 1 %d bytes\n", ctx.Target.Ctxt.Pkgpath, data.Len())
 	}
 }

@@ -58,7 +58,7 @@ func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Nod
 		if context != nil && context.Diagnostics != nil {
 			return context.Diagnostics.FmtPos(pos)
 		}
-		return base.FmtPos(pos)
+		return fmt.Sprint(pos)
 	}
 	var indent []byte
 	if context != nil {
@@ -717,7 +717,7 @@ func RewriteMultiValueCall(curfunc *ir.Func, n ir.InitNode, call ir.Node) {
 		n.SetOp(ir.OAS2)
 		n.Rhs = make([]ir.Node, len(list))
 		for i, tmp := range list {
-			n.Rhs[i] = AssignConv(tmp, n.Lhs[i].Type(), "assignment")
+			n.Rhs[i] = AssignConvFor(targetForFunc(curfunc), tmp, n.Lhs[i].Type(), "assignment")
 		}
 	}
 }
@@ -1049,7 +1049,7 @@ func typecheckaste(curfunc *ir.Func, op ir.Op, call ir.Node, isddd bool, params 
 				n = nl[i]
 				ir.SetPosIn(curfunc, n)
 				if n.Type() != nil {
-					nl[i] = assignconvfn(n, t, desc)
+					nl[i] = assignconvfnFor(targetForFunc(curfunc), n, t, desc)
 				}
 				return
 			}
@@ -1059,7 +1059,7 @@ func typecheckaste(curfunc *ir.Func, op ir.Op, call ir.Node, isddd bool, params 
 				n = nl[i]
 				ir.SetPosIn(curfunc, n)
 				if n.Type() != nil {
-					nl[i] = assignconvfn(n, t.Elem(), desc)
+					nl[i] = assignconvfnFor(targetForFunc(curfunc), n, t.Elem(), desc)
 				}
 			}
 			return
@@ -1071,7 +1071,7 @@ func typecheckaste(curfunc *ir.Func, op ir.Op, call ir.Node, isddd bool, params 
 		n = nl[i]
 		ir.SetPosIn(curfunc, n)
 		if n.Type() != nil {
-			nl[i] = assignconvfn(n, t, desc)
+			nl[i] = assignconvfnFor(targetForFunc(curfunc), n, t, desc)
 		}
 		i++
 	}
@@ -1135,7 +1135,7 @@ func typecheckarraylit(curfunc *ir.Func, elemType *types.Type, bound int64, elts
 		}
 
 		r = Expr(curfunc, r)
-		r = AssignConv(r, elemType, ctx)
+		r = AssignConvFor(targetForFunc(curfunc), r, elemType, ctx)
 		if kv != nil {
 			kv.Value = r
 		} else {

@@ -9,10 +9,10 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
 	"fmt"
-	"publicinternal/bisect"
 	"io"
 	"os"
 	"path/filepath"
+	"publicinternal/bisect"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,99 +50,8 @@ func (d *HashDebug) SetInlineSuffixOnly(b bool) *HashDebug {
 	return d
 }
 
-// The default compiler-debugging HashDebug, for "-d=gossahash=..."
-var hashDebug *HashDebug
-
-var ConvertHash *HashDebug      // for debugging float-to-[u]int conversion changes
-var FmaHash *HashDebug          // for debugging fused-multiply-add floating point changes
-var LoopVarHash *HashDebug      // for debugging shared/private loop variable changes
-var PGOHash *HashDebug          // for debugging PGO optimization decisions
-var LiteralAllocHash *HashDebug // for debugging literal allocation optimizations
-var MergeLocalsHash *HashDebug  // for debugging local stack slot merging changes
-var VariableMakeHash *HashDebug // for debugging variable-sized make optimizations
-
-// DebugHashMatchPkgFunc reports whether debug variable Gossahash
-//
-//  1. is empty (returns true; this is a special more-quickly implemented case of 4 below)
-//
-//  2. is "y" or "Y" (returns true)
-//
-//  3. is "n" or "N" (returns false)
-//
-//  4. does not explicitly exclude the sha1 hash of pkgAndName (see step 6)
-//
-//  5. is a suffix of the sha1 hash of pkgAndName (returns true)
-//
-//  6. OR
-//     if the (non-empty) value is in the regular language
-//     "(-[01]+/)+?([01]+(/[01]+)+?"
-//     (exclude..)(....include...)
-//     test the [01]+ exclude substrings, if any suffix-match, return false (4 above)
-//     test the [01]+ include substrings, if any suffix-match, return true
-//     The include substrings AFTER the first slash are numbered 0,1, etc and
-//     are named fmt.Sprintf("%s%d", varname, number)
-//     As an extra-special case for multiple failure search,
-//     an excludes-only string ending in a slash (terminated, not separated)
-//     implicitly specifies the include string "0/1", that is, match everything.
-//     (Exclude strings are used for automated search for multiple failures.)
-//     Clause 6 is not really intended for human use and only
-//     matters for failures that require multiple triggers.
-//
-// Otherwise it returns false.
-//
-// Unless Flags.Gossahash is empty, when DebugHashMatchPkgFunc returns true the message
-//
-//	"%s triggered %s\n", varname, pkgAndName
-//
-// is printed on the file named in environment variable GSHS_LOGFILE,
-// or standard out if that is empty.  "Varname" is either the name of
-// the variable or the name of the substring, depending on which matched.
-//
-// Typical use:
-//
-//  1. you make a change to the compiler, say, adding a new phase
-//
-//  2. it is broken in some mystifying way, for example, make.bash builds a broken
-//     compiler that almost works, but crashes compiling a test in run.bash.
-//
-//  3. add this guard to the code, which by default leaves it broken, but does not
-//     run the broken new code if Flags.Gossahash is non-empty and non-matching:
-//
-//     if !base.DebugHashMatch(ir.PkgFuncName(fn)) {
-//     return nil // early exit, do nothing
-//     }
-//
-//  4. rebuild w/o the bad code,
-//     GOCOMPILEDEBUG=gossahash=n ./all.bash
-//     to verify that you put the guard in the right place with the right sense of the test.
-//
-//  5. use github.com/dr2chase/gossahash to search for the error:
-//
-//     go install github.com/dr2chase/gossahash@latest
-//
-//     gossahash -- <the thing that fails>
-//
-//     for example: GOMAXPROCS=1 gossahash -- ./all.bash
-//
-//  6. gossahash should return a single function whose miscompilation
-//     causes the problem, and you can focus on that.
-func DebugHashMatchPkgFunc(pkg, fn string) bool {
-	return hashDebug.MatchPkgFunc(pkg, fn, nil)
-}
-
-func DebugHashMatchPos(pos src.XPos) bool {
-	return hashDebug.MatchPos(pos, nil)
-}
-
-// HasDebugHash returns true if Flags.Gossahash is non-empty, which
-// results in hashDebug being not-nil.  I.e., if !HasDebugHash(),
-// there is no need to create the string for hashing and testing.
-func HasDebugHash() bool {
-	return hashDebug != nil
-}
-
 // TODO: Delete when we switch to bisect-only.
-func toHashAndMask(s, varname string) hashAndMask {
+func toHashAndMask(s, varname string) (hashAndMask, error) {
 	l := len(s)
 	if l > 64 {
 		s = s[l-64:]
@@ -151,28 +60,39 @@ func toHashAndMask(s, varname string) hashAndMask {
 	m := ^(^uint64(0) << l)
 	h, err := strconv.ParseUint(s, 2, 64)
 	if err != nil {
-		Fatalf("Could not parse %s (=%s) as a binary number", varname, s)
+		return hashAndMask{}, fmt.Errorf("could not parse %s (=%s) as a binary number", varname, s)
 	}
 
-	return hashAndMask{name: varname, hash: h, mask: m}
+	return hashAndMask{name: varname, hash: h, mask: m}, nil
 }
 
 // NewHashDebug returns a new hash-debug tester for the
 // environment variable ev.  If ev is not set, it returns
 // nil, allowing a lightweight check for normal-case behavior.
 func NewHashDebug(ev, s string, file io.Writer) *HashDebug {
+	hd, err := NewHashDebugWithError(ev, s, file)
+	if err != nil {
+		panic(err)
+	}
+	return hd
+}
+
+// NewHashDebugWithError parses a hash-debug selector without terminating the
+// process. Reusable compiler clients should use this form and return the error
+// through their request result.
+func NewHashDebugWithError(ev, s string, file io.Writer) (*HashDebug, error) {
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 
 	hd := &HashDebug{name: ev, logfile: file}
 	if !strings.Contains(s, "/") {
 		m, err := bisect.New(s)
 		if err != nil {
-			Fatalf("%s: %v", ev, err)
+			return nil, fmt.Errorf("%s: %w", ev, err)
 		}
 		hd.bisect = m
-		return hd
+		return hd, nil
 	}
 
 	// TODO: Delete remainder of function when we switch to bisect-only.
@@ -185,7 +105,11 @@ func NewHashDebug(ev, s string, file io.Writer) *HashDebug {
 			break
 		}
 		ss = ss[1:]
-		hd.excludes = append(hd.excludes, toHashAndMask(s[1:], fmt.Sprintf("%s%d", "HASH_EXCLUDE", i)))
+		mask, err := toHashAndMask(s[1:], fmt.Sprintf("%s%d", "HASH_EXCLUDE", i))
+		if err != nil {
+			return nil, err
+		}
+		hd.excludes = append(hd.excludes, mask)
 		i++
 	}
 	// hash searches may use additional EVs with 0, 1, 2, ... suffixes.
@@ -193,21 +117,28 @@ func NewHashDebug(ev, s string, file io.Writer) *HashDebug {
 	for _, s := range ss {
 		if s == "" {
 			if i != 0 || len(ss) > 1 && ss[1] != "" || len(ss) > 2 {
-				Fatalf("Empty hash match string for %s should be first (and only) one", ev)
+				return nil, fmt.Errorf("empty hash match string for %s should be first (and only) one", ev)
 			}
 			// Special case of should match everything.
-			hd.matches = append(hd.matches, toHashAndMask("0", fmt.Sprintf("%s0", ev)))
-			hd.matches = append(hd.matches, toHashAndMask("1", fmt.Sprintf("%s1", ev)))
+			zero, _ := toHashAndMask("0", fmt.Sprintf("%s0", ev))
+			one, _ := toHashAndMask("1", fmt.Sprintf("%s1", ev))
+			hd.matches = append(hd.matches, zero, one)
 			break
 		}
+		var name string
 		if i == 0 {
-			hd.matches = append(hd.matches, toHashAndMask(s, ev))
+			name = ev
 		} else {
-			hd.matches = append(hd.matches, toHashAndMask(s, fmt.Sprintf("%s%d", ev, i-1)))
+			name = fmt.Sprintf("%s%d", ev, i-1)
 		}
+		mask, err := toHashAndMask(s, name)
+		if err != nil {
+			return nil, err
+		}
+		hd.matches = append(hd.matches, mask)
 		i++
 	}
-	return hd
+	return hd, nil
 }
 
 // TODO: Delete when we switch to bisect-only.

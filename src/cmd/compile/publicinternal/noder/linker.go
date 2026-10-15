@@ -14,6 +14,7 @@ import (
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/obj"
+	"cmd/publicinternal/sys"
 )
 
 // This file implements the unified IR linker, which combines the
@@ -270,7 +271,7 @@ func (l *linker) relocFuncExt(w *pkgbits.Encoder, name *ir.Name) {
 	l.pragmaFlag(w, name.Func.Pragma)
 	l.linkname(w, name)
 
-	if buildcfg.GOARCH == "wasm" {
+	if l.ctx.Target.Ctxt.Arch.Family == sys.Wasm {
 		if name.Func.WasmImport != nil {
 			w.String(name.Func.WasmImport.Module)
 			w.String(name.Func.WasmImport.Name)

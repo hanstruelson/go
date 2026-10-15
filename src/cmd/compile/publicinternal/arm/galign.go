@@ -8,14 +8,13 @@ import (
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/obj/arm"
-	"publicinternal/buildcfg"
 )
 
 func Init(arch *ssagen.ArchInfo) {
 	arch.LinkArch = &arm.Linkarm
 	arch.REGSP = arm.REGSP
 	arch.MAXWIDTH = (1 << 32) - 1
-	arch.SoftFloat = buildcfg.GOARM.SoftFloat
+	arch.SoftFloat = arch.TargetFeatures.GOARMSoftFloat
 	arch.ZeroRange = zerorange
 	arch.Ginsnop = ginsnop
 

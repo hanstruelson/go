@@ -122,7 +122,7 @@ func (w *walkState) convas(n *ir.AssignStmt, init *ir.Nodes) *ir.AssignStmt {
 	}
 
 	if !types.Identical(lt, rt) {
-		n.Y = typecheck.AssignConv(n.Y, lt, "assignment")
+		n.Y = typecheck.AssignConvFor(w.curfunc.Target, n.Y, lt, "assignment")
 		n.Y = w.walkExpr(n.Y, init)
 	}
 	types.CalcSize(n.Y.Type())

@@ -18,7 +18,6 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/obj/x86"
 	"publicinternal/abi"
-	"publicinternal/buildcfg"
 )
 
 // ssaMarkMoves marks any MOVXconst ops that need to avoid clobbering flags.
@@ -996,7 +995,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.OpAMD64MOVQstoreconst, ssaop.OpAMD64MOVLstoreconst, ssaop.OpAMD64MOVWstoreconst, ssaop.OpAMD64MOVBstoreconst:
 		sc := v.AuxValAndOff()
 		p := s.Prog(v.Op.Asm())
-		if sc.Val() == 0 && s.ABI == obj.ABIInternal && buildcfg.GOOS != "plan9" && (v.Op == ssaop.OpAMD64MOVQstoreconst || v.Op == ssaop.OpAMD64MOVLstoreconst) {
+		if sc.Val() == 0 && s.ABI == obj.ABIInternal && s.Target().GOOS != "plan9" && (v.Op == ssaop.OpAMD64MOVQstoreconst || v.Op == ssaop.OpAMD64MOVLstoreconst) {
 			p.From.Type = obj.TYPE_REG
 			p.From.Reg = x86.REG_X15
 		} else {
@@ -1041,7 +1040,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Type = obj.TYPE_CONST
 		sc := v.AuxValAndOff()
 		p.From.Offset = sc.Val64()
-		if sc.Val() == 0 && s.ABI == obj.ABIInternal && buildcfg.GOOS != "plan9" {
+		if sc.Val() == 0 && s.ABI == obj.ABIInternal && s.Target().GOOS != "plan9" {
 			switch v.Op {
 			case ssaop.OpAMD64MOVQstoreconstidx1, ssaop.OpAMD64MOVQstoreconstidx8,
 				ssaop.OpAMD64MOVLstoreconstidx1, ssaop.OpAMD64MOVLstoreconstidx4:
@@ -2062,7 +2061,7 @@ func zeroX15Low(s *ssagen.State, avx bool) {
 
 // zeroX15 zeroes the X15 register.
 func zeroX15(s *ssagen.State) {
-	if buildcfg.GOAMD64 >= 3 {
+	if s.Target().ArchFeatures.GOAMD64 >= 3 {
 		vxorpsX15(s)
 		return
 	}

@@ -56,7 +56,7 @@ func forEachGC(fn func() bool) {
 // uses supported interfaces, but depends more than we like on
 // current+observed behavior of the garbage collector, so if many people need
 // this feature, we should consider/propose a better way to accomplish it.
-func AdjustStartingHeap(requestedHeapGoal, derateBreak, derateLoPct, derateHiPct uint64, logHeapTweaks bool) {
+func AdjustStartingHeap(requestedHeapGoal, derateBreak, derateLoPct, derateHiPct uint64, logHeapTweaks bool, addCleanup func(func())) {
 	mp := runtime.GOMAXPROCS(0)
 
 	const (
@@ -181,7 +181,10 @@ func AdjustStartingHeap(requestedHeapGoal, derateBreak, derateLoPct, derateHiPct
 
 	if logHeapTweaks {
 		sample := append([]metrics.Sample(nil), sample...) // avoid races with GC callback
-		AtExit(func() {
+		if addCleanup == nil {
+			panic("AdjustStartingHeap requires a per-compilation cleanup registrar")
+		}
+		addCleanup(func() {
 			metrics.Read(sample)
 			goal := sample[SH_GOAL].Value.Uint64()
 			count := sample[SH_COUNT].Value.Uint64()

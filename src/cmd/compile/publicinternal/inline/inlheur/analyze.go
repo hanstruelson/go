@@ -76,7 +76,7 @@ func AnalyzeFunc(ctx *Context, fn *ir.Func, canInline func(*ir.Func), budgetForF
 		return
 	}
 	enableDebugTraceIfEnv(ctx.Target)
-	if debugTrace&debugTraceFuncs != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceFuncs != 0 {
 		fmt.Fprintf(os.Stderr, "=-= AnalyzeFunc(%v)\n", fn)
 	}
 	// Build up a list containing 'fn' and any closures it contains. Along
@@ -108,7 +108,7 @@ func AnalyzeFunc(ctx *Context, fn *ir.Func, canInline func(*ir.Func), budgetForF
 			f.Inl.Properties = funcProps.SerializeToString()
 		}
 	}
-	disableDebugTrace()
+	disableDebugTrace(ctx.Target)
 }
 
 // TearDown is invoked at the end of the main inlining pass; doing
@@ -163,7 +163,7 @@ func revisitInlinability(ctx *Context, fn *ir.Func, funcProps *FuncProps, budget
 // a function "properties" object, to be used to drive inlining
 // heuristics. See comments on the FuncProps type for more info.
 func computeFuncProps(ctx *Context, fn *ir.Func, inlineMaxBudget int, nf *nameFinder) (*FuncProps, CallSiteTab) {
-	if debugTrace&debugTraceFuncs != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceFuncs != 0 {
 		fmt.Fprintf(os.Stderr, "=-= starting analysis of func %v:\n%+v\n",
 			fn, fn)
 	}
@@ -317,7 +317,7 @@ func captureFuncDumpEntry(ctx *Context, fn *ir.Func) {
 	if _, ok := ctx.dumpBuffer[fn]; ok {
 		return
 	}
-	if debugTrace&debugTraceFuncs != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceFuncs != 0 {
 		fmt.Fprintf(os.Stderr, "=-= capturing dump for %v:\n", fn)
 	}
 	funcInlHeur.pkgPath = fn.Target.LocalPkg.Path

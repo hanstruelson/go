@@ -16,7 +16,6 @@ import (
 	"cmd/publicinternal/obj/riscv"
 	"fmt"
 	"publicinternal/abi"
-	"publicinternal/buildcfg"
 )
 
 // ssaRegToReg maps ssa register numbers to obj register numbers.
@@ -1136,7 +1135,7 @@ func ssaGenBlock(s *ssagen.State, b, next *ssa.Block) {
 		// TMP = base + index*8 (SH3ADD if Zba else SLLI+ADD).
 		// Load slot into TMP, then indirect JMP through TMP.
 		var p *obj.Prog
-		if buildcfg.GORISCV64 >= 22 {
+		if s.Target().ArchFeatures.GORISCV64 >= 22 {
 			p = s.Prog(riscv.ASH3ADD)
 			p.From.Type = obj.TYPE_REG
 			p.From.Reg = b.Controls[1].Reg()

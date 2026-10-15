@@ -82,7 +82,7 @@ func makeParamsAnalyzer(ctx *Context, fn *ir.Func, nf *nameFinder) (*paramsAnaly
 		return nil, vals
 	}
 
-	if debugTrace&debugTraceParams != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceParams != 0 {
 		fmt.Fprintf(os.Stderr, "=-= param analysis of func %v:\n",
 			fn.Sym().Name)
 		for i := range vals {
@@ -133,7 +133,7 @@ func (pa *paramsAnalyzer) checkParams(x ir.Node, flag ParamPropBits, mayflag Par
 			continue
 		}
 		result, may := testf(x, p, idx)
-		if debugTrace&debugTraceParams != 0 {
+		if debugTraceFor(pa.ctx.Target)&debugTraceParams != 0 {
 			fmt.Fprintf(os.Stderr, "=-= test expr %v param %s result=%v flag=%s\n", x, p.Sym().Name, result, flag.String())
 		}
 		if result {
@@ -225,7 +225,7 @@ func (pa *paramsAnalyzer) deriveFlagsFromCallee(ce *ir.CallExpr, callee *ir.Func
 	if calleeProps == nil {
 		return
 	}
-	if debugTrace&debugTraceParams != 0 {
+	if debugTraceFor(pa.ctx.Target)&debugTraceParams != 0 {
 		fmt.Fprintf(os.Stderr, "=-= callee props for %v:\n%s",
 			callee.Sym().Name, calleeProps.String())
 	}
@@ -264,7 +264,7 @@ func (pa *paramsAnalyzer) deriveFlagsFromCallee(ce *ir.CallExpr, callee *ir.Func
 			pa.values[callerParamIdx] == ParamNoInfo {
 			continue
 		}
-		if debugTrace&debugTraceParams != 0 {
+		if debugTraceFor(pa.ctx.Target)&debugTraceParams != 0 {
 			fmt.Fprintf(os.Stderr, "=-= pflag for arg %d is %s\n",
 				pidx, pflag.String())
 		}

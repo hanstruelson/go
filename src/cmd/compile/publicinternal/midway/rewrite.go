@@ -166,6 +166,7 @@ type Rewriter struct {
 	pkg      *types2.Package
 	analyzer *Analyzer
 	info     *types2.Info
+	arch     string
 	sizes    []int
 }
 
@@ -174,6 +175,7 @@ func NewRewriter(pkg *types2.Package, info *types2.Info, analyzer *Analyzer, siz
 		pkg:      pkg,
 		info:     info,
 		analyzer: analyzer,
+		arch:     analyzer.target.Ctxt.Arch.Name,
 		sizes:    sizes,
 	}
 }
@@ -186,7 +188,7 @@ func (r *Rewriter) Rewrite(files []*syntax.File) {
 		var newDecls []syntax.Decl
 		for _, k := range r.sizes {
 			newDecls = r.generateForSize(fileAST, k, "", newDecls)
-			if v := variants.Variants[variants.Key{Arch: buildcfg.GOARCH, Size: k}]; v != nil {
+			if v := variants.Variants[variants.Key{Arch: r.arch, Size: k}]; v != nil {
 				newDecls = r.generateForSize(fileAST, k, v.Suffix, newDecls)
 			}
 		}
@@ -448,7 +450,7 @@ func (r *Rewriter) createDispatcherBody(d *syntax.FuncDecl, sig *types2.Signatur
 		// the regular case call with variant.require
 		// and then follow it with the variant case.
 		// `if simd.<require>() { callReturnStmt }`
-		if v := variants.Variants[variants.Key{Arch: buildcfg.GOARCH, Size: k}]; v != nil {
+		if v := variants.Variants[variants.Key{Arch: r.arch, Size: k}]; v != nil {
 			callReturnStmt = guardCallWithCondition(v.DefaultRequires, callReturnStmt)
 			caseBody = append(caseBody, callReturnStmt)
 			callReturnStmt = makeCallReturnStmt(k, v.Suffix)
@@ -565,13 +567,14 @@ func RewriteWrapper(target *ir.Package, pkg *types2.Package, info *types2.Info, 
 		return false
 	}
 
-	switch buildcfg.GOARCH {
+	arch := target.Ctxt.Arch.Name
+	switch arch {
 	case "wasm", "amd64", "arm64":
 	default:
 		return false
 	}
 
-	sizes := rewriteSizes()
+	sizes := rewriteSizes(arch)
 	if len(sizes) == 0 {
 		return false
 	}

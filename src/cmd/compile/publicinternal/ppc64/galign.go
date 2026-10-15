@@ -7,12 +7,12 @@ package ppc64
 import (
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/obj/ppc64"
-	"publicinternal/buildcfg"
 )
 
 func Init(arch *ssagen.ArchInfo) {
 	arch.LinkArch = &ppc64.Linkppc64
-	if buildcfg.GOARCH == "ppc64le" {
+	goarch := arch.TargetArch
+	if goarch == "ppc64le" {
 		arch.LinkArch = &ppc64.Linkppc64le
 	}
 	arch.REGSP = ppc64.REGSP

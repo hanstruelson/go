@@ -9,9 +9,6 @@ import (
 	"go/constant"
 	"go/token"
 	"go/version"
-	"log"
-	"os"
-	"publicinternal/buildcfg"
 	"publicinternal/pkgbits"
 	"slices"
 	"strings"
@@ -19,6 +16,7 @@ import (
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
+	"cmd/publicinternal/sys"
 )
 
 // This file implements the Unified IR package writer and defines the
@@ -870,7 +868,7 @@ func (w *writer) doObj(wext *writer, obj types2.Object) pkgbits.CodeObj {
 			// Unified IR panics are the worst; this is a huge help in debugging them.
 			defer func() {
 				if p := recover(); p != nil {
-					log.Printf("Intercepted unified IR writer panic for function %s, repanicking", obj.FullName())
+					w.p.target.Diagnostics.Printf("Intercepted unified IR writer panic for function %s, repanicking\n", obj.FullName())
 					panic(p)
 				}
 			}()
@@ -1206,7 +1204,7 @@ func (w *writer) funcExt(obj *types2.Func) {
 	sig, block := obj.Type().(*types2.Signature), decl.Body
 	body, closureVars := w.p.bodyIdx(sig, block, w.dict)
 	if len(closureVars) > 0 {
-		fmt.Fprintln(os.Stderr, "CLOSURE", closureVars)
+		w.p.target.Diagnostics.Printf("CLOSURE %v\n", closureVars)
 	}
 	assert(len(closureVars) == 0)
 
@@ -1214,7 +1212,7 @@ func (w *writer) funcExt(obj *types2.Func) {
 	w.pragmaFlag(pragma)
 	w.linkname(obj)
 
-	if buildcfg.GOARCH == "wasm" {
+	if w.p.target.Ctxt.Arch.Family == sys.Wasm {
 		if wi != nil {
 			w.String(wi.Module)
 			w.String(wi.Name)

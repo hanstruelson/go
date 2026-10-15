@@ -59,7 +59,7 @@ func (w *walkState) walkAppend(n *ir.CallExpr, init *ir.Nodes, dst ir.Node) ir.N
 	for i, n := range ls {
 		n = w.cheapExpr(n, init)
 		if !types.Identical(n.Type(), nsrc.Type().Elem()) {
-			n = typecheck.AssignConv(n, nsrc.Type().Elem(), "append")
+			n = typecheck.AssignConvFor(w.curfunc.Target, n, nsrc.Type().Elem(), "append")
 			n = w.walkExpr(n, init)
 		}
 		ls[i] = n

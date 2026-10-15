@@ -65,20 +65,20 @@ func benchFnBlock(b *testing.B, fn passFunc, bg blockGen) {
 
 func genFunction(size int) []bloc {
 	var blocs []bloc
-	elemType := types.Types[types.TINT64]
+	elemType := testTarget.TypeContext.Types[types.TINT64]
 	ptrType := elemType.PtrTo()
 
 	valn := func(s string, m, n int) string { return fmt.Sprintf("%s%d-%d", s, m, n) }
 	blocs = append(blocs,
 		Bloc("entry",
 			Valu(valn("store", 0, 4), ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("sb", ssaop.OpSB, types.Types[types.TUINTPTR], 0, nil),
+			Valu("sb", ssaop.OpSB, testTarget.TypeContext.Types[types.TUINTPTR], 0, nil),
 			Goto(blockn(1)),
 		),
 	)
 	for i := 1; i < size+1; i++ {
 		blocs = append(blocs, Bloc(blockn(i),
-			Valu(valn("v", i, 0), ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu(valn("v", i, 0), ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Valu(valn("addr", i, 1), ssaop.OpAddr, ptrType, 0, nil, "sb"),
 			Valu(valn("addr", i, 2), ssaop.OpAddr, ptrType, 0, nil, "sb"),
 			Valu(valn("addr", i, 3), ssaop.OpAddr, ptrType, 0, nil, "sb"),

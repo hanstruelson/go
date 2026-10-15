@@ -11,12 +11,12 @@
 
 // SETBC, SETBCR is supported on ISA 3.1(Power10) and newer, use ISELZ for
 // older targets
-(SETBC [2] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [2] (MOVDconst [1]) cmp)
-(SETBCR [2] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [6] (MOVDconst [1]) cmp)
-(SETBC [0] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [0] (MOVDconst [1]) cmp)
-(SETBCR [0] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [4] (MOVDconst [1]) cmp)
-(SETBC [1] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [1] (MOVDconst [1]) cmp)
-(SETBCR [1] cmp) && buildcfg.GOPPC64 <= 9 => (ISELZ [5] (MOVDconst [1]) cmp)
+(SETBC [2] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [2] (MOVDconst [1]) cmp)
+(SETBCR [2] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [6] (MOVDconst [1]) cmp)
+(SETBC [0] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [0] (MOVDconst [1]) cmp)
+(SETBCR [0] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [4] (MOVDconst [1]) cmp)
+(SETBC [1] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [1] (MOVDconst [1]) cmp)
+(SETBCR [1] cmp) && v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9 => (ISELZ [5] (MOVDconst [1]) cmp)
 
 // Convert simple bit masks to an equivalent rldic[lr] if possible.
 (AND x:(MOVDconst [m]) n) && ssa.IsPPC64ValidShiftMask(m) => (RLDICL [ssa.EncodePPC64RotateMask(0,m,64)] n)
@@ -29,7 +29,7 @@
 (AND <t> x:(MOVDconst [m]) n) && t.Size() == 4 && ssa.IsPPC64WordRotateMask(m) => (RLWINM [ssa.EncodePPC64RotateMask(0,m,32)] n)
 
 // When PCRel is supported, paddi can add a 34b signed constant in one instruction.
-(ADD (MOVDconst [m]) x) && ssa.SupportsPPC64PCRel() && (m<<30)>>30 == m => (ADDconst [m] x)
+(ADD (MOVDconst [m]) x) && ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && (m<<30)>>30 == m => (ADDconst [m] x)
 
 
 // Where possible and practical, generate CC opcodes. Due to the structure of the rules, there are limits to how

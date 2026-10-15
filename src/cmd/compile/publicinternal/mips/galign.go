@@ -8,17 +8,17 @@ import (
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/obj/mips"
-	"publicinternal/buildcfg"
 )
 
 func Init(arch *ssagen.ArchInfo) {
 	arch.LinkArch = &mips.Linkmips
-	if buildcfg.GOARCH == "mipsle" {
+	goarch := arch.TargetArch
+	if goarch == "mipsle" {
 		arch.LinkArch = &mips.Linkmipsle
 	}
 	arch.REGSP = mips.REGSP
 	arch.MAXWIDTH = (1 << 31) - 1
-	arch.SoftFloat = (buildcfg.GOMIPS == "softfloat")
+	arch.SoftFloat = (arch.TargetFeatures.GOMIPS == "softfloat")
 	arch.ZeroRange = zerorange
 	arch.Ginsnop = ginsnop
 	arch.SSAMarkMoves = func(s *ssagen.State, b *ssa.Block) {}

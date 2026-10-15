@@ -3,8 +3,8 @@
 package ssa
 
 import (
-	"publicinternal/unsafeheader"
 	"math/bits"
+	"publicinternal/unsafeheader"
 	"sync"
 	"unsafe"
 )

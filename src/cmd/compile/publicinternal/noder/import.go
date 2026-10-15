@@ -112,10 +112,10 @@ func openPackage(target *ir.Package, path string) (*os.File, error) {
 			suffix = "_asan"
 		}
 
-		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.a", buildcfg.GOROOT, buildcfg.GOOS, buildcfg.GOARCH, suffix, path)); err == nil {
+		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.a", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
 			return file, nil
 		}
-		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.o", buildcfg.GOROOT, buildcfg.GOOS, buildcfg.GOARCH, suffix, path)); err == nil {
+		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.o", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
 			return file, nil
 		}
 	}
@@ -217,13 +217,13 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 	}
 	defer f.Close()
 
-	data, err := readExportData(f)
+	data, err := readExportData(f, target)
 	if err != nil {
 		return
 	}
 
 	if compileCtx.Target.Debug.Export != 0 {
-		fmt.Printf("importing %s (%s)\n", path, f.Name())
+		compileCtx.Target.Diagnostics.Printf("importing %s (%s)\n", path, f.Name())
 	}
 
 	pr := pkgbits.NewPkgDecoder(pkg1.Path, data)
@@ -237,7 +237,7 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 }
 
 // readExportData returns the contents of GC-created unified export data.
-func readExportData(f *os.File) (data string, err error) {
+func readExportData(f *os.File, target *ir.Package) (data string, err error) {
 	r := bio.NewReader(f)
 
 	sz, err := exportdata.FindPackageDefinition(r.Reader)
@@ -251,7 +251,7 @@ func readExportData(f *os.File) (data string, err error) {
 		return
 	}
 
-	if expect := objabi.HeaderString(); abihdr != expect {
+	if expect := objabi.HeaderStringFor(target.GOOS, target.GOARCH); abihdr != expect {
 		err = fmt.Errorf("object is [%s] expected [%s]", abihdr, expect)
 		return
 	}

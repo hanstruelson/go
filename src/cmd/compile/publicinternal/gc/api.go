@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -22,7 +23,12 @@ import (
 // flags in -name=value form, excluding process-output, profiling,
 // environment-changing, and dynamic-linking flags.
 type Request struct {
-	ArchInit    func(*ssagen.ArchInfo)
+	ArchInit func(*ssagen.ArchInfo)
+	// GOARCH selects a target architecture variant when ArchInit supports more
+	// than one architecture (for example mips/mipsle). If empty, Compile uses
+	// the executing process architecture. It must match the architecture
+	// selected by ArchInit.
+	GOARCH      string
 	PackagePath string
 	Files       []noder.SourceFile
 	Options     []string
@@ -56,6 +62,9 @@ func (e *CompileError) Error() string {
 // Each request gets fresh target, IR, type-universe, frontend, and linker
 // contexts.
 func Compile(req Request) (result Result, err error) {
+	if req.GOARCH == "" {
+		req.GOARCH = runtime.GOARCH
+	}
 	if req.ArchInit == nil {
 		return result, errors.New("compile request has no architecture initializer")
 	}
@@ -86,7 +95,7 @@ func Compile(req Request) (result Result, err error) {
 	var panicValue any
 	func() {
 		defer func() { panicValue = recover() }()
-		mainWithConfig(req.ArchInit, sourceFiles, true, &req, outputPath, &capture, func(t *ir.Package) { target = t })
+		mainWithConfig(req.ArchInit, sourceFiles, true, &req, outputPath, &capture, func(t *ir.Package) { target = t }, nil)
 	}()
 	if target != nil && target.Diagnostics != nil {
 		result.Errors = target.Diagnostics.Errors()
@@ -99,6 +108,9 @@ func Compile(req Request) (result Result, err error) {
 		status := 2
 		if exit, ok := panicValue.(base.ExitError); ok {
 			status = int(exit)
+		}
+		if result.Diagnostics == "" && panicValue != nil {
+			result.Diagnostics = fmt.Sprintf("compiler initialization failed: %v\n", panicValue)
 		}
 		return result, &CompileError{Status: status, Diagnostics: result.Diagnostics}
 	}
@@ -153,6 +165,9 @@ func validateRequestOptions(options []string) error {
 		case "d":
 			for _, setting := range strings.Split(value, ",") {
 				key, _, _ := strings.Cut(setting, "=:")
+				if strings.HasPrefix(key, "ssa/") {
+					return fmt.Errorf("compile option %q writes process-level SSA debug output and is unavailable in the request API", option)
+				}
 				if key == "help" {
 					return fmt.Errorf("compile option %q terminates the process and is unavailable in the request API", option)
 				}

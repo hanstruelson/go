@@ -5,7 +5,6 @@
 package ssagen
 
 import (
-	"fmt"
 	"os"
 	"publicinternal/buildcfg"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/obj/wasm"
+	"cmd/publicinternal/sys"
 
 	rtabi "publicinternal/abi"
 )
@@ -251,7 +251,7 @@ func forEachWrapperABI(fn *ir.Func, cb func(fn *ir.Func, wrapperABI obj.ABI)) {
 // wrapperABI and calls "f" using f.ABI.
 func makeABIWrapper(target *ir.Package, f *ir.Func, wrapperABI obj.ABI) {
 	if target.Debug.ABIWrap != 0 {
-		fmt.Fprintf(os.Stderr, "=-= %v to %v wrapper for %v\n", wrapperABI, f.ABI, f)
+		target.Diagnostics.Printf("=-= %v to %v wrapper for %v\n", wrapperABI, f.ABI, f)
 	}
 
 	// Q: is this needed?
@@ -358,8 +358,8 @@ func CreateWasmImportWrapper(backend *Context, fn *ir.Func) bool {
 	if fn.WasmImport == nil {
 		return false
 	}
-	if buildcfg.GOARCH != "wasm" {
-		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "CreateWasmImportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, fn)
+	if fn.Target.Ctxt.Arch.Family != sys.Wasm {
+		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "CreateWasmImportWrapper call not supported on %s: func was %v", fn.Target.Ctxt.Arch.Name, fn)
 	}
 
 	ir.InitLSym(fn, true)
@@ -381,8 +381,8 @@ func GenWasmExportWrapper(backend *Context, wrapped *ir.Func) {
 	if wrapped.WasmExport == nil {
 		return
 	}
-	if buildcfg.GOARCH != "wasm" {
-		wrapped.Target.Diagnostics.FatalfAt(wrapped.Pos(), "GenWasmExportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, wrapped)
+	if wrapped.Target.Ctxt.Arch.Family != sys.Wasm {
+		wrapped.Target.Diagnostics.FatalfAt(wrapped.Pos(), "GenWasmExportWrapper call not supported on %s: func was %v", wrapped.Target.Ctxt.Arch.Name, wrapped)
 	}
 
 	pos := backend.target.AutoPos

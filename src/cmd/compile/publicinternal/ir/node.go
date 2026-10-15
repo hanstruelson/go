@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/constant"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 )
@@ -72,7 +71,7 @@ func Line(n Node) string {
 			return diagnostics.FmtPos(n.Pos())
 		}
 	}
-	return base.FmtPos(n.Pos())
+	return fmt.Sprint(n.Pos())
 }
 
 // LineFor formats n's source position using target's position table.
@@ -525,30 +524,13 @@ func HasUniquePosFor(target *Package, n Node) bool {
 		if target == nil {
 			target = nodeTarget(n)
 		}
-		var verbose bool
-		if target != nil {
-			verbose = target.Flags.K != 0
-		} else {
-			verbose = base.Flag.K != 0
-		}
-		if verbose {
+		if target != nil && target.Flags.K != 0 {
 			warnfAtTarget(target, src.NoXPos, "setlineno: unknown position (line 0)")
 		}
 		return false
 	}
 
 	return true
-}
-
-func SetPos(n Node) src.XPos {
-	if target := nodeTarget(n); target != nil {
-		return SetPosFor(target, n)
-	}
-	lno := base.Pos
-	if n != nil && HasUniquePos(n) {
-		base.Pos = n.Pos()
-	}
-	return lno
 }
 
 // SetPosFor is SetPos scoped to target.
@@ -565,13 +547,12 @@ func SetPosValue(target *Package, pos src.XPos) {
 	target.Pos = pos
 }
 
-// CurrentPos returns curfn's position when it has a target, and otherwise
-// falls back to the legacy current position.
+// CurrentPos returns the current source position for curfn's target.
 func CurrentPos(curfn *Func) src.XPos {
-	if curfn != nil && curfn.Target != nil {
-		return curfn.Target.Pos
+	if curfn == nil || curfn.Target == nil {
+		panic("CurrentPos called without a compilation target")
 	}
-	return base.Pos
+	return curfn.Target.Pos
 }
 
 // SetPosIn is SetPosFor with a legacy fallback for package-level typechecking.
@@ -582,17 +563,15 @@ func SetPosIn(curfn *Func, n Node) src.XPos {
 	if target := nodeTarget(n); target != nil {
 		return SetPosFor(target, n)
 	}
-	return SetPos(n)
+	panic("SetPosIn called without a compilation target")
 }
 
-// SetPosValueIn updates curfn's target position when available, as well as the
-// legacy adapter used by package-level typechecking.
+// SetPosValueIn updates curfn's target position.
 func SetPosValueIn(curfn *Func, pos src.XPos) {
-	if curfn != nil && curfn.Target != nil {
-		SetPosValue(curfn.Target, pos)
-	} else {
-		base.Pos = pos
+	if curfn == nil || curfn.Target == nil {
+		panic("SetPosValueIn called without a compilation target")
 	}
+	SetPosValue(curfn.Target, pos)
 }
 
 // The result of InitExpr MUST be assigned back to n, e.g.

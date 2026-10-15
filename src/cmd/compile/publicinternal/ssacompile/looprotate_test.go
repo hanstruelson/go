@@ -16,7 +16,7 @@ func TestLoopRotateNested(t *testing.T) {
 	fun := c.Fun("entry",
 		Bloc("entry",
 			Valu("mem", ssaop.OpInitMem, types.TypeMem, 0, nil),
-			Valu("constTrue", ssaop.OpConstBool, types.Types[types.TBOOL], 1, nil),
+			Valu("constTrue", ssaop.OpConstBool, testTarget.TypeContext.Types[types.TBOOL], 1, nil),
 			Goto("outerHeader")),
 		Bloc("outerHeader",
 			If("constTrue", "outerBody", "outerExit")),

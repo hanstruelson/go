@@ -5,10 +5,10 @@
 package typecheck
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
+	"fmt"
 	"publicinternal/types/errors"
 )
 
@@ -17,7 +17,7 @@ func errorf(target *ir.Package, format string, args ...any) {
 		target.Diagnostics.ErrorfAt(target.Pos, 0, format, args...)
 		return
 	}
-	base.Errorf(format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func errorfType(typ *types.Type, format string, args ...any) {
@@ -25,7 +25,7 @@ func errorfType(typ *types.Type, format string, args ...any) {
 		typ.Context().Diagnostics.ErrorfAt(src.NoXPos, 0, format, args...)
 		return
 	}
-	base.Errorf(format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func fatalfType(typ *types.Type, pos src.XPos, format string, args ...any) {
@@ -33,7 +33,7 @@ func fatalfType(typ *types.Type, pos src.XPos, format string, args ...any) {
 		typ.Context().Diagnostics.FatalfAt(pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func errorfFor(target *ir.Package, typ *types.Type, format string, args ...any) {
@@ -57,7 +57,7 @@ func errorfAt(target *ir.Package, pos src.XPos, code errors.Code, format string,
 		target.Diagnostics.ErrorfAt(pos, code, format, args...)
 		return
 	}
-	base.ErrorfAt(pos, code, format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func fatalf(target *ir.Package, format string, args ...any) {
@@ -65,7 +65,7 @@ func fatalf(target *ir.Package, format string, args ...any) {
 		target.Diagnostics.Fatalf(format, args...)
 		return
 	}
-	base.Fatalf(format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func fatalfAt(target *ir.Package, pos src.XPos, format string, args ...any) {
@@ -73,7 +73,7 @@ func fatalfAt(target *ir.Package, pos src.XPos, format string, args ...any) {
 		target.Diagnostics.FatalfAt(pos, format, args...)
 		return
 	}
-	base.FatalfAt(pos, format, args...)
+	panic("typecheck diagnostic without a compilation target")
 }
 
 func assert(target *ir.Package, condition bool) {
@@ -81,7 +81,7 @@ func assert(target *ir.Package, condition bool) {
 		target.Diagnostics.Assert(condition)
 		return
 	}
-	base.Assert(condition)
+	panic("typecheck assertion without a compilation target")
 }
 
 func assertf(target *ir.Package, condition bool, format string, args ...any) {
@@ -89,7 +89,7 @@ func assertf(target *ir.Package, condition bool, format string, args ...any) {
 		target.Diagnostics.Assertf(condition, format, args...)
 		return
 	}
-	base.Assertf(condition, format, args...)
+	panic("typecheck assertion without a compilation target")
 }
 
 func assertfAt(target *ir.Package, condition bool, pos src.XPos, format string, args ...any) {
@@ -97,21 +97,21 @@ func assertfAt(target *ir.Package, condition bool, pos src.XPos, format string, 
 		target.Diagnostics.AssertfAt(condition, pos, format, args...)
 		return
 	}
-	base.AssertfAt(condition, pos, format, args...)
+	panic("typecheck assertion without a compilation target")
 }
 
 func errorsFor(target *ir.Package) int {
 	if target != nil && target.Diagnostics != nil {
 		return target.Diagnostics.Errors()
 	}
-	return base.Errors()
+	panic("typecheck error count requested without a compilation target")
 }
 
 func fmtPosFor(target *ir.Package, pos src.XPos) string {
 	if target != nil && target.Diagnostics != nil {
 		return target.Diagnostics.FmtPos(pos)
 	}
-	return base.FmtPos(pos)
+	return fmt.Sprint(pos)
 }
 
 func updateErrorDot(target *ir.Package, line, name, expr string) {
@@ -119,5 +119,5 @@ func updateErrorDot(target *ir.Package, line, name, expr string) {
 		target.Diagnostics.UpdateErrorDot(line, name, expr)
 		return
 	}
-	base.UpdateErrorDot(line, name, expr)
+	panic("typecheck error update without a compilation target")
 }

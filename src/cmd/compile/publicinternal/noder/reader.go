@@ -29,6 +29,7 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/src"
+	"cmd/publicinternal/sys"
 )
 
 // This file implements cmd/compile backend's reader for the Unified
@@ -1229,7 +1230,7 @@ func (r *reader) funcExt(name *ir.Name, method *types.Sym) {
 	fn.Pragma = r.pragmaFlag()
 	r.linkname(name)
 
-	if buildcfg.GOARCH == "wasm" {
+	if r.ctx.Target.Ctxt.Arch.Family == sys.Wasm {
 		importmod := r.String()
 		importname := r.String()
 		exportname := r.String()
@@ -1386,7 +1387,7 @@ func (pri pkgReaderIndex) funcBody(fn *ir.Func) {
 			// If code panics in unified IR reading, you want *something* like this.
 			// Whoever ends up debugging the next unified IR failure, please
 			// improve this (base.Warnf?) if you can figure out how.
-			fmt.Printf("****** panic traversed funcBody of %v\n", fn)
+			fn.Target.Diagnostics.Printf("****** panic traversed funcBody of %v\n", fn)
 		}
 	}()
 	r.funcBody(fn)

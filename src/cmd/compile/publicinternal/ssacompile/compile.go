@@ -67,7 +67,7 @@ func (c Compiler) Passes() []ssa.Pass {
 // directly without using the command-line option globals.
 func ConfigureTarget(target *ir.Package, options *Options) Compiler {
 	if options == nil {
-		options = commandOptions
+		options = NewOptions()
 	}
 	target.SSACheck = options.checkEnabled
 	target.SSACheckSeed = options.checkRandSeed
@@ -108,21 +108,21 @@ func buildDumpForFunc(f *ssa.Func) bool {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSABuildDump[f.Name]
 	}
-	return commandOptions.buildDump[f.Name]
+	return false
 }
 
 func checkEnabledForFunc(f *ssa.Func) bool {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSACheck
 	}
-	return commandOptions.checkEnabled
+	return false
 }
 
 func checkSeedForFunc(f *ssa.Func) int {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSACheckSeed
 	}
-	return commandOptions.checkRandSeed
+	return 0
 }
 
 // Compile is the main entry point for this package.
@@ -278,10 +278,6 @@ func (c Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 	phaseName = ""
 }
 
-// commandOptions is the legacy command-line adapter. Reusable compilation
-// creates a separate Options value for each request.
-var commandOptions *Options
-
 // PhaseOption sets the specified flag in the specified ssa phase,
 // returning empty string if this was successful or a string explaining
 // the error if it was not.
@@ -299,10 +295,6 @@ var commandOptions *Options
 // GO_GCFLAGS=-d=ssa/generic_cse/time,ssa/generic_cse/stats,ssa/generic_cse/debug=3 ./make.bash
 //
 // BOOT_GO_GCFLAGS=-d='ssa/~^.*scc$/off' GO_GCFLAGS='-d=ssa/~^.*scc$/off' ./make.bash
-func PhaseOption(phase, flag string, val int, valString string) string {
-	return commandOptions.PhaseOption(phase, flag, val, valString)
-}
-
 // PhaseOption applies one -d=ssa option to this compilation's SSA settings.
 func (o *Options) PhaseOption(phase, flag string, val int, valString string) string {
 	if o == nil {
@@ -690,7 +682,6 @@ func (c Compiler) PostCompile() {
 }
 
 func init() {
-	commandOptions = NewOptions()
 	for _, c := range passOrder {
 		a, b := c.a, c.b
 		i := -1

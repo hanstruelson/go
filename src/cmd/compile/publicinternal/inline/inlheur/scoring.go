@@ -200,7 +200,7 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 	score := int(callee.Inl.Cost)
 	var tmask scoreAdjustTyp
 
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= scoring call to %s at %s , initial=%d\n",
 			callee.Sym().Name, fmtFullPos(cs.Target, call.Pos()), score)
 	}
@@ -234,7 +234,7 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 		}
 		arg := call.Args[idx]
 		pflag := calleeProps.ParamFlags[idx]
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= arg %d of %d: val %v flags=%s\n",
 				idx, len(call.Args), arg, pflag.String())
 		}
@@ -244,7 +244,7 @@ func (cs *CallSite) computeCallSiteScore(csa *callSiteAnalyzer, calleeProps *Fun
 		}
 		argProps := cs.ArgProps[idx]
 
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= arg %d props %s value %v\n",
 				idx, argProps.String(), arg)
 		}
@@ -329,7 +329,7 @@ func adjustScore(ctx *Context, typ scoreAdjustTyp, score int, mask scoreAdjustTy
 		}
 	}
 	if mask&typ == 0 {
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= applying adj %d for %s\n",
 				adjValue(ctx, typ), typ.String())
 		}
@@ -385,7 +385,7 @@ func LargestNegativeScoreAdjustment(ctx *Context, fn *ir.Func, props *FuncProps)
 		}
 	}
 
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= largestScore(%v) is %d\n",
 			fn, score)
 	}
@@ -437,7 +437,7 @@ func ScoreCalls(ctx *Context, fn *ir.Func) {
 
 	nameFinder := newNameFinder(fn)
 
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= ScoreCalls(%v)\n", ir.FuncName(fn))
 	}
 
@@ -454,7 +454,7 @@ func ScoreCalls(ctx *Context, fn *ir.Func) {
 		if ctx.scoreCallsCache.tab == nil {
 			ctx.scoreCallsCache.tab = make(CallSiteTab)
 		}
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= building cstab for non-inl func %s\n",
 				ir.FuncName(fn))
 		}
@@ -466,7 +466,7 @@ func ScoreCalls(ctx *Context, fn *ir.Func) {
 	const doCallResults = true
 	csa.scoreCallsRegion(fn, fn.Body, cstab, doCallResults, nil)
 
-	disableDebugTrace()
+	disableDebugTrace(ctx.Target)
 }
 
 // scoreCallsRegion assigns numeric scores to each of the callsites in
@@ -474,7 +474,7 @@ func ScoreCalls(ctx *Context, fn *ir.Func) {
 // an entire function, or with 'region' set to a chunk of
 // code corresponding to an inlined call.
 func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, cstab CallSiteTab, doCallResults bool, ic *ir.InlinedCallExpr) {
-	if debugTrace&debugTraceScoring != 0 {
+	if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 		fmt.Fprintf(os.Stderr, "=-= scoreCallsRegion(%v, %s) len(cstab)=%d\n",
 			ir.FuncName(fn), region[0].Op().String(), len(cstab))
 	}
@@ -514,13 +514,13 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 		cs.computeCallSiteScore(csa, cprops)
 
 		if doCallResults {
-			if debugTrace&debugTraceScoring != 0 {
+			if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 				fmt.Fprintf(os.Stderr, "=-= examineCallResults at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Target, cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
 			}
 			resultNameTab = csa.examineCallResults(cs, resultNameTab)
 		}
 
-		if debugTrace&debugTraceScoring != 0 {
+		if debugTraceFor(csa.ctx.Target)&debugTraceScoring != 0 {
 			fmt.Fprintf(os.Stderr, "=-= scoring call at %s: flags=%d score=%d funcInlHeur=%v deser=%v\n", fmtFullPos(cs.Target, cs.Call.Pos()), cs.Flags, cs.Score, fihcprops, desercprops)
 		}
 	}
@@ -529,7 +529,7 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 		csa.rescoreBasedOnCallResultUses(fn, resultNameTab, cstab)
 	}
 
-	disableDebugTrace()
+	disableDebugTrace(csa.ctx.Target)
 
 	if ic != nil && csa.ctx.callSiteTab != nil {
 		// Integrate the calls from this cstab into the table for the caller.

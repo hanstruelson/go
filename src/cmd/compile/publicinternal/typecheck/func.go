@@ -342,7 +342,7 @@ func tcAppend(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 		if n.Type() == nil {
 			continue
 		}
-		as[i] = AssignConv(n, t.Elem(), "append")
+		as[i] = AssignConvFor(targetForFunc(curfunc), n, t.Elem(), "append")
 		types.CheckSize(as[i].Type()) // ensure width is calculated for backend
 	}
 	return n
@@ -508,7 +508,7 @@ func tcDelete(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 		return n
 	}
 
-	args[1] = AssignConv(r, l.Type().Key(), "delete")
+	args[1] = AssignConvFor(targetForFunc(curfunc), r, l.Type().Key(), "delete")
 	return n
 }
 
@@ -674,7 +674,7 @@ func tcNew(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 // tcPanic typechecks an OPANIC node.
 func tcPanic(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
-	n.X = AssignConv(n.X, curfunc.Target.Type(types.TINTER), "argument to panic")
+	n.X = AssignConvFor(curfunc.Target, n.X, curfunc.Target.Type(types.TINTER), "argument to panic")
 	if n.X.Type() == nil {
 		n.SetType(nil)
 		return n
@@ -750,7 +750,7 @@ func tcRecover(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 
 // tcUnsafeAdd typechecks an OUNSAFEADD node.
 func tcUnsafeAdd(curfunc *ir.Func, n *ir.BinaryExpr) *ir.BinaryExpr {
-	n.X = AssignConv(Expr(curfunc, n.X), curfunc.Target.Type(types.TUNSAFEPTR), "argument to unsafe.Add")
+	n.X = AssignConvFor(curfunc.Target, Expr(curfunc, n.X), curfunc.Target.Type(types.TUNSAFEPTR), "argument to unsafe.Add")
 	n.Y = DefaultLitFor(targetForFunc(curfunc), Expr(curfunc, n.Y), curfunc.Target.Type(types.TINT))
 	if n.X.Type() == nil || n.Y.Type() == nil {
 		n.SetType(nil)

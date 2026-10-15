@@ -24,6 +24,16 @@ func ArchInfoFor(target *ir.Package) *ArchInfo {
 
 type ArchInfo struct {
 	LinkArch *obj.LinkArch
+	// TargetArch is an optional requested GOARCH supplied by reusable
+	// compilation requests. Architecture initializers with multiple variants
+	// use it instead of the process build configuration when it is non-empty.
+	TargetArch string
+	// TargetFeatures contains architecture feature levels for this request.
+	TargetFeatures ir.ArchFeatures
+	// InitError reports an architecture configuration failure. Initializers
+	// must return this error instead of terminating the process so reusable
+	// compiler clients can report it to the caller.
+	InitError error
 
 	REGSP     int
 	MAXWIDTH  int64

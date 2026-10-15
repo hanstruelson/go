@@ -948,7 +948,7 @@ func (w *walkState) walkLogical(n *ir.LogicalExpr, init *ir.Nodes) ir.Node {
 // walkSend walks an OSEND node.
 func (w *walkState) walkSend(n *ir.SendStmt, init *ir.Nodes) ir.Node {
 	n1 := n.Value
-	n1 = typecheck.AssignConv(n1, n.Chan.Type().Elem(), "chan send")
+	n1 = typecheck.AssignConvFor(w.curfunc.Target, n1, n.Chan.Type().Elem(), "chan send")
 	n1 = w.walkExpr(n1, init)
 	n1 = typecheck.NodAddr(w.curfunc, n1)
 	return w.mkcall1(chanfn(w.curfunc.Target, "chansend1", 2, n.Chan.Type()), nil, init, n.Chan, n1)

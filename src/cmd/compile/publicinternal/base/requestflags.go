@@ -9,6 +9,7 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/sys"
+	"cmd/publicinternal/telemetry/counter"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -45,9 +46,20 @@ type CompileConfig struct {
 // ParseCompileConfig parses compiler options into state associated with ctxt.
 // args must contain compiler flags only; source files and output paths are
 // supplied separately by the request API. out receives opt-in hash-debug logs.
-func ParseCompileConfig(ctxt *obj.Link, args []string, debugSSA func(phase, flag string, val int, valString string) string, out io.Writer) (*CompileConfig, error) {
+func ParseCompileConfig(goos string, ctxt *obj.Link, args []string, debugSSA func(phase, flag string, val int, valString string) string, out io.Writer) (*CompileConfig, error) {
+	cfg, _, err := parseCompileConfig(goos, ctxt, args, debugSSA, out, "", false)
+	return cfg, err
+}
+
+// ParseCommandLineConfig parses the compiler command line into target-owned
+// configuration. It returns the source file names left after flag parsing.
+func ParseCommandLineConfig(goos string, ctxt *obj.Link, args []string, debugSSA func(phase, flag string, val int, valString string) string, out io.Writer, toolName string) (*CompileConfig, []string, error) {
+	return parseCompileConfig(goos, ctxt, args, debugSSA, out, toolName, true)
+}
+
+func parseCompileConfig(goos string, ctxt *obj.Link, args []string, debugSSA func(phase, flag string, val int, valString string) string, out io.Writer, toolName string, commandLine bool) (*CompileConfig, []string, error) {
 	if ctxt == nil {
-		return nil, fmt.Errorf("nil compiler link context")
+		return nil, nil, fmt.Errorf("nil compiler link context")
 	}
 	if out == nil {
 		out = io.Discard
@@ -74,8 +86,19 @@ func ParseCompileConfig(ctxt *obj.Link, args []string, debugSSA func(phase, flag
 			cfg.err = err
 		}
 	}
-	flags.Env = func(string) {
-		cfg.err = fmt.Errorf("-env is unavailable for reusable compilation")
+	flags.Env = func(s string) {
+		if !commandLine {
+			cfg.err = fmt.Errorf("-env is unavailable for reusable compilation")
+			return
+		}
+		i := strings.Index(s, "=")
+		if i < 0 {
+			cfg.err = fmt.Errorf("-env argument must be of the form key=value")
+			return
+		}
+		if err := os.Setenv(s[:i], s[i+1:]); err != nil {
+			cfg.err = fmt.Errorf("-env: %w", err)
+		}
 	}
 	flags.GenDwarfInl = 2
 	flags.ImportCfg = func(file string) {
@@ -112,22 +135,38 @@ func ParseCompileConfig(ctxt *obj.Link, args []string, debugSSA func(phase, flag
 
 	fs := flag.NewFlagSet("compile", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	if commandLine {
+		fs.SetOutput(out)
+		fs.Usage = func() {
+			fmt.Fprintln(out, "usage: compile [options] file.go...")
+			fs.PrintDefaults()
+		}
+		objabi.AddVersionFlagTo(fs, toolName, os.Exit)
+	}
 	if err := registerFlagsFor(fs, flags); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := fs.Parse(args); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if cfg.err != nil {
-		return nil, cfg.err
+		return nil, nil, cfg.err
 	}
-	if fs.NArg() != 0 {
-		return nil, fmt.Errorf("compiler request options must not include source filenames")
+	if !commandLine && fs.NArg() != 0 {
+		return nil, nil, fmt.Errorf("compiler request options must not include source filenames")
 	}
-	if err := finalizeCompileConfig(cfg, ctxt, out); err != nil {
-		return nil, err
+	if commandLine {
+		counter.CountFlags("compile/flag:", *fs)
+		if gcd := os.Getenv("GOCOMPILEDEBUG"); gcd != "" {
+			if err := flags.LowerD.Set(gcd); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
-	return cfg, nil
+	if err := finalizeCompileConfig(goos, cfg, ctxt, out); err != nil {
+		return nil, nil, err
+	}
+	return cfg, fs.Args(), nil
 }
 
 type requestCountFlag struct{ value *CountFlag }
@@ -234,12 +273,18 @@ func flagName(f reflect.StructField) string {
 	return strings.ToLower(f.Name)
 }
 
-func finalizeCompileConfig(cfg *CompileConfig, ctxt *obj.Link, out io.Writer) error {
+func finalizeCompileConfig(goos string, cfg *CompileConfig, ctxt *obj.Link, out io.Writer) error {
 	flags, debug := &cfg.Flags, &cfg.Debug
 	if err := ctxt.SetFIPSDebugHash(debug.FIPSHash); err != nil {
 		return err
 	}
-	cfg.GossaHash = NewHashDebug("gossahash", debug.Gossahash, out)
+	newHashDebug := func(ev, selector string) (*HashDebug, error) {
+		return NewHashDebugWithError(ev, selector, out)
+	}
+	var err error
+	if cfg.GossaHash, err = newHashDebug("gossahash", debug.Gossahash); err != nil {
+		return err
+	}
 	if flags.Std && objabi.LookupPkgSpecial(ctxt.Pkgpath).Runtime {
 		flags.CompilingRuntime = true
 	}
@@ -251,7 +296,9 @@ func finalizeCompileConfig(cfg *CompileConfig, ctxt *obj.Link, out io.Writer) er
 			debug.LoopVarHash = debug.LoopVarHash[2:]
 			mostInlineOnly = false
 		}
-		cfg.LoopVarHash = NewHashDebug("loopvarhash", debug.LoopVarHash, out)
+		if cfg.LoopVarHash, err = newHashDebug("loopvarhash", debug.LoopVarHash); err != nil {
+			return err
+		}
 		if debug.LoopVar < 11 {
 			debug.LoopVar = 1
 		}
@@ -261,37 +308,51 @@ func finalizeCompileConfig(cfg *CompileConfig, ctxt *obj.Link, out io.Writer) er
 	}
 
 	if debug.Converthash != "" {
-		cfg.ConvertHash = NewHashDebug("converthash", debug.Converthash, out)
+		if cfg.ConvertHash, err = newHashDebug("converthash", debug.Converthash); err != nil {
+			return err
+		}
 	} else {
-		cfg.ConvertHash = NewHashDebug("converthash", "qn", out)
+		if cfg.ConvertHash, err = newHashDebug("converthash", "qn"); err != nil {
+			return err
+		}
 	}
 	if debug.Fmahash != "" {
-		cfg.FmaHash = NewHashDebug("fmahash", debug.Fmahash, out)
+		if cfg.FmaHash, err = newHashDebug("fmahash", debug.Fmahash); err != nil {
+			return err
+		}
 	}
 	if debug.PGOHash != "" {
-		cfg.PGOHash = NewHashDebug("pgohash", debug.PGOHash, out)
+		if cfg.PGOHash, err = newHashDebug("pgohash", debug.PGOHash); err != nil {
+			return err
+		}
 	}
 	if debug.LiteralAllocHash != "" {
-		cfg.LiteralAllocHash = NewHashDebug("literalalloc", debug.LiteralAllocHash, out)
+		if cfg.LiteralAllocHash, err = newHashDebug("literalalloc", debug.LiteralAllocHash); err != nil {
+			return err
+		}
 	}
 	if debug.MergeLocalsHash != "" {
-		cfg.MergeLocalsHash = NewHashDebug("mergelocals", debug.MergeLocalsHash, out)
+		if cfg.MergeLocalsHash, err = newHashDebug("mergelocals", debug.MergeLocalsHash); err != nil {
+			return err
+		}
 	}
 	if debug.VariableMakeHash != "" {
-		cfg.VariableMakeHash = NewHashDebug("variablemake", debug.VariableMakeHash, out)
+		if cfg.VariableMakeHash, err = newHashDebug("variablemake", debug.VariableMakeHash); err != nil {
+			return err
+		}
 	}
 
-	if flags.MSan && !platform.MSanSupported(buildcfg.GOOS, ctxt.Arch.Name) {
-		return fmt.Errorf("%s/%s does not support -msan", buildcfg.GOOS, ctxt.Arch.Name)
+	if flags.MSan && !platform.MSanSupported(goos, ctxt.Arch.Name) {
+		return fmt.Errorf("%s/%s does not support -msan", goos, ctxt.Arch.Name)
 	}
-	if flags.ASan && !platform.ASanSupported(buildcfg.GOOS, ctxt.Arch.Name) {
-		return fmt.Errorf("%s/%s does not support -asan", buildcfg.GOOS, ctxt.Arch.Name)
+	if flags.ASan && !platform.ASanSupported(goos, ctxt.Arch.Name) {
+		return fmt.Errorf("%s/%s does not support -asan", goos, ctxt.Arch.Name)
 	}
-	if flags.Race && !platform.RaceDetectorSupported(buildcfg.GOOS, ctxt.Arch.Name) {
-		return fmt.Errorf("%s/%s does not support -race", buildcfg.GOOS, ctxt.Arch.Name)
+	if flags.Race && !platform.RaceDetectorSupported(goos, ctxt.Arch.Name) {
+		return fmt.Errorf("%s/%s does not support -race", goos, ctxt.Arch.Name)
 	}
 	if (*flags.Shared || *flags.Dynlink || *flags.LinkShared) && !ctxt.Arch.InFamily(sys.AMD64, sys.ARM, sys.ARM64, sys.I386, sys.Loong64, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X) {
-		return fmt.Errorf("%s/%s does not support -shared", buildcfg.GOOS, ctxt.Arch.Name)
+		return fmt.Errorf("%s/%s does not support -shared", goos, ctxt.Arch.Name)
 	}
 	if err := parseSpectreFor(flags, ctxt); err != nil {
 		return err

@@ -13,16 +13,15 @@ import (
 	tracepkg "runtime/trace"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/publicinternal/obj"
 )
 
-func profileName(ctxt *obj.Link, fn, suffix string) string {
+func profileName(target *ir.Package, ctxt *obj.Link, fn, suffix string) string {
 	if strings.HasSuffix(fn, string(os.PathSeparator)) {
 		err := os.MkdirAll(fn, 0755)
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
 	}
 	if fi, statErr := os.Stat(fn); statErr == nil && fi.IsDir() {
@@ -34,18 +33,18 @@ func profileName(ctxt *obj.Link, fn, suffix string) string {
 func startProfile(target *ir.Package) {
 	ctxt := target.Ctxt
 	if target.Flags.CPUProfile != "" {
-		fn := profileName(ctxt, target.Flags.CPUProfile, ".cpuprof")
+		fn := profileName(target, ctxt, target.Flags.CPUProfile, ".cpuprof")
 		f, err := os.Create(fn)
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
 		if err := pprof.StartCPUProfile(f); err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
-		base.AtExit(func() {
+		target.AddCleanup(func() {
 			pprof.StopCPUProfile()
 			if err = f.Close(); err != nil {
-				base.Fatalf("error closing cpu profile: %v", err)
+				target.Diagnostics.Fatalf("error closing cpu profile: %v", err)
 			}
 		})
 	}
@@ -66,7 +65,7 @@ func startProfile(target *ir.Package) {
 		if strings.HasSuffix(fn, string(os.PathSeparator)) {
 			err := os.MkdirAll(fn, 0755)
 			if err != nil {
-				base.Fatalf("%v", err)
+				target.Diagnostics.Fatalf("%v", err)
 			}
 		}
 		if fi, statErr := os.Stat(fn); statErr == nil && fi.IsDir() {
@@ -77,16 +76,16 @@ func startProfile(target *ir.Package) {
 		f, err := os.Create(fn)
 
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
-		base.AtExit(func() {
+		target.AddCleanup(func() {
 			// Profile all outstanding allocations.
 			runtime.GC()
 			if err := pprof.Lookup("heap").WriteTo(f, format); err != nil {
-				base.Fatalf("%v", err)
+				target.Diagnostics.Fatalf("%v", err)
 			}
 			if err = f.Close(); err != nil {
-				base.Fatalf("error closing memory profile: %v", err)
+				target.Diagnostics.Fatalf("error closing memory profile: %v", err)
 			}
 		})
 	} else {
@@ -94,39 +93,39 @@ func startProfile(target *ir.Package) {
 		runtime.MemProfileRate = 0
 	}
 	if target.Flags.BlockProfile != "" {
-		f, err := os.Create(profileName(ctxt, target.Flags.BlockProfile, ".blockprof"))
+		f, err := os.Create(profileName(target, ctxt, target.Flags.BlockProfile, ".blockprof"))
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
 		runtime.SetBlockProfileRate(1)
-		base.AtExit(func() {
+		target.AddCleanup(func() {
 			pprof.Lookup("block").WriteTo(f, 0)
 			f.Close()
 		})
 	}
 	if target.Flags.MutexProfile != "" {
-		f, err := os.Create(profileName(ctxt, target.Flags.MutexProfile, ".mutexprof"))
+		f, err := os.Create(profileName(target, ctxt, target.Flags.MutexProfile, ".mutexprof"))
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
 		runtime.SetMutexProfileFraction(1)
-		base.AtExit(func() {
+		target.AddCleanup(func() {
 			pprof.Lookup("mutex").WriteTo(f, 0)
 			f.Close()
 		})
 	}
 	if target.Flags.TraceProfile != "" {
-		f, err := os.Create(profileName(ctxt, target.Flags.TraceProfile, ".trace"))
+		f, err := os.Create(profileName(target, ctxt, target.Flags.TraceProfile, ".trace"))
 		if err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
 		if err := tracepkg.Start(f); err != nil {
-			base.Fatalf("%v", err)
+			target.Diagnostics.Fatalf("%v", err)
 		}
-		base.AtExit(func() {
+		target.AddCleanup(func() {
 			tracepkg.Stop()
 			if err = f.Close(); err != nil {
-				base.Fatalf("error closing trace profile: %v", err)
+				target.Diagnostics.Fatalf("error closing trace profile: %v", err)
 			}
 		})
 	}

@@ -439,15 +439,11 @@ func defaultType(target *ir.Package, t *types.Type) *types.Type {
 		return t
 	}
 
-	context := t.Context()
-	if target != nil {
-		context = target.TypeContext
+	if target == nil {
+		panic("defaulting an untyped constant requires a compilation target")
 	}
 	basic := func(kind types.Kind) *types.Type {
-		if target != nil {
-			return target.Type(kind)
-		}
-		return context.Types[kind]
+		return target.Type(kind)
 	}
 
 	switch t {
@@ -458,7 +454,7 @@ func defaultType(target *ir.Package, t *types.Type) *types.Type {
 	case types.UntypedInt:
 		return basic(types.TINT)
 	case types.UntypedRune:
-		return context.RuneType
+		return target.RuneType
 	case types.UntypedFloat:
 		return basic(types.TFLOAT64)
 	case types.UntypedComplex:
@@ -470,27 +466,19 @@ func defaultType(target *ir.Package, t *types.Type) *types.Type {
 }
 
 func basicType(target *ir.Package, kind types.Kind) *types.Type {
-	if target != nil {
-		return target.Type(kind)
+	if target == nil {
+		panic("basic type lookup requires a compilation target")
 	}
-	return types.Types[kind]
+	return target.Type(kind)
 }
 
 // IndexConst returns the index value of constant Node n.
-func IndexConst(n ir.Node) int64 {
-	return IndexConstFor(nil, n)
-}
-
 // IndexConstFor returns the index value of constant Node n using target's int type.
 func IndexConstFor(target *ir.Package, n ir.Node) int64 {
-	var typ *types.Type
-	if target != nil {
-		typ = target.Type(types.TINT)
-	} else if n.Type() != nil {
-		typ = n.Type().Context().Types[types.TINT]
-	} else {
-		typ = types.Types[types.TINT]
+	if target == nil {
+		panic("constant index conversion requires a compilation target")
 	}
+	typ := target.Type(types.TINT)
 	return ir.IntVal(typ, toint(n.Val()))
 }
 

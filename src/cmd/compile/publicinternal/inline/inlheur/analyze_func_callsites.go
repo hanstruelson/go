@@ -72,7 +72,7 @@ func computeCallSiteTable(fn *ir.Func, region ir.Nodes, cstab CallSiteTab, ptab 
 func (cstb *callSiteTableBuilder) flagsForNode(call *ir.CallExpr) CSPropBits {
 	var r CSPropBits
 
-	if debugTrace&debugTraceCalls != 0 {
+	if debugTraceFor(cstb.fn.Target)&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= analyzing call at %s\n",
 			fmtFullPos(cstb.fn.Target, call.Pos()))
 	}
@@ -118,7 +118,7 @@ func (cstb *callSiteTableBuilder) determinePanicPathBits(call ir.Node, r CSPropB
 			isStmt = false
 		}
 
-		if debugTrace&debugTraceCalls != 0 {
+		if debugTraceFor(cstb.fn.Target)&debugTraceCalls != 0 {
 			ps, inps := cstb.ptab[n]
 			fmt.Fprintf(os.Stderr, "=-= callpar %d op=%s ps=%s inptab=%v stmt=%v\n", i, n.Op().String(), ps.String(), inps, isStmt)
 		}
@@ -180,7 +180,7 @@ func (cstb *callSiteTableBuilder) argPropsForCall(ce *ir.CallExpr) []ActualExprP
 func (cstb *callSiteTableBuilder) addCallSite(callee *ir.Func, call *ir.CallExpr) {
 	flags := cstb.flagsForNode(call)
 	argProps := cstb.argPropsForCall(call)
-	if debugTrace&debugTraceCalls != 0 {
+	if debugTraceFor(cstb.fn.Target)&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= props %+v for call %v\n", argProps, call)
 	}
 	// FIXME: maybe bulk-allocate these?
@@ -208,7 +208,7 @@ func (cstb *callSiteTableBuilder) addCallSite(callee *ir.Func, call *ir.CallExpr
 		cstb.cstab = make(CallSiteTab)
 	}
 	cstb.cstab[call] = cs
-	if debugTrace&debugTraceCalls != 0 {
+	if debugTraceFor(cstb.fn.Target)&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= added callsite: caller=%v callee=%v n=%s\n",
 			cstb.fn, callee, fmtFullPos(cstb.fn.Target, call.Pos()))
 	}
@@ -354,18 +354,18 @@ func (cstb *callSiteTableBuilder) containingAssignment(n ir.Node) ir.Node {
 // 'callerfn' and scored appropriately.
 func UpdateCallsiteTable(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, ic *ir.InlinedCallExpr) {
 	enableDebugTraceIfEnv(ctx.Target)
-	defer disableDebugTrace()
+	defer disableDebugTrace(ctx.Target)
 
 	funcInlHeur, ok := ctx.fpmap[callerfn]
 	if !ok {
 		// This can happen for compiler-generated wrappers.
-		if debugTrace&debugTraceCalls != 0 {
+		if debugTraceFor(ctx.Target)&debugTraceCalls != 0 {
 			fmt.Fprintf(os.Stderr, "=-= early exit, no entry for caller fn %v\n", callerfn)
 		}
 		return
 	}
 
-	if debugTrace&debugTraceCalls != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= UpdateCallsiteTable(caller=%v, cs=%s)\n",
 			callerfn, fmtFullPos(callerfn.Target, n.Pos()))
 	}
@@ -378,7 +378,7 @@ func UpdateCallsiteTable(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, ic *ir
 	}
 	oldcs.aux |= csAuxInlined
 
-	if debugTrace&debugTraceCalls != 0 {
+	if debugTraceFor(ctx.Target)&debugTraceCalls != 0 {
 		fmt.Fprintf(os.Stderr, "=-= marked as inlined: callee=%v %s\n",
 			oldcs.Callee, EncodeCallSiteKey(oldcs))
 	}

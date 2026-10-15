@@ -2,7 +2,6 @@
 
 package ppc64latelower
 
-import "publicinternal/buildcfg"
 import "cmd/compile/publicinternal/ssa/ssaop"
 import "cmd/compile/publicinternal/ssa"
 
@@ -33,7 +32,7 @@ func rewriteValue_OpPPC64ADD(v *ssa.Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
 	// match: (ADD (MOVDconst [m]) x)
-	// cond: ssa.SupportsPPC64PCRel() && (m<<30)>>30 == m
+	// cond: ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && (m<<30)>>30 == m
 	// result: (ADDconst [m] x)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
@@ -42,7 +41,7 @@ func rewriteValue_OpPPC64ADD(v *ssa.Value) bool {
 			}
 			m := ssa.AuxIntToInt64(v_0.AuxInt)
 			x := v_1
-			if !(ssa.SupportsPPC64PCRel() && (m<<30)>>30 == m) {
+			if !(ssa.SupportsPPC64PCRel(v.Block.Func.Config.Target) && (m<<30)>>30 == m) {
 				continue
 			}
 			v.Reset(ssaop.OpPPC64ADDconst)
@@ -682,14 +681,14 @@ func rewriteValue_OpPPC64SETBC(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (SETBC [2] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [2] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 2 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)
@@ -700,14 +699,14 @@ func rewriteValue_OpPPC64SETBC(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SETBC [0] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [0] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 0 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)
@@ -718,14 +717,14 @@ func rewriteValue_OpPPC64SETBC(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SETBC [1] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [1] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 1 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)
@@ -742,14 +741,14 @@ func rewriteValue_OpPPC64SETBCR(v *ssa.Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (SETBCR [2] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [6] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 2 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)
@@ -760,14 +759,14 @@ func rewriteValue_OpPPC64SETBCR(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SETBCR [0] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [4] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 0 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)
@@ -778,14 +777,14 @@ func rewriteValue_OpPPC64SETBCR(v *ssa.Value) bool {
 		return true
 	}
 	// match: (SETBCR [1] cmp)
-	// cond: buildcfg.GOPPC64 <= 9
+	// cond: v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9
 	// result: (ISELZ [5] (MOVDconst [1]) cmp)
 	for {
 		if ssa.AuxIntToInt32(v.AuxInt) != 1 {
 			break
 		}
 		cmp := v_0
-		if !(buildcfg.GOPPC64 <= 9) {
+		if !(v.Block.Func.Config.Target.ArchFeatures.GOPPC64 <= 9) {
 			break
 		}
 		v.Reset(ssaop.OpPPC64ISELZ)

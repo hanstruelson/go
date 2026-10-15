@@ -354,7 +354,7 @@ func (p *dumper) dump(x reflect.Value, depth int) {
 		if p.diagnostics != nil {
 			p.printf("%s", p.diagnostics.FmtPos(pos))
 		} else {
-			p.printf("%s", base.FmtPos(pos))
+			p.printf("%s", pos)
 		}
 		return
 	}

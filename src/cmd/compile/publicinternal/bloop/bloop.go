@@ -126,7 +126,7 @@ func getKeepAliveNodes(target *ir.Package, pos src.XPos, n ir.Node) ir.Nodes {
 		return nil
 	}
 	if name != nil {
-		debugName(name, pos)
+		debugName(target, name, pos)
 		return ir.Nodes{name}
 	} else if deref, ok := n.(*ir.StarExpr); ok && deref != nil {
 		if target.Flags.LowerM > 1 {
@@ -167,12 +167,12 @@ func keepAliveAt(curfunc *ir.Func, ns ir.Nodes, curNode ir.Node) ir.Node {
 	return ir.NewBlockStmt(pos, calls)
 }
 
-func debugName(name *ir.Name, pos src.XPos) {
-	if name.Curfn.Target.Flags.LowerM > 1 {
+func debugName(target *ir.Package, name *ir.Name, pos src.XPos) {
+	if target.Flags.LowerM > 1 {
 		if name.Linksym() != nil {
-			name.Curfn.Target.Diagnostics.WarnfAt(pos, "%s will be kept alive", name.Linksym().Name)
+			target.Diagnostics.WarnfAt(pos, "%s will be kept alive", name.Linksym().Name)
 		} else {
-			name.Curfn.Target.Diagnostics.WarnfAt(pos, "expr will be kept alive")
+			target.Diagnostics.WarnfAt(pos, "expr will be kept alive")
 		}
 	}
 }
@@ -228,7 +228,7 @@ func preserveCallArgs(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 		}
 		if name != nil {
 			// If they are name, keep them alive directly.
-			debugName(name, call.Pos())
+			debugName(curFn.Target, name, call.Pos())
 			names = append(names, name)
 		} else if a.Op() == ir.OSLICELIT {
 			// variadic args are encoded as slice literal.
@@ -240,7 +240,7 @@ func preserveCallArgs(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 					continue
 				}
 				if name != nil {
-					debugName(name, call.Pos())
+					debugName(curFn.Target, name, call.Pos())
 					ns = append(ns, name)
 				} else {
 					// We need a temporary to save this arg.

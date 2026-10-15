@@ -37,18 +37,11 @@ var typedefs = [...]struct {
 	{"uintptr", TUINTPTR},
 }
 
-func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
-	InitTypesFor(defaultContext, builtinPkg, unsafePkg, defTypeName)
-	Types = defaultContext.Types
-	AnyType = defaultContext.AnyType
-	ByteType = defaultContext.ByteType
-	RuneType = defaultContext.RuneType
-	ErrorType = defaultContext.ErrorType
-	ComparableType = defaultContext.ComparableType
-}
-
 // InitTypesFor initializes the predeclared type universe for context.
 func InitTypesFor(context *Context, builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
+	if context == nil {
+		panic("InitTypesFor requires a compilation context")
+	}
 	ptrSize := ptrSizeFor(context)
 	if ptrSize == 0 {
 		fatalfContext(context, src.NoXPos, "InitTypes called before PtrSize was set")
@@ -61,14 +54,6 @@ func InitTypesFor(context *Context, builtinPkg, unsafePkg *Pkg, defTypeName func
 
 	// string is same as slice wo the cap
 	context.StringSize = RoundUp(context.SliceLenOffset+int64(ptrSize), int64(ptrSize))
-	if context == defaultContext {
-		SlicePtrOffset = context.SlicePtrOffset
-		SliceLenOffset = context.SliceLenOffset
-		SliceCapOffset = context.SliceCapOffset
-		SliceSize = context.SliceSize
-		StringSize = context.StringSize
-	}
-
 	context.Types[TANY] = newTypeIn(context, TANY) // note: an old placeholder type, NOT the new builtin 'any' alias for interface{}
 	context.Types[TINTER] = NewInterfaceIn(context, nil)
 	CheckSize(context.Types[TINTER])

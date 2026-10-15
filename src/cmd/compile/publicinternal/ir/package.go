@@ -15,10 +15,29 @@ import (
 
 // A Package holds information about the package being compiled.
 type Package struct {
+	// GOOS and GOARCH identify the target platform for this compilation. They
+	// are copied into the package context so frontend and backend decisions do
+	// not have to consult the compiler process configuration.
+	GOOS         string
+	GOARCH       string
+	ArchFeatures ArchFeatures
+
 	// Flags and Debug are the parsed options for this compilation.
 	Flags       base.CmdFlags
 	Debug       base.DebugFlags
 	LangVersion types.LangVersion
+	// LegacyEnvironment permits the command-line compiler adapter to read
+	// process environment settings. Reusable requests leave it false.
+	LegacyEnvironment bool
+	// ClobberDeadHash selects functions for -clobberdead from the legacy
+	// command-line environment. Reusable compile requests leave it empty.
+	ClobberDeadHash string
+	// InlineHeuristicsDebugTrace is target-local trace state for the optional
+	// inliner debugtrace build tag.
+	InlineHeuristicsDebugTrace int
+	// SSADumpDir controls per-phase SSA dumps for the legacy command-line
+	// adapter. Reusable requests keep this empty.
+	SSADumpDir string
 
 	// Pos and AutoPos are the current and generated source positions for this
 	// compilation. Pos is independent of the legacy base.Pos compatibility path.
@@ -41,6 +60,9 @@ type Package struct {
 	LogOpt *logopt.Context
 	// Diagnostics owns parse, type-check, and backend messages for this compilation.
 	Diagnostics *base.Diagnostics
+	// Cleanup contains per-compilation callbacks for resources opened by
+	// compiler options such as profiling.
+	Cleanup []func()
 	// ArchInfo is the backend's architecture-specific code generation context.
 	// It is stored opaquely here to avoid an ir <-> ssagen import cycle.
 	ArchInfo any
@@ -202,6 +224,37 @@ type Package struct {
 	astDumpFiles    map[string]bool
 	htmlDumpWriters map[*Func]*HTMLWriter
 	htmlDumpFuncs   []*Func
+}
+
+// AddCleanup registers a callback to run when the package compilation ends.
+func (p *Package) AddCleanup(f func()) {
+	p.Cleanup = append(p.Cleanup, f)
+}
+
+// RunCleanup runs registered callbacks in reverse order.
+func (p *Package) RunCleanup() {
+	for i := len(p.Cleanup) - 1; i >= 0; i-- {
+		p.Cleanup[i]()
+	}
+	p.Cleanup = nil
+}
+
+// ArchFeatures selects the architecture variant used for code generation.
+// These settings belong to a target package so concurrent compiler sessions
+// can emit code for different architecture levels without changing buildcfg.
+type ArchFeatures struct {
+	GO386          string
+	GOAMD64        int
+	GOARMVersion   int
+	GOARMSoftFloat bool
+	GOARM64Version string
+	GOARM64LSE     bool
+	GOARM64Crypto  bool
+	GOMIPS         string
+	GOMIPS64       string
+	GOPPC64        int
+	GORISCV64      int
+	GOWASM         string
 }
 
 // Pkg returns the package instance for path in this compilation context.

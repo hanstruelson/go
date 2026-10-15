@@ -64,6 +64,7 @@ func (c *Conf) Frontend() ssa.Frontend {
 	if c.fe == nil {
 		pkg := types.NewPkgInstance("my/import/path", "path")
 		fn := ir.NewFunc(nil, src.NoXPos, src.NoXPos, pkg.Lookup("function"), types.NewSignature(nil, nil, nil))
+		fn.Target = testTarget
 		fn.DeclareParams(true)
 		fn.LSym = &obj.LSym{Name: "my/import/path.function"}
 
