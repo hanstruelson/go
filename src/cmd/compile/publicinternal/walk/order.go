@@ -9,7 +9,6 @@ import (
 	"go/constant"
 	"publicinternal/abi"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/ssa"
@@ -72,7 +71,7 @@ func (o *orderState) newTemp(walkstate *walkState, t *types.Type, clear bool) *i
 	if a := o.free[key]; len(a) > 0 {
 		v = a[len(a)-1]
 		if !types.Identical(t, v.Type()) {
-			base.Fatalf("expected %L to have type %v", v, t)
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("expected %L to have type %v", v, t)
 		}
 		o.free[key] = a[:len(a)-1]
 	} else {
@@ -209,7 +208,7 @@ func (o *orderState) safeExpr(walkstate *walkState, n ir.Node) ir.Node {
 		return typecheck.Expr(o.walkstate.curfunc, a)
 
 	default:
-		base.Fatalf("order.safeExpr %v", n.Op())
+		o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.safeExpr %v", n.Op())
 		return nil // not reached
 	}
 }
@@ -235,7 +234,7 @@ func (o *orderState) addrTemp(walkstate *walkState, n ir.Node) ir.Node {
 		var s staticinit.Schedule
 		s.StaticAssign(o.walkstate.curfunc, vstat, 0, n, n.Type())
 		if s.Out != nil {
-			base.Fatalf("staticassign of const generated code: %+v", n)
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("staticassign of const generated code: %+v", n)
 		}
 		vstat = typecheck.Expr(o.walkstate.curfunc, vstat).(*ir.Name)
 		return vstat
@@ -293,7 +292,7 @@ Copy:
 // that n's position is not unique (e.g., if n is an ONAME).
 func (o *orderState) mapKeyTemp(walkstate *walkState, outerPos src.XPos, t *types.Type, n ir.Node) ir.Node {
 	pos := outerPos
-	if ir.HasUniquePos(n) {
+	if ir.HasUniquePosFor(walkstate.curfunc.Target, n) {
 		pos = n.Pos()
 	}
 	// Most map calls need to take the address of the key.
@@ -334,7 +333,7 @@ func (o *orderState) mapKeyTemp(walkstate *walkState, outerPos src.XPos, t *type
 		// We'll need to do a load with type kt. Create a temporary of type kt to
 		// ensure sufficient alignment. nt may be under-aligned.
 		if uint8(kt.Alignment()) < uint8(nt.Alignment()) {
-			base.Fatalf("mapKeyTemp: key type is not sufficiently aligned, kt=%v nt=%v", kt, nt)
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("mapKeyTemp: key type is not sufficiently aligned, kt=%v nt=%v", kt, nt)
 		}
 		tmp := o.newTemp(walkstate, kt, true)
 		// *(*nt)(&tmp) = n
@@ -592,7 +591,7 @@ func (o *orderState) init(walkstate *walkState, n ir.Node) {
 		// For concurrency safety, don't mutate potentially shared nodes.
 		// First, ensure that no work is required here.
 		if len(n.Init()) > 0 {
-			base.Fatalf("order.init shared node with ninit")
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.init shared node with ninit")
 		}
 		return
 	}
@@ -604,17 +603,17 @@ func (o *orderState) init(walkstate *walkState, n ir.Node) {
 func (o *orderState) call(walkstate *walkState, nn ir.Node) {
 	if len(nn.Init()) > 0 {
 		// Caller should have already called o.init(nn).
-		base.Fatalf("%v with unexpected ninit", nn.Op())
+		o.walkstate.curfunc.Target.Diagnostics.Fatalf("%v with unexpected ninit", nn.Op())
 	}
 	if nn.Op() == ir.OCALLMETH {
-		base.FatalfAt(nn.Pos(), "OCALLMETH missed by typecheck")
+		o.walkstate.curfunc.Target.Diagnostics.FatalfAt(nn.Pos(), "OCALLMETH missed by typecheck")
 	}
 
 	// Builtin functions.
 	if nn.Op() != ir.OCALLFUNC && nn.Op() != ir.OCALLINTER {
 		switch n := nn.(type) {
 		default:
-			base.Fatalf("unexpected call: %+v", n)
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("unexpected call: %+v", n)
 		case *ir.UnaryExpr:
 			n.X = o.expr(walkstate, n.X, nil)
 		case *ir.ConvExpr:
@@ -649,7 +648,7 @@ func (o *orderState) call(walkstate *walkState, nn ir.Node) {
 func (o *orderState) mapAssign(walkstate *walkState, n ir.Node) {
 	switch n.Op() {
 	default:
-		base.Fatalf("order.mapAssign %v", n.Op())
+		o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.mapAssign %v", n.Op())
 
 	case ir.OAS:
 		n := n.(*ir.AssignStmt)
@@ -691,7 +690,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 
 	switch n.Op() {
 	default:
-		base.Fatalf("order.stmt %v", n.Op())
+		o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.stmt %v", n.Op())
 
 	case ir.OINLMARK:
 		o.out = append(o.out, n)
@@ -829,7 +828,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 			_ = mapKeyReplaceStrConv(r.Index)
 			r.Index = o.mapKeyTemp(walkstate, r.Pos(), r.X.Type(), r.Index)
 		default:
-			base.Fatalf("order.stmt: %v", r.Op())
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.stmt: %v", r.Op())
 		}
 
 		o.as2ok(walkstate, n)
@@ -865,7 +864,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		// discard results; double-check for no side effects
 		for _, result := range n.ReturnVars {
 			if staticinit.AnySideEffects(result) {
-				base.FatalfAt(result.Pos(), "inlined call result has side effects: %v", result)
+				o.walkstate.curfunc.Target.Diagnostics.FatalfAt(result.Pos(), "inlined call result has side effects: %v", result)
 			}
 		}
 
@@ -963,7 +962,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 		xt := typecheck.RangeExprType(n.X.Type())
 		switch k := xt.Kind(); {
 		default:
-			base.Fatalf("order.stmt range %v", n.Type())
+			o.walkstate.curfunc.Target.Diagnostics.Fatalf("order.stmt range %v", n.Type())
 
 		case types.IsInt[k]:
 			// Used only once, no need to copy.
@@ -1040,7 +1039,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 			// Append any new body prologue to ninit.
 			// The next loop will insert ninit into nbody.
 			if len(ncas.Init()) != 0 {
-				base.Fatalf("order select ninit")
+				o.walkstate.curfunc.Target.Diagnostics.Fatalf("order select ninit")
 			}
 			if r == nil {
 				continue
@@ -1048,7 +1047,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 			switch r.Op() {
 			default:
 				ir.Dump("select case", r)
-				base.Fatalf("unknown op in select %v", r.Op())
+				o.walkstate.curfunc.Target.Diagnostics.Fatalf("unknown op in select %v", r.Op())
 
 			case ir.OSELRECV2:
 				// case x, ok = <-c
@@ -1092,7 +1091,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 				do(1, walkstate.curfunc.Target.Type(types.TBOOL))
 				if len(init) != 0 {
 					ir.DumpList("ninit", init)
-					base.Fatalf("ninit on select recv")
+					o.walkstate.curfunc.Target.Diagnostics.Fatalf("ninit on select recv")
 				}
 				walkstate.orderBlock(ncas.PtrInit(), o.free)
 
@@ -1100,7 +1099,7 @@ func (o *orderState) stmt(walkstate *walkState, n ir.Node) {
 				r := r.(*ir.SendStmt)
 				if len(r.Init()) != 0 {
 					ir.DumpList("ninit", r.Init())
-					base.Fatalf("ninit on select send")
+					o.walkstate.curfunc.Target.Diagnostics.Fatalf("ninit on select send")
 				}
 
 				// case c <- x
@@ -1315,7 +1314,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 	case ir.OCONVNOP:
 		n := n.(*ir.ConvExpr)
 		if n.X.Op() == ir.OCALLMETH {
-			base.FatalfAt(n.X.Pos(), "OCALLMETH missed by typecheck")
+			o.walkstate.curfunc.Target.Diagnostics.FatalfAt(n.X.Pos(), "OCALLMETH missed by typecheck")
 		}
 		if n.Type().IsKind(types.TUNSAFEPTR) && n.X.Type().IsKind(types.TUINTPTR) && (n.X.Op() == ir.OCALLFUNC || n.X.Op() == ir.OCALLINTER) {
 			call := n.X.(*ir.CallExpr)
@@ -1371,7 +1370,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		return r
 
 	case ir.OCALLMETH:
-		base.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
+		o.walkstate.curfunc.Target.Diagnostics.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
 		panic("unreachable")
 
 	case ir.OCALLFUNC,
@@ -1556,7 +1555,7 @@ func (o *orderState) expr1(walkstate *walkState, n, lhs ir.Node) ir.Node {
 		// Emit eval+insert of dynamic entries, one at a time.
 		for _, r := range dynamics {
 			lhs := typecheck.AssignExpr(o.walkstate.curfunc, ir.NewIndexExpr(o.walkstate.curfunc.Target.Pos, m, r.Key)).(*ir.IndexExpr)
-			base.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
+			o.walkstate.curfunc.Target.Diagnostics.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
 			lhs.RType = n.RType
 
 			as := ir.NewAssignStmt(o.walkstate.curfunc.Target.Pos, lhs, r.Value)

@@ -9,7 +9,6 @@ import (
 	rtabi "publicinternal/abi"
 
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -405,7 +404,6 @@ func (b BoundsKind) Code() (rtabi.BoundsErrorCode, bool) {
 	case BoundsConvert:
 		return rtabi.BoundsConvert, false
 	default:
-		base.Fatalf("bad bounds kind %d", b)
-		return 0, false
+		panic(fmt.Sprintf("bad bounds kind %d", b))
 	}
 }

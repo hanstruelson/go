@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
+	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/ssa/block"
 	"cmd/compile/publicinternal/ssa/ssabase"
 	"cmd/compile/publicinternal/ssa/ssaop"
@@ -91,6 +91,15 @@ type Func struct {
 
 	Auxmap    AuxMap             // map from aux values to opaque ids used by CSE
 	constants map[int64][]*Value // constants cache, keyed by constant value; users must check value's Op and Type
+}
+
+// LogOptContext returns the optimizer-diagnostic context for this function's
+// compilation, or nil when the function was built without a target package.
+func (f *Func) LogOptContext() *logopt.Context {
+	if f == nil || f.Config == nil || f.Config.Target == nil {
+		return nil
+	}
+	return f.Config.Target.LogOpt
 }
 
 // FuncNameABI returns n followed by a comma and the value of a.
@@ -307,7 +316,7 @@ func (f *Func) SplitArray(name *LocalSlot) *LocalSlot {
 	n := name.N
 	at := name.Type
 	if at.NumElem() != 1 {
-		base.FatalfAt(n.Pos(), "bad array size")
+		f.FatalfWithPos(n.Pos(), "bad array size")
 	}
 	et := at.Elem()
 	return f.SplitSlot(name, "[0]", 0, et)

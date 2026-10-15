@@ -5,7 +5,6 @@
 package walk
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -15,7 +14,7 @@ import (
 func (w *walkState) walkSelect(sel *ir.SelectStmt) {
 	lno := ir.SetPosFor(w.curfunc.Target, sel)
 	if sel.Walked() {
-		base.Fatalf("double walkSelect")
+		w.fatalf("double walkSelect")
 	}
 	sel.SetWalked(true)
 
@@ -49,7 +48,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 			l = append(l, ir.TakeInit(n)...)
 			switch n.Op() {
 			default:
-				base.Fatalf("select %v", n.Op())
+				w.fatalf("select %v", n.Op())
 
 			case ir.OSEND:
 				// already ok
@@ -110,7 +109,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		var cond ir.Node
 		switch n.Op() {
 		default:
-			base.Fatalf("select %v", n.Op())
+			w.fatalf("select %v", n.Op())
 
 		case ir.OSEND:
 			// if selectnbsend(c, v) { body } else { default body }
@@ -178,7 +177,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		var c, elem ir.Node
 		switch n.Op() {
 		default:
-			base.Fatalf("select %v", n.Op())
+			w.fatalf("select %v", n.Op())
 		case ir.OSEND:
 			n := n.(*ir.SendStmt)
 			i = nsends
@@ -216,7 +215,7 @@ func (w *walkState) walkSelectCases(cases []*ir.CommClause) []ir.Node {
 		}
 	}
 	if nsends+nrecvs != ncas {
-		base.Fatalf("walkSelectCases: miscount: %v + %v != %v", nsends, nrecvs, ncas)
+		w.fatalf("walkSelectCases: miscount: %v + %v != %v", nsends, nrecvs, ncas)
 	}
 
 	// run the select

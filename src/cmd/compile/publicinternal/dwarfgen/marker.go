@@ -5,9 +5,7 @@
 package dwarfgen
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
 )
 
@@ -19,9 +17,9 @@ type ScopeMarker struct {
 }
 
 // checkPos validates the given position and returns the current scope.
-func (m *ScopeMarker) checkPos(ctxt *obj.Link, pos src.XPos) ir.ScopeID {
+func (m *ScopeMarker) checkPos(target *ir.Package, pos src.XPos) ir.ScopeID {
 	if !pos.IsKnown() {
-		base.Fatalf("unknown scope position, pos=%v", pos)
+		target.Diagnostics.Fatalf("unknown scope position, pos=%v", pos)
 	}
 
 	if len(m.marks) == 0 {
@@ -29,15 +27,15 @@ func (m *ScopeMarker) checkPos(ctxt *obj.Link, pos src.XPos) ir.ScopeID {
 	}
 
 	last := &m.marks[len(m.marks)-1]
-	if xposBefore(ctxt, pos, last.Pos) {
-		base.FatalfAt(pos, "non-monotonic scope positions\n\t%v: previous scope position", base.FmtPos(last.Pos))
+	if xposBefore(target.Ctxt, pos, last.Pos) {
+		target.Diagnostics.FatalfAt(pos, "non-monotonic scope positions\n\t%v: previous scope position", target.Diagnostics.FmtPos(last.Pos))
 	}
 	return last.Scope
 }
 
 // Push records a transition to a new child scope of the current scope.
-func (m *ScopeMarker) Push(ctxt *obj.Link, pos src.XPos) {
-	current := m.checkPos(ctxt, pos)
+func (m *ScopeMarker) Push(target *ir.Package, pos src.XPos) {
+	current := m.checkPos(target, pos)
 
 	m.parents = append(m.parents, current)
 	child := ir.ScopeID(len(m.parents))
@@ -46,8 +44,8 @@ func (m *ScopeMarker) Push(ctxt *obj.Link, pos src.XPos) {
 }
 
 // Pop records a transition back to the current scope's parent.
-func (m *ScopeMarker) Pop(ctxt *obj.Link, pos src.XPos) {
-	current := m.checkPos(ctxt, pos)
+func (m *ScopeMarker) Pop(target *ir.Package, pos src.XPos) {
+	current := m.checkPos(target, pos)
 
 	parent := m.parents[current-1]
 
@@ -55,12 +53,12 @@ func (m *ScopeMarker) Pop(ctxt *obj.Link, pos src.XPos) {
 }
 
 // Unpush removes the current scope, which must be empty.
-func (m *ScopeMarker) Unpush() {
+func (m *ScopeMarker) Unpush(target *ir.Package) {
 	i := len(m.marks) - 1
 	current := m.marks[i].Scope
 
 	if current != ir.ScopeID(len(m.parents)) {
-		base.FatalfAt(m.marks[i].Pos, "current scope is not empty")
+		target.Diagnostics.FatalfAt(m.marks[i].Pos, "current scope is not empty")
 	}
 
 	m.parents = m.parents[:current-1]

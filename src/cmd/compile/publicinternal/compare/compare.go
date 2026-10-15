@@ -7,7 +7,6 @@
 package compare
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -148,7 +147,7 @@ func calculateCostForType(arch *obj.LinkArch, t *types.Type) int64 {
 		return EqStructCost(arch, t)
 	case types.TSLICE:
 		// Slices are not comparable.
-		base.Fatalf("calculateCostForType: unexpected slice type")
+		panic("calculateCostForType: unexpected slice type")
 	case types.TARRAY:
 		elemCost := calculateCostForType(arch, t.Elem())
 		cost = t.NumElem() * elemCost
@@ -315,7 +314,7 @@ func EqString(curfunc *ir.Func, s, t ir.Node) (eqlen *ir.BinaryExpr, eqmem *ir.C
 // eqtab must be evaluated before eqdata, and shortcircuiting is required.
 func EqInterface(curfunc *ir.Func, s, t ir.Node) (eqtab *ir.BinaryExpr, eqdata *ir.CallExpr) {
 	if !types.Identical(s.Type(), t.Type()) {
-		base.Fatalf("EqInterface %v %v", s.Type(), t.Type())
+		curfunc.Target.Diagnostics.Fatalf("EqInterface %v %v", s.Type(), t.Type())
 	}
 	// func ifaceeq(tab *uintptr, x, y unsafe.Pointer) (ret bool)
 	// func efaceeq(typ *uintptr, x, y unsafe.Pointer) (ret bool)

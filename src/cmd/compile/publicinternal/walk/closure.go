@@ -5,7 +5,6 @@
 package walk
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -97,7 +96,7 @@ func (w *walkState) walkClosure(clo *ir.ClosureExpr, init *ir.Nodes) ir.Node {
 	// If not a closure, don't bother wrapping.
 	if !clofn.IsClosure() {
 		if w.curfunc.Target.Debug.Closure > 0 {
-			base.WarnfAt(clo.Pos(), "closure converted to global")
+			clo.Func.Target.Diagnostics.WarnfAt(clo.Pos(), "closure converted to global")
 		}
 		return clofn.Nname
 	}
@@ -212,7 +211,7 @@ func (w *walkState) walkMethodValue(n *ir.SelectorExpr, init *ir.Nodes) ir.Node 
 // added to the owning package's declarations.
 func methodValueWrapper(target *ir.Package, dot *ir.SelectorExpr) *ir.Name {
 	if dot.Op() != ir.OMETHVALUE {
-		base.Fatalf("methodValueWrapper: unexpected %v (%v)", dot, dot.Op())
+		target.Diagnostics.Fatalf("methodValueWrapper: unexpected %v (%v)", dot, dot.Op())
 	}
 
 	meth := dot.Sel
@@ -224,6 +223,6 @@ func methodValueWrapper(target *ir.Package, dot *ir.SelectorExpr) *ir.Name {
 	}
 	sym.SetUniq(true)
 
-	base.FatalfAt(dot.Pos(), "missing wrapper for %v", meth)
+	target.Diagnostics.FatalfAt(dot.Pos(), "missing wrapper for %v", meth)
 	panic("unreachable")
 }

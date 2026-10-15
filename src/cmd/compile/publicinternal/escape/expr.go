@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 )
@@ -37,7 +36,7 @@ func (e *escape) exprSkipInit(k hole, n ir.Node) {
 
 	switch n.Op() {
 	default:
-		base.Fatalf("unexpected expr: %s %v", n.Op().String(), n)
+		e.curfn.Target.Diagnostics.Fatalf("unexpected expr: %s %v", n.Op().String(), n)
 
 	case ir.OLITERAL, ir.ONIL, ir.OGETG, ir.OGETCALLERSP, ir.OTYPE, ir.OMETHEXPR, ir.OLINKSYMOFFSET:
 		// nop
@@ -281,10 +280,10 @@ func (e *escape) exprSkipInit(k hole, n ir.Node) {
 // for conversions from an unsafe.Pointer.
 func (e *escape) unsafeValue(k hole, n ir.Node) {
 	if n.Type().Kind() != types.TUINTPTR {
-		base.Fatalf("unexpected type %v for %v", n.Type(), n)
+		e.curfn.Target.Diagnostics.Fatalf("unexpected type %v for %v", n.Type(), n)
 	}
 	if k.addrtaken {
-		base.Fatalf("unexpected addrtaken")
+		e.curfn.Target.Diagnostics.Fatalf("unexpected addrtaken")
 	}
 
 	e.stmts(n.Init())

@@ -38,13 +38,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"publicinternal/buildcfg"
-	"publicinternal/platform"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"publicinternal/buildcfg"
+	"publicinternal/platform"
 	"runtime"
 	"slices"
 	"sort"
@@ -52,17 +52,17 @@ import (
 	"sync"
 	"time"
 
-	"cmd/publicinternal/bio"
-	"cmd/publicinternal/goobj"
-	"cmd/publicinternal/hash"
-	"cmd/publicinternal/objabi"
-	"cmd/publicinternal/sys"
 	"cmd/link/publicinternal/loadelf"
 	"cmd/link/publicinternal/loader"
 	"cmd/link/publicinternal/loadmacho"
 	"cmd/link/publicinternal/loadpe"
 	"cmd/link/publicinternal/loadxcoff"
 	"cmd/link/publicinternal/sym"
+	"cmd/publicinternal/bio"
+	"cmd/publicinternal/goobj"
+	"cmd/publicinternal/hash"
+	"cmd/publicinternal/objabi"
+	"cmd/publicinternal/sys"
 )
 
 // Data layout and relocation.
@@ -527,23 +527,6 @@ func (ctxt *Link) findLibPath(libname string) string {
 }
 
 func (ctxt *Link) loadlib() {
-	if ctxt.JIT {
-		// The go command adds all buildable standard library packages to the
-		// import configuration for JIT builds. Load them even though they are
-		// not part of the main package's initialization graph.
-		var packages []string
-		for pkg := range ctxt.PackageFile {
-			packages = append(packages, pkg)
-		}
-		sort.Strings(packages)
-		for _, pkg := range packages {
-			if ctxt.LibraryByPkg[pkg] != nil {
-				continue
-			}
-			addlibpath(ctxt, "JIT importcfg", "JIT importcfg", ctxt.PackageFile[pkg], pkg, "", goobj.FingerprintType{})
-		}
-	}
-
 	var flags uint32
 	if *flagCheckLinkname {
 		flags |= loader.FlagCheckLinkname

@@ -2,12 +2,31 @@
 
 ## Current checkout
 
-The working branch `work` contains `c41f35caca0`, which adds the `go build
--JIT` option, toolchain/package bundling in `cmd/go`, and linker support in
-`cmd/link`. The compiler-context changes through `4dfa820c990` are on
-`origin/master`. The current work adds a reusable source compilation request
-API on top of those commits. It returns compiler object bytes; linking and
-loading those bytes for a JIT remains a separate step.
+The working branch is at `1ef0648d3f9`, including the rename from `internal`
+to `publicinternal` and the reusable compiler request API. This change removes
+the archive-based `go build -JIT` experiment from `cmd/go` and its symbol
+retention and package-loading hooks in `cmd/link`. The compiler still emits an
+ordinary object archive for the standard linker; the removed feature was the
+extra GOROOT/toolchain bundle appended to executables.
+
+Go source parsing is available through `go/parser` and `go/format`. The
+compiler's lower-level parser and printer are also importable as
+`cmd/compile/publicinternal/syntax` and expose `syntax.Parse` and
+`syntax.Fprint`. The parser and printer keep per-call state; the parser smoke
+test calls the standard parser, checker, and formatter and the compiler parser
+and printer through their direct imports.
+
+The context migration is not complete. `gc.Compile` still serializes requests
+and saves/restores `base` package globals, while regular `gc.Main` sets and
+reads `base.Ctxt`, `base.Flag`, and `base.Debug`. The frontend, optimization
+passes, and backend now report through target-owned diagnostics when called
+with a target. Contextless compatibility helpers remain in `ir`, `typecheck`,
+and `types`; those retain global fallbacks for legacy callers. The `types`
+package also retains a default context and package-level compatibility state.
+Type-check trace indentation and the size-tracing switch now live on each
+`types.Context`; the type checker no longer shares a trace-indent slice across
+requests. A normal static build succeeds, but it still enters through the
+global command-line path and does not establish global-free compilation.
 
 ## Where one compilation starts and ends
 
@@ -23,10 +42,14 @@ archive without terminating the caller on compiler errors.
 
 ## Mutable state that belongs to a compilation
 
-- `base`: `Ctxt`, `Flag`, `Debug`, source position, diagnostics, and output/exit
-  behavior. Most compiler packages read these directly. The timing collector is
-  now created in `gc.Main` and passed into the frontend; the former `base.Timer`
-  singleton is removed.
+- `base`: `Ctxt`, `Flag`, `Debug`, command output/exit behavior, and legacy
+  diagnostics remain process-wide adapters. The `noder` parser/type2-checker,
+  IR typechecker, optimization passes, and code generators use the target's
+  `base.Diagnostics` for positions, errors, warnings, and exits. They no longer
+  read or write `base.Pos` or the package diagnostic queue on the target-owned
+  path. A few contextless compatibility helpers still fall back to package
+  diagnostics. The timing collector is created in `gc.Main` and passed into
+  the frontend; the former `base.Timer` singleton is removed.
 - `types`: target layout and the canonical basic-type universe now live in a
   `types.Context` owned by each `ir.Package`. Each `types.Type` and package
   retains its context, so sizing, deferred layout, and basic-type identity
@@ -44,31 +67,33 @@ archive without terminating the caller on compiler errors.
   Selector path and embedded
   method scratch buffers are local to each operation. Text and HTML dump
   registries are scoped to the target/frontend context, and cleanup closes only
-  that compilation's writers. Type-kind and operator classification tables
-  are initialized once and shared as immutable data.
+  that compilation's writers. Inliner and PGO source-position formatting now
+  receives the owning target explicitly; `ir.WithPos` and compiler-phase
+  `ir.HasUniquePosFor` calls use the owning target rather than reading or
+  modifying `base.Pos`/`base.Flag`. IR constant formatting and default type
+  selection follow the type's owning `types.Context`. Type-kind and operator
+  classification tables are initialized once and shared as immutable data.
 - `noder`: package readers, object/body lookup maps, pending body/dictionary
   work, wrapper-generation caches, and generated-name counters now belong to
   the per-load `noder.Context` rather than surviving in package globals.
+- optimizer diagnostics: format selection, destination, and buffered records
+  now live on each target's `logopt.Context`. Frontend, optimization, SSA, and
+  architecture generators log through the owning function or package.
 - `ssagen` and backend passes: selected architecture, SSA configuration and
   caches, environment-derived debug settings, and output hooks. SSA consistency
-  checking, its randomization seed, intrinsic debug/disable options, and
-  function dump selectors are copied into each target and read from that
-  context by backend workers. The active SSA pass slice and its mutable maps
-  are cloned per target; command-line phase/pass option parsing remains
-  process-wide for the CLI and is snapshotted around reusable requests.
+  checking, its randomization seed, intrinsic debug/disable options, function
+  dump selectors, and phase/pass settings now live in a per-compilation
+  `ssacompile.Options` and are copied into each target before backend workers
+  start. The legacy `ssacompile.PhaseOption` function remains an adapter for
+  callers that still need process-level defaults.
 - command and output plumbing: `flag.CommandLine`, process environment,
   `os.Stdout`/`os.Stderr`, logging, telemetry, profiles, and process exit.
 - `cmd/publicinternal/obj`: an `obj.Link` is already constructed per `gc.Main`, but
   shared compiler helpers reach it through `base.Ctxt`.
 
-A source scan found at least 158 non-test, top-level single-name `var`
-declarations across the main state packages (`base`, `types`, `typecheck`,
-`ssagen`, `ir`, `noder`, and `gc`); grouped declarations are not included. Many
-are immutable tables, so this is a classification task, not a count of fields
-to move. A scan of the selected global selectors found 1,712 matching
-non-test source lines across `cmd/compile/publicinternal`. A blind textual rename
-would miss unqualified package-local globals, function-value callbacks, and
-state access hidden behind helpers.
+Package-scope declarations still include immutable tables, compatibility
+defaults, and a smaller number of mutable debug or command adapters. They need
+to be classified by call path rather than treated as a blanket move list.
 
 ## Existing boundaries worth preserving
 
@@ -112,24 +137,13 @@ writer registries also live on the target/frontend context, so one run's
 cleanup does not close another run's dump writers.
 
 `ir.Syms`, `ir.Pkgs`, `ir.BlankNode`, `types.TypeSym`'s global table, and the
-global shape package have been removed. The full compiler tree builds with:
-
-```sh
-GOROOT=/workspace/go GOCACHE=/workspace/.go-compile-codex-cache TMPDIR=/workspace/.go-compile-tmp /workspace/go/bin/go build cmd/compile/... cmd/go
-```
-
-No tests were run.
-
-The baseline search found 1,712 lines that read selected singleton state.
-The latest broad selector scan reports 41 non-test lines matching the
-selected `base` and `types` names, including comments, compatibility
-fallbacks, and target setup. Type sizing, deferred layout, basic-type
-universes, and package registries are now target-owned. Remaining blockers
-for fully concurrent calls include diagnostics and error counts,
-command-line parsing, output routing, and remaining compatibility globals.
-The request API serializes access to those adapters, restores their state, and
-converts compiler exits to returned errors. It skips process-wide runtime
-profiling during a request.
+global shape package, and SSA's process-wide dump-option variables have been
+removed. Type sizing, deferred layout, basic-type universes, and package
+registries are target-owned. Remaining blockers include command-line parsing,
+output and process state in `gc.Compile`, plus compatibility globals in
+contextless IR, typecheck, and type APIs. The request API serializes access to
+its command adapter, restores that state, and converts compiler exits to
+returned errors. It skips process-wide runtime profiling during a request.
 
 ## Reusable source compilation API
 
@@ -143,9 +157,13 @@ configuration through options such as `-importcfg`.
 
 The entry point serializes calls because the command compiler still adapts
 package globals such as `base.Flag`, `base.Ctxt`, and Go's flag and standard
-stream globals. It saves and restores diagnostics, debug hashes, cleanup
-hooks, optimizer and DWARF logging, FIPS debug hashing, trace indentation,
-SSA pass settings, command arguments, standard streams, and flag state.
+stream globals. It saves and restores base diagnostics, debug hashes, cleanup
+hooks, command arguments, standard streams, and flag state. DWARF logging and
+FIPS debug hashing are attached to each `obj.Link`; SSA pass settings are
+request-owned.
+Type-check trace
+indentation is owned by each target's `types.Context` and no longer requires
+save/restore here.
 Runtime profiling is skipped in a request. This permits sequential reuse in
 one process; full context propagation is still required for concurrent
 compilation without the serialization lock.
@@ -171,9 +189,9 @@ source, not a stable public library contract for third-party applications.
    direct flag parsing, environment mutation, and process exit from the
    reusable path.
 5. Add repeated-compilation and concurrent-compilation coverage after each
-   subsystem migration. For a true JIT, separately decide how to link and
-   load generated code, resolve relocations, and register GC/unwind metadata;
-   `cmd/compile` currently emits object files and does not provide that loader.
+   subsystem migration. Runtime execution of generated machine code requires
+   a separate linker/loader path that resolves relocations and registers GC
+   and unwind metadata; `cmd/compile` does not provide that loader.
 
 ## Shortcut assessment
 
@@ -183,5 +201,15 @@ field. It cannot correctly add context parameters through the compiler's call
 graph, handle callbacks, or determine whether a package global is immutable.
 The efficient safe shortcut is an AST/type-aware codemod that propagates a
 context parameter through direct calls, followed by manual handling for
-callbacks and cross-package APIs. The compiler tree builds with the command
-above. No tests have been run.
+callbacks and cross-package APIs.
+
+## Verification in this workspace
+
+`GOROOT_BOOTSTRAP=/workspace/.tools/go1.26.0 GOCACHE=/tmp/gocache-context-refactor TMPDIR=/tmp ./make.bash`
+completed and installed the toolchain. A standalone program also built with
+`CGO_ENABLED=0` and ran
+successfully, printing `context compiler smoke build ok`. The direct compiler
+syntax parser/printer import test passed. `git diff --check` is clean. The
+local `HEAD` and cached `origin/master` both point at `1ef0648d3f9`; the context
+work in this checkout is uncommitted. Broader package tests were not rerun in
+this continuation.

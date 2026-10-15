@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"publicinternal/abi"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/rttype"
 	"cmd/compile/publicinternal/ssagen"
@@ -35,6 +34,14 @@ type walkState struct {
 	shapeConvSources map[*ir.Name]*types.Type
 }
 
+func (w *walkState) fatalf(format string, args ...any) {
+	w.curfunc.Target.Diagnostics.Fatalf(format, args...)
+}
+
+func (w *walkState) fatalfAt(pos src.XPos, format string, args ...any) {
+	w.curfunc.Target.Diagnostics.FatalfAt(pos, format, args...)
+}
+
 // autoLabel generates a new Name node for use with
 // an automatically generated label.
 // prefix is a short mnemonic (e.g. ".s" for switch)
@@ -45,7 +52,7 @@ type walkState struct {
 // being walked from the walk state.
 func (w *walkState) autoLabel(prefix string) *types.Sym {
 	if prefix[0] != '.' {
-		base.Fatalf("autolabel prefix must start with '.', have %q", prefix)
+		w.fatalf("autolabel prefix must start with '.', have %q", prefix)
 	}
 	n := w.curfunc.Label
 	w.curfunc.Label++
@@ -58,9 +65,9 @@ func Walk(fn *ir.Func) {
 	// Build pre-walk analysis caches with a single AST traversal.
 	walkstate.analyzePreWalk(fn)
 
-	errorsBefore := base.Errors()
+	errorsBefore := fn.Target.Diagnostics.Errors()
 	walkstate.order(fn)
-	if base.Errors() > errorsBefore {
+	if fn.Target.Diagnostics.Errors() > errorsBefore {
 		return
 	}
 
@@ -84,7 +91,7 @@ func Walk(fn *ir.Func) {
 // walkRecv walks an ORECV node.
 func (w *walkState) walkRecv(n *ir.UnaryExpr) ir.Node {
 	if n.Typecheck() == 0 {
-		base.Fatalf("missing typecheck: %+v", n)
+		w.fatalf("missing typecheck: %+v", n)
 	}
 	init := ir.TakeInit(n)
 
@@ -95,7 +102,7 @@ func (w *walkState) walkRecv(n *ir.UnaryExpr) ir.Node {
 
 func (w *walkState) convas(n *ir.AssignStmt, init *ir.Nodes) *ir.AssignStmt {
 	if n.Op() != ir.OAS {
-		base.Fatalf("convas: not OAS %v", n.Op())
+		w.fatalf("convas: not OAS %v", n.Op())
 	}
 	n.SetTypecheck(1)
 
@@ -125,15 +132,15 @@ func (w *walkState) convas(n *ir.AssignStmt, init *ir.Nodes) *ir.AssignStmt {
 
 func (w *walkState) vmkcall(fn ir.Node, t *types.Type, init *ir.Nodes, va []ir.Node) *ir.CallExpr {
 	if init == nil {
-		base.Fatalf("mkcall with nil init: %v", fn)
+		w.fatalf("mkcall with nil init: %v", fn)
 	}
 	if fn.Type() == nil || fn.Type().Kind() != types.TFUNC {
-		base.Fatalf("mkcall %v %v", fn, fn.Type())
+		w.fatalf("mkcall %v %v", fn, fn.Type())
 	}
 
 	n := fn.Type().NumParams()
 	if n != len(va) {
-		base.Fatalf("vmkcall %v needs %v args got %v", fn, n, len(va))
+		w.fatalf("vmkcall %v needs %v args got %v", fn, n, len(va))
 	}
 
 	call := typecheck.Call(w.curfunc, w.curfunc.Target.Pos, fn, va, false).(*ir.CallExpr)
@@ -165,7 +172,7 @@ func (w *walkState) mkcallstmt1(fn ir.Node, args ...ir.Node) ir.Node {
 
 func chanfn(target *ir.Package, name string, n int, t *types.Type) ir.Node {
 	if !t.IsChan() {
-		base.Fatalf("chanfn %v", t)
+		target.Diagnostics.Fatalf("chanfn %v", t)
 	}
 	switch n {
 	case 1:
@@ -173,13 +180,13 @@ func chanfn(target *ir.Package, name string, n int, t *types.Type) ir.Node {
 	case 2:
 		return typecheck.LookupRuntime(target, name, t.Elem(), t.Elem())
 	}
-	base.Fatalf("chanfn %d", n)
+	target.Diagnostics.Fatalf("chanfn %d", n)
 	return nil
 }
 
 func mapfn(target *ir.Package, name string, t *types.Type, isfat bool) ir.Node {
 	if !t.IsMap() {
-		base.Fatalf("mapfn %v", t)
+		target.Diagnostics.Fatalf("mapfn %v", t)
 	}
 	if mapfast(target, t) == mapslow || isfat {
 		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key(), t.Elem())
@@ -189,7 +196,7 @@ func mapfn(target *ir.Package, name string, t *types.Type, isfat bool) ir.Node {
 
 func mapfndel(target *ir.Package, name string, t *types.Type) ir.Node {
 	if !t.IsMap() {
-		base.Fatalf("mapfn %v", t)
+		target.Diagnostics.Fatalf("mapfn %v", t)
 	}
 	if mapfast(target, t) == mapslow {
 		return typecheck.LookupRuntime(target, name, t.Key(), t.Elem(), t.Key())
@@ -230,7 +237,7 @@ func mapfast(target *ir.Package, t *types.Type) int {
 		if target.PtrSize == 4 {
 			return mapfast32ptr
 		}
-		base.Fatalf("small pointer %v", t.Key())
+		target.Diagnostics.Fatalf("small pointer %v", t.Key())
 	case types.AMEM64:
 		if !t.Key().HasPointers() {
 			return mapfast64
@@ -313,7 +320,7 @@ func (w *walkState) backingArrayPtrLen(n ir.Node) (ptr, length ir.Node) {
 	var init ir.Nodes
 	c := w.cheapExpr(n, &init)
 	if c != n || len(init) != 0 {
-		base.Fatalf("backingArrayPtrLen not cheap: %v", n)
+		w.fatalf("backingArrayPtrLen not cheap: %v", n)
 	}
 	ptr = ir.NewUnaryExpr(w.curfunc.Target.Pos, ir.OSPTR, n)
 	if n.Type().IsString() {
@@ -354,12 +361,12 @@ func mayCall(target *ir.Package, n ir.Node) bool {
 		// walk should have already moved any Init blocks off of
 		// expressions.
 		if len(n.Init()) != 0 {
-			base.FatalfAt(n.Pos(), "mayCall %+v", n)
+			target.Diagnostics.FatalfAt(n.Pos(), "mayCall %+v", n)
 		}
 
 		switch n.Op() {
 		default:
-			base.FatalfAt(n.Pos(), "mayCall %+v", n)
+			target.Diagnostics.FatalfAt(n.Pos(), "mayCall %+v", n)
 
 		case ir.OCALLFUNC, ir.OCALLINTER,
 			ir.OUNSAFEADD, ir.OUNSAFESLICE:
@@ -445,9 +452,9 @@ func runtimeField(target *ir.Package, name string, offset int64, typ *types.Type
 // ifaceData loads the data field from an interface.
 // The concrete type must be known to have type t.
 // It follows the pointer if !IsDirectIface(t).
-func ifaceData(pos src.XPos, n ir.Node, t *types.Type) ir.Node {
+func ifaceData(target *ir.Package, pos src.XPos, n ir.Node, t *types.Type) ir.Node {
 	if t.IsInterface() {
-		base.Fatalf("ifaceData interface: %v", t)
+		target.Diagnostics.Fatalf("ifaceData interface: %v", t)
 	}
 	ptr := ir.NewUnaryExpr(pos, ir.OIDATA, n)
 	if types.IsDirectIface(t) {
@@ -475,7 +482,7 @@ func ifaceData(pos src.XPos, n ir.Node, t *types.Type) ir.Node {
 // staticValue is currently only useful when given an *ir.ConvExpr.X as n.
 func (w *walkState) staticValue(n ir.Node) ir.Node {
 	if w.staticValues == nil {
-		base.Fatalf("staticValues is nil. staticValue called outside of walk.Walk?")
+		w.fatalf("staticValues is nil. staticValue called outside of walk.Walk?")
 	}
 	return w.staticValues[n]
 }

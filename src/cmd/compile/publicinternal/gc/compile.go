@@ -6,12 +6,11 @@ package gc
 
 import (
 	"cmp"
-	"publicinternal/race"
 	"math/rand"
+	"publicinternal/race"
 	"slices"
 	"sync"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/inline"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/liveness"
@@ -68,7 +67,7 @@ func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs, queue *[]*ir.Func, backen
 		}
 	}
 
-	errorsBefore := base.Errors()
+	errorsBefore := fn.Target.Diagnostics.Errors()
 
 	todo := []*ir.Func{fn}
 	for len(todo) > 0 {
@@ -79,7 +78,7 @@ func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs, queue *[]*ir.Func, backen
 		todo = append(todo, next.Closures...)
 	}
 
-	if base.Errors() > errorsBefore {
+	if fn.Target.Diagnostics.Errors() > errorsBefore {
 		return
 	}
 

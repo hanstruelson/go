@@ -8,7 +8,6 @@ import (
 	"cmp"
 	"slices"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/ssaop"
@@ -924,7 +923,7 @@ func sizeType(target *ir.Package, size int64) *types.Type {
 	case 2:
 		return target.Type(types.TUINT16)
 	default:
-		base.Fatalf("bad size %d\n", size)
+		target.Diagnostics.Fatalf("bad size %d\n", size)
 		return nil
 	}
 }
@@ -938,7 +937,7 @@ func truncate(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.Val
 	case 42:
 		return b.NewValue1(pos, ssaop.OpTrunc32to16, b.Func.Config.Target.Type(types.TUINT16), v)
 	default:
-		base.Fatalf("bad sizes %d %d\n", from, to)
+		b.Func.Fatalf("bad sizes %d %d\n", from, to)
 		return nil
 	}
 }
@@ -951,7 +950,7 @@ func zeroExtend(b *ssa.Block, pos src.XPos, v *ssa.Value, from, to int64) *ssa.V
 	case 48:
 		return b.NewValue1(pos, ssaop.OpZeroExt32to64, b.Func.Config.Target.Type(types.TUINT64), v)
 	default:
-		base.Fatalf("bad sizes %d %d\n", from, to)
+		b.Func.Fatalf("bad sizes %d %d\n", from, to)
 		return nil
 	}
 }
@@ -967,7 +966,7 @@ func leftShift(b *ssa.Block, pos src.XPos, v *ssa.Value, shift int64) *ssa.Value
 	case 2:
 		return b.NewValue2(pos, ssaop.OpLsh16x64, v.Type, v, s)
 	default:
-		base.Fatalf("bad size %d\n", size)
+		b.Func.Fatalf("bad size %d\n", size)
 		return nil
 	}
 }
@@ -982,7 +981,7 @@ func rightShift(b *ssa.Block, pos src.XPos, v *ssa.Value, shift int64) *ssa.Valu
 	case 2:
 		return b.NewValue2(pos, ssaop.OpRsh16Ux64, v.Type, v, s)
 	default:
-		base.Fatalf("bad size %d\n", size)
+		b.Func.Fatalf("bad size %d\n", size)
 		return nil
 	}
 }

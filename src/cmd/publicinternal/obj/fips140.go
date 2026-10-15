@@ -137,9 +137,9 @@ package obj
 import (
 	"cmd/publicinternal/objabi"
 	"fmt"
+	"os"
 	"publicinternal/bisect"
 	"publicinternal/buildcfg"
-	"os"
 	"strings"
 )
 
@@ -156,29 +156,18 @@ func (ctxt *Link) IsFIPS() bool {
 	return ctxt.Pkgpath == "crypto/publicinternal/fips140" || strings.HasPrefix(ctxt.Pkgpath, "crypto/publicinternal/fips140/")
 }
 
-// bisectFIPS controls bisect-based debugging of FIPS symbol assignment.
-var bisectFIPS *bisect.Matcher
-
 // SetFIPSDebugHash sets the bisect pattern for debugging FIPS changes.
 // The compiler calls this with the pattern set by -d=fipshash=pattern,
 // so that if FIPS symbol type conversions are causing problems,
 // you can use 'bisect -compile fips go test strings' to identify exactly
 // which symbol is not being handled correctly.
-func SetFIPSDebugHash(pattern string) error {
+func (ctxt *Link) SetFIPSDebugHash(pattern string) error {
 	m, err := bisect.New(pattern)
 	if err != nil {
 		return err
 	}
-	bisectFIPS = m
+	ctxt.FIPSDebugHash = m
 	return nil
-}
-
-// SaveFIPSDebugHash saves the current FIPS debug matcher and returns a
-// function that restores it. This is used by the compiler's reusable request
-// API to keep debug options local to one compilation.
-func SaveFIPSDebugHash() func() {
-	old := bisectFIPS
-	return func() { bisectFIPS = old }
 }
 
 // EnableFIPS reports whether FIPS should be enabled at all
@@ -278,12 +267,12 @@ func (s *LSym) setFIPSType(ctxt *Link) {
 	// This is a FIPS symbol! Convert its type to FIPS.
 
 	// Allow hash-based bisect to override our decision.
-	if bisectFIPS != nil {
+	if ctxt.FIPSDebugHash != nil {
 		h := bisect.Hash(s.Name)
-		if bisectFIPS.ShouldPrint(h) {
+		if ctxt.FIPSDebugHash.ShouldPrint(h) {
 			fmt.Fprintf(os.Stderr, "%v %s (%v)\n", bisect.Marker(h), s.Name, s.Type)
 		}
-		if !bisectFIPS.ShouldEnable(h) {
+		if !ctxt.FIPSDebugHash.ShouldEnable(h) {
 			return
 		}
 	}

@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/publicinternal/src"
 	"fmt"
@@ -179,7 +178,7 @@ func (aa *aliasAnalysis) analyze(fn *ir.Func) {
 
 	for _, call := range aa.noAliasAppends {
 		if aa.fn.Target.Debug.EscapeAlias >= 1 {
-			base.WarnfAt(call.Pos(), "alias analysis: append using non-aliased slice: %v in func %v",
+			aa.fn.Target.Diagnostics.WarnfAt(call.Pos(), "alias analysis: append using non-aliased slice: %v in func %v",
 				call, fn)
 		}
 		if aa.fn.Target.Debug.FreeAppend > 0 {
@@ -228,7 +227,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 		if decl.X != nil && decl.X.Type().IsSlice() && decl.X.Class == ir.PAUTO {
 			s := decl.X
 			if _, ok := aa.candidateSlices[s]; ok {
-				base.FatalfAt(n.Pos(), "candidate slice already tracked as candidate: %v", s)
+				aa.fn.Target.Diagnostics.FatalfAt(n.Pos(), "candidate slice already tracked as candidate: %v", s)
 			}
 			if aa.fn.Target.Debug.EscapeAlias >= 2 {
 				aa.diag(n.Pos(), s, "adding candidate slice", "(loop depth: %d)", len(aa.loops))
@@ -293,7 +292,7 @@ func (aa *aliasAnalysis) visit(n ir.Node) bool {
 			aa.visit(rangestmt.Value)
 			aa.visitList(rangestmt.Body)
 		default:
-			base.Fatalf("loop not OFOR or ORANGE: %v", n)
+			aa.fn.Target.Diagnostics.Fatalf("loop not OFOR or ORANGE: %v", n)
 		}
 
 		// Pop the loop.
@@ -510,18 +509,16 @@ func doubleCheckProcessed(fn *ir.Func, processed map[ir.Node]int) {
 		for n, observedCount := range observed {
 			processedCount, ok := processed[n]
 			if processedCount != observedCount || !ok {
-				base.WarnfAt(n.Pos(),
+				fn.Target.Diagnostics.WarnfAt(n.Pos(),
 					"alias analysis: mismatch for %T: %v: processed %d times, observed %d times",
 					n, n, processedCount, observedCount)
 			}
 		}
-		base.FatalfAt(fn.Pos(), "alias analysis: mismatch in visited nodes")
+		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "alias analysis: mismatch in visited nodes")
 	}
 }
 
 func fmtPosShort(fn *ir.Func, xpos src.XPos) string {
-	// TODO(thepudds): I think I did this a simpler way a while ago? Or maybe add base.FmtPosShort
-	// or similar? Or maybe just use base.FmtPos and give up on nicely aligned log messages?
 	pos := fn.Target.Ctxt.PosTable.Pos(xpos)
 	shortLine := filepath.Base(pos.AbsFilename()) + ":" + pos.LineNumber()
 	return shortLine

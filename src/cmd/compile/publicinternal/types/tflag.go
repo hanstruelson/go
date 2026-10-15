@@ -5,7 +5,6 @@
 package types
 
 import (
-	"cmd/compile/publicinternal/base"
 	"publicinternal/abi"
 	"strings"
 	"sync"
@@ -84,7 +83,7 @@ func hasUncommon(t *Type) bool {
 		return false
 	}
 	if !mt.MethodsComputed() {
-		base.Fatalf("hasUncommon: methods not computed on %v", mt)
+		fatalfType(mt, mt.Pos(), "hasUncommon: methods not computed on %v", mt)
 	}
 	for _, f := range mt.AllMethods() {
 		if f.Nointerface() {

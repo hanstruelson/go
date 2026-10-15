@@ -11,7 +11,6 @@ import (
 	"hash/fnv"
 	"io"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/compare"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
@@ -94,7 +93,7 @@ func (w *walkState) walkCompare(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 			eqtype = ir.NewLogicalExpr(w.curfunc.Target.Pos, andor, nonnil, match)
 		}
 		// Check for data equal.
-		eqdata := ir.NewBinaryExpr(w.curfunc.Target.Pos, eq, ifaceData(n.Pos(), l, r.Type()), r)
+		eqdata := ir.NewBinaryExpr(w.curfunc.Target.Pos, eq, ifaceData(w.curfunc.Target, n.Pos(), l, r.Type()), r)
 		// Put it all together.
 		expr := ir.NewLogicalExpr(w.curfunc.Target.Pos, andor, eqtype, eqdata)
 		return w.finishCompare(n, expr, init)
@@ -158,7 +157,7 @@ func (w *walkState) walkCompare(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 				}
 				paramType = w.curfunc.Target.Type(types.TUINT64)
 			default:
-				base.Fatalf("unexpected integer size %d for %v", t.Size(), t)
+				w.fatalf("unexpected integer size %d for %v", t.Size(), t)
 			}
 			init.Append(w.mkcall(fn, nil, init, w.tracecmpArg(l, paramType, init), w.tracecmpArg(r, paramType, init), fakePC(w.curfunc.Target, n)))
 		}
@@ -183,7 +182,7 @@ func (w *walkState) walkCompare(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 	if !inline {
 		// eq algs take pointers; cmpl and cmpr must be addressable
 		if !ir.IsAddressable(cmpl) || !ir.IsAddressable(cmpr) {
-			base.Fatalf("arguments of comparison must be lvalues - %v %v", cmpl, cmpr)
+			w.fatalf("arguments of comparison must be lvalues - %v %v", cmpl, cmpr)
 		}
 
 		// Should only arrive here with large memory or
@@ -498,7 +497,7 @@ func brcom(op ir.Op) ir.Op {
 	case ir.OGE:
 		return ir.OLT
 	}
-	base.Fatalf("brcom: no com for %v\n", op)
+	panic("brcom: no com for " + op.String())
 	return op
 }
 
@@ -519,7 +518,7 @@ func brrev(op ir.Op) ir.Op {
 	case ir.OGE:
 		return ir.OLE
 	}
-	base.Fatalf("brrev: no rev for %v\n", op)
+	panic("brrev: no rev for " + op.String())
 	return op
 }
 

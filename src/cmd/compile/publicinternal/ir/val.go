@@ -7,7 +7,6 @@ package ir
 import (
 	"go/constant"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 )
 
@@ -30,13 +29,13 @@ func IntVal(t *types.Type, v constant.Value) int64 {
 			return x
 		}
 	}
-	base.Fatalf("%v out of range for %v", v, t)
+	fatalfType(t, t.Pos(), "%v out of range for %v", v, t)
 	panic("unreachable")
 }
 
 func AssertValidTypeForConst(t *types.Type, v constant.Value) {
 	if !ValidTypeForConst(t, v) {
-		base.Fatalf("%v (%v) does not represent %v (%v)", t, t.Kind(), v, v.Kind())
+		fatalfType(t, t.Pos(), "%v (%v) does not represent %v (%v)", t, t.Kind(), v, v.Kind())
 	}
 }
 
@@ -56,7 +55,7 @@ func ValidTypeForConst(t *types.Type, v constant.Value) bool {
 		return t.IsComplex()
 	}
 
-	base.Fatalf("unexpected constant kind: %v", v)
+	fatalfType(t, t.Pos(), "unexpected constant kind: %v", v)
 	panic("unreachable")
 }
 
@@ -66,11 +65,11 @@ var OKForConst [types.NTYPE]bool
 // n must be an integer or rune constant.
 func Int64Val(n Node) int64 {
 	if !IsConst(n, constant.Int) {
-		base.Fatalf("Int64Val(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "Int64Val(%v)", n)
 	}
 	x, ok := constant.Int64Val(n.Val())
 	if !ok {
-		base.Fatalf("Int64Val(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "Int64Val(%v)", n)
 	}
 	return x
 }
@@ -79,11 +78,11 @@ func Int64Val(n Node) int64 {
 // n must be an integer or rune constant.
 func Uint64Val(n Node) uint64 {
 	if !IsConst(n, constant.Int) {
-		base.Fatalf("Uint64Val(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "Uint64Val(%v)", n)
 	}
 	x, ok := constant.Uint64Val(n.Val())
 	if !ok {
-		base.Fatalf("Uint64Val(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "Uint64Val(%v)", n)
 	}
 	return x
 }
@@ -92,7 +91,7 @@ func Uint64Val(n Node) uint64 {
 // n must be a boolean constant.
 func BoolVal(n Node) bool {
 	if !IsConst(n, constant.Bool) {
-		base.Fatalf("BoolVal(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "BoolVal(%v)", n)
 	}
 	return constant.BoolVal(n.Val())
 }
@@ -101,7 +100,7 @@ func BoolVal(n Node) bool {
 // n must be a string constant.
 func StringVal(n Node) string {
 	if !IsConst(n, constant.String) {
-		base.Fatalf("StringVal(%v)", n)
+		fatalfType(n.Type(), n.Pos(), "StringVal(%v)", n)
 	}
 	return constant.StringVal(n.Val())
 }

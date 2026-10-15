@@ -11,9 +11,7 @@ import (
 	"publicinternal/goexperiment"
 	"slices"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/staticinit"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -204,7 +202,7 @@ func (b *batch) with(fn *ir.Func) *escape {
 func (b *batch) initFunc(fn *ir.Func) {
 	e := b.with(fn)
 	if fn.Esc() != escFuncUnknown {
-		base.Fatalf("unexpected node: %v", fn)
+		fn.Target.Diagnostics.Fatalf("unexpected node: %v", fn)
 	}
 	fn.SetEsc(escFuncPlanned)
 	if fn.Target.Flags.LowerM > 3 {
@@ -260,7 +258,7 @@ func (b *batch) walkFunc(fn *ir.Func) {
 	e.block(fn.Body)
 
 	if len(e.labels) != 0 {
-		base.FatalfAt(fn.Pos(), "leftover labels after walkFunc")
+		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "leftover labels after walkFunc")
 	}
 }
 
@@ -269,7 +267,7 @@ func (b *batch) flowClosure(k hole, clo *ir.ClosureExpr) {
 		n := cv.Canonical()
 		loc := b.oldLoc(cv)
 		if !loc.captured {
-			base.FatalfAt(cv.Pos(), "closure variable never captured: %v", cv)
+			b.target.Diagnostics.FatalfAt(cv.Pos(), "closure variable never captured: %v", cv)
 		}
 
 		// Capture by value for variables <= 128 bytes that are never reassigned.
@@ -277,7 +275,7 @@ func (b *batch) flowClosure(k hole, clo *ir.ClosureExpr) {
 		if !n.Byval() {
 			n.SetAddrtaken(true)
 			if n.Sym().Name == typecheck.LocalDictName {
-				base.FatalfAt(n.Pos(), "dictionary variable not captured by value")
+				b.target.Diagnostics.FatalfAt(n.Pos(), "dictionary variable not captured by value")
 			}
 		}
 	}
@@ -295,7 +293,7 @@ func (b *batch) flowClosure(k hole, clo *ir.ClosureExpr) {
 			if n.Byval() {
 				how = "value"
 			}
-			base.WarnfAt(n.Pos(), "%v capturing by %s: %v (addr=%v assign=%v width=%d)", n.Curfn, how, n, loc.addrtaken, loc.reassigned, n.Type().Size())
+			b.target.Diagnostics.WarnfAt(n.Pos(), "%v capturing by %s: %v (addr=%v assign=%v width=%d)", n.Curfn, how, n, loc.addrtaken, loc.reassigned, n.Type().Size())
 		}
 
 		// Flow captured variables to closure.
@@ -344,7 +342,7 @@ func (b *batch) rewriteClosureVarsWithLiterals(clofn *ir.Func) {
 		if ro == nil {
 			ro = b.reassignOracle(clofn)
 			if ro == nil {
-				base.Fatalf("no ReassignOracle for function %v with closure parent %v", clofn, clofn.ClosureParent)
+				b.target.Diagnostics.Fatalf("no ReassignOracle for function %v with closure parent %v", clofn, clofn.ClosureParent)
 			}
 		}
 		lit, ok := ro.StaticValue(cv).(*ir.BasicLit)
@@ -386,7 +384,7 @@ func (b *batch) rewriteClosureVarsWithLiterals(clofn *ir.Func) {
 		repl[cv] = name
 
 		if b.target.Debug.EscapeDebug >= 3 {
-			base.WarnfAt(pos, "rewriting closure variable %v (%v) to %v", cv, cv.Type(), lit)
+			b.target.Diagnostics.WarnfAt(pos, "rewriting closure variable %v (%v) to %v", cv, cv.Type(), lit)
 		}
 	}
 
@@ -469,31 +467,31 @@ func (b *batch) finish(fns []*ir.Func) {
 		if loc.hasAttr(attrEscapes) {
 			if n.Op() == ir.ONAME {
 				if b.target.Flags.CompilingRuntime {
-					base.ErrorfAt(n.Pos(), 0, "%v escapes to heap, not allowed in runtime", n)
+					b.target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v escapes to heap, not allowed in runtime", n)
 				}
 				if b.target.Flags.LowerM != 0 {
-					base.WarnfAt(n.Pos(), "moved to heap: %v", n)
+					b.target.Diagnostics.WarnfAt(n.Pos(), "moved to heap: %v", n)
 				}
 			} else {
 				if b.target.Flags.LowerM != 0 && !goDeferWrapper {
 					if n.Op() == ir.OAPPEND {
-						base.WarnfAt(n.Pos(), "append escapes to heap")
+						b.target.Diagnostics.WarnfAt(n.Pos(), "append escapes to heap")
 					} else {
-						base.WarnfAt(n.Pos(), "%v escapes to heap", n)
+						b.target.Diagnostics.WarnfAt(n.Pos(), "%v escapes to heap", n)
 					}
 				}
-				if logopt.Enabled() {
+				if b.target.LogOpt.Enabled() {
 					var e_curfn *ir.Func // TODO(mdempsky): Fix.
-					logopt.LogOpt(n.Pos(), "escape", "escape", ir.FuncName(e_curfn))
+					b.target.LogOpt.LogOpt(n.Pos(), "escape", "escape", ir.FuncName(e_curfn))
 				}
 			}
 			n.SetEsc(ir.EscHeap)
 		} else {
 			if b.target.Flags.LowerM != 0 && n.Op() != ir.ONAME && !goDeferWrapper {
 				if n.Op() == ir.OAPPEND {
-					base.WarnfAt(n.Pos(), "append does not escape")
+					b.target.Diagnostics.WarnfAt(n.Pos(), "append does not escape")
 				} else {
-					base.WarnfAt(n.Pos(), "%v does not escape", n)
+					b.target.Diagnostics.WarnfAt(n.Pos(), "%v does not escape", n)
 				}
 			}
 			n.SetEsc(ir.EscNone)
@@ -517,7 +515,7 @@ func (b *batch) finish(fns []*ir.Func) {
 		if b.target.Debug.ZeroCopy != 0 {
 			if n, ok := n.(*ir.ConvExpr); ok && n.Op() == ir.OSTR2BYTES && !loc.hasAttr(attrMutates) {
 				if b.target.Flags.LowerM >= 1 {
-					base.WarnfAt(n.Pos(), "zero-copy string->[]byte conversion")
+					b.target.Diagnostics.WarnfAt(n.Pos(), "zero-copy string->[]byte conversion")
 				}
 				n.SetOp(ir.OSTR2BYTESTMP)
 			}
@@ -548,7 +546,7 @@ func (b *batch) finish(fns []*ir.Func) {
 func (b *batch) inMutualBatch(fn *ir.Name) bool {
 	if fn.Defn != nil && fn.Defn.Esc() < escFuncTagged {
 		if fn.Defn.Esc() == escFuncUnknown {
-			base.FatalfAt(fn.Pos(), "graph inconsistency: %v", fn)
+			b.target.Diagnostics.FatalfAt(fn.Pos(), "graph inconsistency: %v", fn)
 		}
 		return true
 	}
@@ -594,7 +592,7 @@ func (b *batch) paramTag(fn *ir.Func, narg int, f *types.Field) string {
 
 		if f.Type.IsUintptr() {
 			if diagnose {
-				base.WarnfAt(f.Pos, "assuming %v is unsafe uintptr", name())
+				fn.Target.Diagnostics.WarnfAt(f.Pos, "assuming %v is unsafe uintptr", name())
 			}
 			return ""
 		}
@@ -609,13 +607,13 @@ func (b *batch) paramTag(fn *ir.Func, narg int, f *types.Field) string {
 		// //go:noescape is given before the declaration.
 		if fn.Pragma&ir.Noescape != 0 {
 			if diagnose && f.Sym != nil {
-				base.WarnfAt(f.Pos, "%v does not escape", name())
+				fn.Target.Diagnostics.WarnfAt(f.Pos, "%v does not escape", name())
 			}
 			esc.AddMutator(0)
 			esc.AddCallee(0)
 		} else {
 			if diagnose && f.Sym != nil {
-				base.WarnfAt(f.Pos, "leaking param: %v", name())
+				fn.Target.Diagnostics.WarnfAt(f.Pos, "leaking param: %v", name())
 			}
 			esc.AddHeap(0)
 		}
@@ -626,14 +624,14 @@ func (b *batch) paramTag(fn *ir.Func, narg int, f *types.Field) string {
 	if fn.Pragma&ir.UintptrEscapes != 0 {
 		if f.Type.IsUintptr() {
 			if diagnose {
-				base.WarnfAt(f.Pos, "marking %v as escaping uintptr", name())
+				fn.Target.Diagnostics.WarnfAt(f.Pos, "marking %v as escaping uintptr", name())
 			}
 			return ""
 		}
 		if f.IsDDD() && f.Type.Elem().IsUintptr() {
 			// final argument is ...uintptr.
 			if diagnose {
-				base.WarnfAt(f.Pos, "marking %v as escaping ...uintptr", name())
+				fn.Target.Diagnostics.WarnfAt(f.Pos, "marking %v as escaping ...uintptr", name())
 			}
 			return ""
 		}
@@ -665,39 +663,39 @@ func (b *batch) reportLeaks(pos src.XPos, name string, esc leaks, sig *types.Typ
 	warned := false
 	if x := esc.Heap(); x >= 0 {
 		if x == 0 {
-			base.WarnfAt(pos, "leaking param: %v", name)
+			b.target.Diagnostics.WarnfAt(pos, "leaking param: %v", name)
 		} else {
 			// TODO(mdempsky): Mention level=x like below?
-			base.WarnfAt(pos, "leaking param content: %v", name)
+			b.target.Diagnostics.WarnfAt(pos, "leaking param content: %v", name)
 		}
 		warned = true
 	}
 	for i := 0; i < numEscResults; i++ {
 		if x := esc.Result(i); x >= 0 {
 			res := sig.Result(i).Nname.Sym().Name
-			base.WarnfAt(pos, "leaking param: %v to result %v level=%d", name, res, x)
+			b.target.Diagnostics.WarnfAt(pos, "leaking param: %v to result %v level=%d", name, res, x)
 			warned = true
 		}
 	}
 
 	if b.target.Debug.EscapeMutationsCalls <= 0 {
 		if !warned {
-			base.WarnfAt(pos, "%v does not escape", name)
+			b.target.Diagnostics.WarnfAt(pos, "%v does not escape", name)
 		}
 		return
 	}
 
 	if x := esc.Mutator(); x >= 0 {
-		base.WarnfAt(pos, "mutates param: %v derefs=%v", name, x)
+		b.target.Diagnostics.WarnfAt(pos, "mutates param: %v derefs=%v", name, x)
 		warned = true
 	}
 	if x := esc.Callee(); x >= 0 {
-		base.WarnfAt(pos, "calls param: %v derefs=%v", name, x)
+		b.target.Diagnostics.WarnfAt(pos, "calls param: %v derefs=%v", name, x)
 		warned = true
 	}
 
 	if !warned {
-		base.WarnfAt(pos, "%v does not escape, mutate, or call", name)
+		b.target.Diagnostics.WarnfAt(pos, "%v does not escape, mutate, or call", name)
 	}
 }
 
@@ -737,7 +735,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 			// Look up a cached ReassignOracle for the function, lazily computing one if needed.
 			ro := b.reassignOracle(fn)
 			if ro == nil {
-				base.Fatalf("no ReassignOracle for function %v with closure parent %v", fn, fn.ClosureParent)
+				fn.Target.Diagnostics.Fatalf("no ReassignOracle for function %v with closure parent %v", fn, fn.ClosureParent)
 			}
 
 			s := ro.StaticValue(*r)
@@ -745,7 +743,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 			case ir.OLITERAL:
 				lit, ok := s.(*ir.BasicLit)
 				if !ok || lit.Val().Kind() != constant.Int {
-					base.Fatalf("unexpected BasicLit Kind")
+					fn.Target.Diagnostics.Fatalf("unexpected BasicLit Kind")
 				}
 				if constant.Compare(lit.Val(), token.GEQ, constant.MakeInt64(0)) {
 					if !fn.Target.LiteralAllocHash.MatchPosWithLink(fn.Target.Ctxt, n.Pos(), nil) {
@@ -775,7 +773,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 			// Look up a cached ReassignOracle for the function, lazily computing one if needed.
 			ro := b.reassignOracle(fn)
 			if ro == nil {
-				base.Fatalf("no ReassignOracle for function %v with closure parent %v", fn, fn.ClosureParent)
+				fn.Target.Diagnostics.Fatalf("no ReassignOracle for function %v with closure parent %v", fn, fn.ClosureParent)
 			}
 			v := ro.StaticValue(conv.X)
 			if v != nil && v.Op() == ir.OLITERAL && ir.ValidTypeForConst(conv.X.Type(), v.Val()) {
@@ -784,7 +782,7 @@ func (b *batch) rewriteWithLiterals(n ir.Node, fn *ir.Func) {
 					return
 				}
 				if fn.Target.Debug.EscapeDebug >= 3 {
-					base.WarnfAt(n.Pos(), "rewriting OCONVIFACE value from %v (%v) to %v (%v)", conv.X, conv.X.Type(), v, v.Type())
+					fn.Target.Diagnostics.WarnfAt(n.Pos(), "rewriting OCONVIFACE value from %v (%v) to %v (%v)", conv.X, conv.X.Type(), v, v.Type())
 				}
 				// Preserve any side effects of the original expression, then replace it.
 				assignTemp(conv.Pos(), conv.X, conv.PtrInit())

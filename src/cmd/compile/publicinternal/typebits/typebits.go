@@ -5,9 +5,9 @@
 package typebits
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/bitvec"
 	"cmd/compile/publicinternal/types"
+	"fmt"
 )
 
 // NOTE: The bitmap for a specific type t could be cached in t after
@@ -24,7 +24,7 @@ func SetNoCheck(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec) {
 
 func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 	if !skip && uint8(t.Alignment()) > 0 && off&int64(uint8(t.Alignment())-1) != 0 {
-		base.Fatalf("typebits.Set: invalid initial alignment: type %v has alignment %d, but offset is %v", t, uint8(t.Alignment()), off)
+		panic(fmt.Sprintf("typebits.Set: invalid initial alignment: type %v has alignment %d, but offset is %v", t, uint8(t.Alignment()), off))
 	}
 	if !t.HasPointers() {
 		// Note: this case ensures that pointers to not-in-heap types
@@ -35,14 +35,14 @@ func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 	switch t.Kind() {
 	case types.TPTR, types.TUNSAFEPTR, types.TFUNC, types.TCHAN, types.TMAP:
 		if off&int64(ptrSize-1) != 0 {
-			base.Fatalf("typebits.Set: invalid alignment, %v", t)
+			panic(fmt.Sprintf("typebits.Set: invalid alignment, %v", t))
 		}
 		bv.Set(int32(off / int64(ptrSize))) // pointer
 
 	case types.TSTRING:
 		// struct { byte *str; intgo len; }
 		if off&int64(ptrSize-1) != 0 {
-			base.Fatalf("typebits.Set: invalid alignment, %v", t)
+			panic(fmt.Sprintf("typebits.Set: invalid alignment, %v", t))
 		}
 		bv.Set(int32(off / int64(ptrSize))) //pointer in first slot
 
@@ -51,7 +51,7 @@ func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 		// or, when isnilinter(t)==true:
 		// struct { Type *type; void *data; }
 		if off&int64(ptrSize-1) != 0 {
-			base.Fatalf("typebits.Set: invalid alignment, %v", t)
+			panic(fmt.Sprintf("typebits.Set: invalid alignment, %v", t))
 		}
 		// The first word of an interface is a pointer, but we don't
 		// treat it as such.
@@ -70,7 +70,7 @@ func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 	case types.TSLICE:
 		// struct { byte *array; uintgo len; uintgo cap; }
 		if off&int64(ptrSize-1) != 0 {
-			base.Fatalf("typebits.Set: invalid TARRAY alignment, %v", t)
+			panic(fmt.Sprintf("typebits.Set: invalid TARRAY alignment, %v", t))
 		}
 		bv.Set(int32(off / int64(ptrSize))) // pointer in first slot (BitsPointer)
 
@@ -91,6 +91,6 @@ func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 		}
 
 	default:
-		base.Fatalf("typebits.Set: unexpected type, %v", t)
+		panic(fmt.Sprintf("typebits.Set: unexpected type, %v", t))
 	}
 }

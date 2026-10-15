@@ -37,7 +37,6 @@ package bloop
 // VarDef on the same symbol that dominates it.
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -131,11 +130,11 @@ func getKeepAliveNodes(target *ir.Package, pos src.XPos, n ir.Node) ir.Nodes {
 		return ir.Nodes{name}
 	} else if deref, ok := n.(*ir.StarExpr); ok && deref != nil {
 		if target.Flags.LowerM > 1 {
-			base.WarnfAt(pos, "dereference will be kept alive")
+			target.Diagnostics.WarnfAt(pos, "dereference will be kept alive")
 		}
 		return ir.Nodes{deref}
 	} else if target.Flags.LowerM > 1 {
-		base.WarnfAt(pos, "expr is unknown to bloop pass")
+		target.Diagnostics.WarnfAt(pos, "expr is unknown to bloop pass")
 	}
 	return nil
 }
@@ -156,7 +155,7 @@ func keepAliveAt(curfunc *ir.Func, ns ir.Nodes, curNode ir.Node) ir.Node {
 			continue
 		}
 		if !ir.IsAddressable(n) {
-			base.FatalfAt(n.Pos(), "keepAliveAt: node %v is not addressable", n)
+			curfunc.Target.Diagnostics.FatalfAt(n.Pos(), "keepAliveAt: node %v is not addressable", n)
 		}
 		arg := ir.NewConvExpr(pos, ir.OCONV, curfunc.Target.Type(types.TUNSAFEPTR), typecheck.NodAddr(curfunc, n))
 		callExpr := typecheck.Call(curfunc, pos, typecheck.LookupRuntime(curfunc.Target, "KeepAlive"), ir.Nodes{arg}, false).(*ir.CallExpr)
@@ -171,9 +170,9 @@ func keepAliveAt(curfunc *ir.Func, ns ir.Nodes, curNode ir.Node) ir.Node {
 func debugName(name *ir.Name, pos src.XPos) {
 	if name.Curfn.Target.Flags.LowerM > 1 {
 		if name.Linksym() != nil {
-			base.WarnfAt(pos, "%s will be kept alive", name.Linksym().Name)
+			name.Curfn.Target.Diagnostics.WarnfAt(pos, "%s will be kept alive", name.Linksym().Name)
 		} else {
-			base.WarnfAt(pos, "expr will be kept alive")
+			name.Curfn.Target.Diagnostics.WarnfAt(pos, "expr will be kept alive")
 		}
 	}
 }
@@ -193,7 +192,7 @@ func preserveCallResults(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 		if call.Fun.Type().NumResults() > 1 {
 			plural = "s"
 		}
-		base.WarnfAt(call.Pos(), "function result%s will be kept alive", plural)
+		curFn.Target.Diagnostics.WarnfAt(call.Pos(), "function result%s will be kept alive", plural)
 	}
 
 	assign := typecheck.AssignExpr(curFn, ir.NewAssignListStmt(call.Pos(), ir.OAS2, lhs, ir.Nodes{call})).(*ir.AssignListStmt)
@@ -218,7 +217,7 @@ func preserveCallArgs(curFn *ir.Func, call *ir.CallExpr) ir.Node {
 		argTmps = append(argTmps, typecheck.AssignExpr(curFn, assign))
 		names = append(names, tmp)
 		if curFn.Target.Flags.LowerM > 1 {
-			base.WarnfAt(call.Pos(), "function arg will be kept alive")
+			curFn.Target.Diagnostics.WarnfAt(call.Pos(), "function arg will be kept alive")
 		}
 		return tmp
 	}
@@ -295,7 +294,7 @@ func preserveStmt(curFn *ir.Func, stmt ir.Node) ir.Node {
 					typ = n.Rhs[i].Type()
 				} else {
 					// Unrecognized shapes, skip?
-					base.WarnfAt(n.Pos(), "unrecognized shape for assign list stmt for blank assignment")
+					curFn.Target.Diagnostics.WarnfAt(n.Pos(), "unrecognized shape for assign list stmt for blank assignment")
 					continue
 				}
 				tmp := typecheck.TempAt(n.Pos(), curFn, typ)

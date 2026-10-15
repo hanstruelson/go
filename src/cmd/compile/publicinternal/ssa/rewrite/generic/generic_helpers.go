@@ -10,7 +10,6 @@ import (
 	"math/bits"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/rttype"
@@ -538,7 +537,7 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 				return v
 			}
 		}
-		base.Fatalf("fixedLoad data not known for %s:%d", sym, off)
+		f.Fatalf("fixedLoad data not known for %s:%d", sym, off)
 	}
 
 	if ti := lsym.TypeInfo(); ti != nil {
@@ -583,7 +582,7 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 					v.AddArg(sb)
 					return v
 				default:
-					base.Fatalf("unknown field %s for fixedLoad of %s at offset %d", f.Sym.Name, lsym.Name, off)
+					v.Block.Func.Fatalf("unknown field %s for fixedLoad of %s at offset %d", f.Sym.Name, lsym.Name, off)
 				}
 			}
 		}
@@ -597,10 +596,10 @@ func rewriteFixedLoad(v *ssa.Value, sym ssa.Sym, sb *ssa.Value, off int64) *ssa.
 			return v
 		}
 
-		base.Fatalf("fixedLoad data not known for %s:%d", sym, off)
+		v.Block.Func.Fatalf("fixedLoad data not known for %s:%d", sym, off)
 	}
 
-	base.Fatalf("fixedLoad data not known for %s:%d", sym, off)
+	v.Block.Func.Fatalf("fixedLoad data not known for %s:%d", sym, off)
 	return nil
 }
 

@@ -5,7 +5,6 @@
 package gc
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/objw"
@@ -48,21 +47,17 @@ func dumpexport(frontend *noder.Context) {
 	}
 	dumpobj1(frontend, target.Flags.LowerO, modeCompilerObj)
 	if target.Flags.ExportFD > 0 {
-		notifyExport(target.Flags.ExportFD)
+		notifyExport(target, target.Flags.ExportFD)
 	}
 }
 
-func notifyExport(exportFD int) {
+func notifyExport(target *ir.Package, exportFD int) {
 	f := os.NewFile(uintptr(exportFD), "exportfd")
 	if _, err := f.Write([]byte{'\n'}); err != nil {
-		base.FlushErrors()
-		fmt.Printf("can't write to export fd %d: %v\n", exportFD, err)
-		base.ErrorExit()
+		target.Diagnostics.Fatalf("can't write to export fd %d: %v", exportFD, err)
 	}
 	if err := f.Close(); err != nil {
-		base.FlushErrors()
-		fmt.Printf("can't close export fd %d: %v\n", exportFD, err)
-		base.ErrorExit()
+		target.Diagnostics.Fatalf("can't close export fd %d: %v", exportFD, err)
 	}
 }
 
@@ -78,9 +73,7 @@ func dumpobj(frontend *noder.Context) {
 func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 	bout, err := bio.Create(outfile)
 	if err != nil {
-		base.FlushErrors()
-		fmt.Printf("can't create %s: %v\n", outfile, err)
-		base.ErrorExit()
+		frontend.Target.Diagnostics.Fatalf("can't create %s: %v", outfile, err)
 	}
 
 	bout.WriteString("!<arch>\n")
@@ -97,9 +90,7 @@ func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 	}
 
 	if err := bout.Close(); err != nil {
-		base.FlushErrors()
-		fmt.Printf("error while writing to file %s: %v\n", outfile, err)
-		base.ErrorExit()
+		frontend.Target.Diagnostics.Fatalf("error while writing to file %s: %v", outfile, err)
 	}
 }
 
@@ -163,7 +154,7 @@ func dumpLinkerObj(target *ir.Package, bout *bio.Writer) {
 		fmt.Fprintf(bout, "\n$$\n\n$$\n\n")
 		fmt.Fprintf(bout, "\n$$  // cgo\n")
 		if err := json.NewEncoder(bout).Encode(target.CgoPragmas); err != nil {
-			base.Fatalf("serializing pragcgobuf: %v", err)
+			target.Diagnostics.Fatalf("serializing pragcgobuf: %v", err)
 		}
 		fmt.Fprintf(bout, "\n$$\n\n")
 	}
@@ -175,7 +166,7 @@ func dumpLinkerObj(target *ir.Package, bout *bio.Writer) {
 
 func dumpGlobal(target *ir.Package, n *ir.Name) {
 	if n.Type() == nil {
-		base.Fatalf("external %v nil type\n", n)
+		target.Diagnostics.Fatalf("external %v nil type\n", n)
 	}
 	if n.Class == ir.PFUNC {
 		return

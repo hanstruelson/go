@@ -7,10 +7,10 @@ package noder
 import (
 	"errors"
 	"fmt"
-	"publicinternal/buildcfg"
 	"io"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"runtime"
 	"strconv"
 	"strings"
@@ -104,10 +104,10 @@ func loadPackage(target *ir.Package, timer *base.Timings, inputs []packageInput)
 	m := posMap{target: target}
 	for _, p := range noders {
 		for e := range p.err {
-			base.ErrorfAt(m.makeXPos(e.Pos), 0, "%s", e.Msg)
+			target.Diagnostics.ErrorfAt(m.makeXPos(e.Pos), 0, "%s", e.Msg)
 		}
 		if p.file == nil {
-			base.ErrorExit()
+			target.Diagnostics.ErrorExit()
 		}
 		lines += p.file.EOF.Line()
 	}

@@ -10,7 +10,6 @@ import (
 	"slices"
 	"sort"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -342,14 +341,14 @@ func schedule(f *ssa.Func) {
 			if v.Op == ssaop.OpSPanchored {
 				// Free this value
 				if v.Uses != 0 {
-					base.Fatalf("SPAnchored still has %d uses", v.Uses)
+					f.Fatalf("SPAnchored still has %d uses", v.Uses)
 				}
 				v.ResetArgs()
 				f.FreeValue(v)
 			} else {
 				if ssaop.OpcodeTable[v.Op].NilCheck {
 					if v.Uses != 0 {
-						base.Fatalf("nilcheck still has %d uses", v.Uses)
+						f.Fatalf("nilcheck still has %d uses", v.Uses)
 					}
 					// We can't delete the nil check, but we mark
 					// it as having void type so regalloc won't

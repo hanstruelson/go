@@ -25,8 +25,9 @@ var versionErrorRx = regexp.MustCompile(`requires go[0-9]+\.[0-9]+ or later`)
 // parsed source files and then returns the result.
 // The map result value indicates which closures are generated from the bodies of range function loops.
 func checkFiles(compileCtx *Context, m posMap, noders []*noder) (*types2.Package, *types2.Info, map[*syntax.FuncLit]bool) {
-	if base.SyntaxErrors() != 0 {
-		base.ErrorExit()
+	diag := compileCtx.Target.Diagnostics
+	if diag.SyntaxErrors() != 0 {
+		diag.ErrorExit()
 	}
 
 	// setup and syntax error reporting
@@ -93,23 +94,24 @@ recheck:
 				msg = fmt.Sprintf("%s (-lang was set to %s; check go.mod)", msg, compileCtx.Target.Flags.Lang)
 			}
 		}
-		base.ErrorfAt(m.makeXPos(terr.Pos), terr.Code, "%s", msg)
+		diag.ErrorfAt(m.makeXPos(terr.Pos), terr.Code, "%s", msg)
 	}
 
 	pkg, err := conf.Check(compileCtx.Target.Ctxt.Pkgpath, files, info)
-	base.ExitIfErrors()
+	diag.ExitIfErrors()
 	if err != nil {
-		base.FatalfAt(src.NoXPos, "conf.Check error: %v", err)
+		diag.FatalfAt(src.NoXPos, "conf.Check error: %v", err)
 	}
 
 	// Check for anonymous interface cycles (#56103).
 	// TODO(gri) move this code into the type checkers (types2 and go/types)
 	var f cycleFinder
+	f.diag = diag
 	for _, file := range files {
 		syntax.Inspect(file, func(n syntax.Node) bool {
 			if n, ok := n.(*syntax.InterfaceType); ok {
 				if f.hasCycle(types2.Unalias(n.GetTypeInfo().Type).(*types2.Interface)) {
-					base.ErrorfAt(m.makeXPos(n.Pos()), errors.InvalidTypeCycle, "invalid recursive type: anonymous interface refers to itself (see https://go.dev/issue/56103)")
+					diag.ErrorfAt(m.makeXPos(n.Pos()), errors.InvalidTypeCycle, "invalid recursive type: anonymous interface refers to itself (see https://go.dev/issue/56103)")
 
 					for typ := range f.cyclic {
 						f.cyclic[typ] = false // suppress duplicate errors
@@ -120,7 +122,7 @@ recheck:
 			return true
 		})
 	}
-	base.ExitIfErrors()
+	diag.ExitIfErrors()
 
 	// Implementation restriction: we don't allow not-in-heap types to
 	// be used as type arguments (#54765).
@@ -143,10 +145,10 @@ recheck:
 			return ti.pos.Before(tj.pos)
 		})
 		for _, targ := range nihTargs {
-			base.ErrorfAt(targ.pos, 0, "cannot use incomplete (or unallocatable) type as a type argument: %v", targ.typ)
+			diag.ErrorfAt(targ.pos, 0, "cannot use incomplete (or unallocatable) type as a type argument: %v", targ.typ)
 		}
 	}
-	base.ExitIfErrors()
+	diag.ExitIfErrors()
 
 	// Implementation restriction: we don't allow not-in-heap types to
 	// be used as map keys/values, or channel.
@@ -158,15 +160,15 @@ recheck:
 					case *syntax.MapType:
 						typ := n.GetTypeInfo().Type.Underlying().(*types2.Map)
 						if isNotInHeap(typ.Key()) {
-							base.ErrorfAt(m.makeXPos(n.Pos()), 0, "incomplete (or unallocatable) map key not allowed")
+							diag.ErrorfAt(m.makeXPos(n.Pos()), 0, "incomplete (or unallocatable) map key not allowed")
 						}
 						if isNotInHeap(typ.Elem()) {
-							base.ErrorfAt(m.makeXPos(n.Pos()), 0, "incomplete (or unallocatable) map value not allowed")
+							diag.ErrorfAt(m.makeXPos(n.Pos()), 0, "incomplete (or unallocatable) map value not allowed")
 						}
 					case *syntax.ChanType:
 						typ := n.GetTypeInfo().Type.Underlying().(*types2.Chan)
 						if isNotInHeap(typ.Elem()) {
-							base.ErrorfAt(m.makeXPos(n.Pos()), 0, "chan of incomplete (or unallocatable) type not allowed")
+							diag.ErrorfAt(m.makeXPos(n.Pos()), 0, "chan of incomplete (or unallocatable) type not allowed")
 						}
 					}
 				}
@@ -174,7 +176,7 @@ recheck:
 			})
 		}
 	}
-	base.ExitIfErrors()
+	diag.ExitIfErrors()
 
 	if len(compileCtx.Target.Debug.AstDump) > 0 {
 		dumpSyntax(compileCtx, pkg, info, files, "checked")
@@ -234,6 +236,7 @@ func dumpSyntax(ctx *Context, pkg *types2.Package, info *types2.Info, files []*s
 // A cycleFinder detects anonymous interface cycles (go.dev/issue/56103).
 type cycleFinder struct {
 	cyclic map[*types2.Interface]bool
+	diag   *base.Diagnostics
 }
 
 // hasCycle reports whether typ is part of an anonymous interface cycle.
@@ -255,7 +258,7 @@ func (f *cycleFinder) visit(typ0 types2.Type) bool {
 	for { // loop for tail recursion
 		switch typ := types2.Unalias(typ0).(type) {
 		default:
-			base.Fatalf("unexpected type: %T", typ)
+			f.diag.Fatalf("unexpected type: %T", typ)
 
 		case *types2.Basic, *types2.Named, *types2.TypeParam:
 			return false // named types cannot be part of an anonymous cycle

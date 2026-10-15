@@ -32,17 +32,17 @@ package ld
 
 import (
 	"bufio"
+	"cmd/link/publicinternal/benchmark"
 	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/quoted"
 	"cmd/publicinternal/sys"
 	"cmd/publicinternal/telemetry/counter"
-	"cmd/link/publicinternal/benchmark"
 	"flag"
-	"publicinternal/buildcfg"
 	"log"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -205,7 +205,6 @@ func Main(arch *sys.Arch, theArch Arch) {
 		flag.BoolVar(&flag8, "8", false, "use 64-bit addresses in symbol table")
 	}
 	flagHeadType := flag.String("H", "", "set header `type`")
-	flag.BoolVar(&ctxt.JIT, "JIT", false, "retain all linked Go symbols for JIT compilation")
 	flag.BoolVar(&ctxt.linkShared, "linkshared", false, "link against installed Go shared libraries")
 	flag.Var(&ctxt.LinkMode, "linkmode", "set link `mode`")
 	flag.Var(&ctxt.BuildMode, "buildmode", "set build `mode`")

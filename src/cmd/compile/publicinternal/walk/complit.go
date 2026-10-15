@@ -5,7 +5,6 @@
 package walk
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/staticdata"
@@ -209,7 +208,7 @@ func (w *walkState) fixedlit(kind initKind, n *ir.CompLitExpr, var_ ir.Node, ini
 			return ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.OXDOT, var_, r.Sym()), r.Value
 		}
 	default:
-		base.Fatalf("fixedlit bad op: %v", n.Op())
+		w.fatalf("fixedlit bad op: %v", n.Op())
 	}
 
 	for _, r := range n.List {
@@ -248,7 +247,7 @@ func (w *walkState) fixedlit(kind initKind, n *ir.CompLitExpr, var_ ir.Node, ini
 		case initKindDynamic, initKindLocalCode:
 			w.appendWalkStmt(init, w.orderStmtInPlace(as, map[string][]*ir.Name{}))
 		default:
-			base.Fatalf("fixedlit: bad kind %d", kind)
+			w.fatalf("fixedlit: bad kind %d", kind)
 		}
 
 	}
@@ -383,7 +382,7 @@ func (w *walkState) maplit(n *ir.CompLitExpr, m ir.Node, init *ir.Nodes) {
 	for _, r := range entries {
 		r := r.(*ir.KeyExpr)
 		if !isStaticCompositeLiteral(w.curfunc.Target, r.Key) || !isStaticCompositeLiteral(w.curfunc.Target, r.Value) {
-			base.Fatalf("maplit: entry is not a literal: %v", r)
+			w.fatalf("maplit: entry is not a literal: %v", r)
 		}
 	}
 
@@ -426,7 +425,7 @@ func (w *walkState) maplit(n *ir.CompLitExpr, m ir.Node, init *ir.Nodes) {
 
 		// typechecker rewrites OINDEX to OINDEXMAP
 		lhs := typecheck.AssignExpr(w.curfunc, ir.NewIndexExpr(w.curfunc.Target.Pos, m, kidx)).(*ir.IndexExpr)
-		base.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
+		w.curfunc.Target.Diagnostics.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
 		lhs.RType = n.RType
 
 		zero := ir.NewAssignStmt(w.curfunc.Target.Pos, i, ir.NewInt(w.curfunc.Target.Pos, 0))
@@ -467,7 +466,7 @@ func (w *walkState) maplit(n *ir.CompLitExpr, m ir.Node, init *ir.Nodes) {
 
 		// typechecker rewrites OINDEX to OINDEXMAP
 		lhs := typecheck.AssignExpr(w.curfunc, ir.NewIndexExpr(w.curfunc.Target.Pos, m, tmpkey)).(*ir.IndexExpr)
-		base.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
+		w.curfunc.Target.Diagnostics.AssertfAt(lhs.Op() == ir.OINDEXMAP, lhs.Pos(), "want OINDEXMAP, have %+v", lhs)
 		lhs.RType = n.RType
 
 		var a ir.Node = ir.NewAssignStmt(w.curfunc.Target.Pos, lhs, tmpelem)
@@ -481,7 +480,7 @@ func (w *walkState) anylit(n ir.Node, var_ ir.Node, init *ir.Nodes) {
 	t := n.Type()
 	switch n.Op() {
 	default:
-		base.Fatalf("anylit: not lit, op=%v node=%v", n.Op(), n)
+		w.fatalf("anylit: not lit, op=%v node=%v", n.Op(), n)
 
 	case ir.ONAME:
 		n := n.(*ir.Name)
@@ -494,7 +493,7 @@ func (w *walkState) anylit(n ir.Node, var_ ir.Node, init *ir.Nodes) {
 	case ir.OPTRLIT:
 		n := n.(*ir.AddrExpr)
 		if !t.IsPtr() {
-			base.Fatalf("anylit: not ptr")
+			w.fatalf("anylit: not ptr")
 		}
 
 		var r ir.Node
@@ -514,7 +513,7 @@ func (w *walkState) anylit(n ir.Node, var_ ir.Node, init *ir.Nodes) {
 	case ir.OSTRUCTLIT, ir.OARRAYLIT:
 		n := n.(*ir.CompLitExpr)
 		if !t.IsStruct() && !t.IsArray() {
-			base.Fatalf("anylit: not struct/array")
+			w.fatalf("anylit: not struct/array")
 		}
 
 		if isSimpleName(var_) && len(n.List) > 4 {
@@ -551,7 +550,7 @@ func (w *walkState) anylit(n ir.Node, var_ ir.Node, init *ir.Nodes) {
 	case ir.OMAPLIT:
 		n := n.(*ir.CompLitExpr)
 		if !t.IsMap() {
-			base.Fatalf("anylit: not map")
+			w.fatalf("anylit: not map")
 		}
 		w.maplit(n, var_, init)
 	}
@@ -603,12 +602,12 @@ func (w *walkState) oaslit(n *ir.AssignStmt, init *ir.Nodes) bool {
 
 func genAsStatic(target *ir.Package, as *ir.AssignStmt) {
 	if as.X.Type() == nil {
-		base.Fatalf("genAsStatic as.Left not typechecked")
+		target.Diagnostics.Fatalf("genAsStatic as.Left not typechecked")
 	}
 
 	name, offset, ok := staticinit.StaticLoc(target, as.X)
 	if !ok || (name.Class != ir.PEXTERN && as.X != target.BlankNode) {
-		base.Fatalf("genAsStatic: lhs %v", as.X)
+		target.Diagnostics.Fatalf("genAsStatic: lhs %v", as.X)
 	}
 
 	switch r := as.Y; r.Op() {
@@ -622,12 +621,12 @@ func genAsStatic(target *ir.Package, as *ir.AssignStmt) {
 	case ir.ONAME:
 		r := r.(*ir.Name)
 		if r.Offset_ != 0 {
-			base.Fatalf("genAsStatic %+v", as)
+			target.Diagnostics.Fatalf("genAsStatic %+v", as)
 		}
 		if r.Class == ir.PFUNC {
 			staticdata.InitAddr(target, name, offset, staticdata.FuncLinksym(target, r))
 			return
 		}
 	}
-	base.Fatalf("genAsStatic: rhs %v", as.Y)
+	target.Diagnostics.Fatalf("genAsStatic: rhs %v", as.Y)
 }

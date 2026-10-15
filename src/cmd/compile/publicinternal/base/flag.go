@@ -10,9 +10,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"publicinternal/buildcfg"
 	"publicinternal/platform"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -157,10 +157,17 @@ func addEnv(s string) {
 
 // ParseFlags parses the command-line flags into Flag.
 func ParseFlags() {
+	ParseFlagsWithDebugSSA(DebugSSA)
+}
+
+// ParseFlagsWithDebugSSA parses the command-line flags into Flag, using the
+// supplied callback to parse SSA-specific -d options. Reusable compiler
+// contexts should pass a callback bound to their own SSA options.
+func ParseFlagsWithDebugSSA(debugSSA func(phase, flag string, val int, valString string) string) {
 	Flag.I = addImportDir
 
 	Flag.LowerC = runtime.GOMAXPROCS(0)
-	Flag.LowerD = objabi.NewDebugFlag(&Debug, DebugSSA)
+	Flag.LowerD = objabi.NewDebugFlag(&Debug, debugSSA)
 	Flag.LowerP = &Ctxt.Pkgpath
 	Flag.LowerV = &Ctxt.Debugvlog
 
@@ -216,7 +223,7 @@ func ParseFlags() {
 	if Debug.Gossahash != "" {
 		hashDebug = NewHashDebug("gossahash", Debug.Gossahash, nil)
 	}
-	if err := obj.SetFIPSDebugHash(Debug.FIPSHash); err != nil {
+	if err := Ctxt.SetFIPSDebugHash(Debug.FIPSHash); err != nil {
 		commandFatalf("%v", err)
 	}
 

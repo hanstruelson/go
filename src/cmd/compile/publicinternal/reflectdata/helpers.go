@@ -5,7 +5,6 @@
 package reflectdata
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
@@ -20,19 +19,19 @@ func hasRType(n, rtype ir.Node, fieldName string) bool {
 }
 
 // assertOp asserts that n is an op.
-func assertOp(n ir.Node, op ir.Op) {
-	base.AssertfAt(n.Op() == op, n.Pos(), "want %v, have %v", op, n)
+func assertOp(target *ir.Package, n ir.Node, op ir.Op) {
+	target.Diagnostics.AssertfAt(n.Op() == op, n.Pos(), "want %v, have %v", op, n)
 }
 
 // assertOp2 asserts that n is an op1 or op2.
-func assertOp2(n ir.Node, op1, op2 ir.Op) {
-	base.AssertfAt(n.Op() == op1 || n.Op() == op2, n.Pos(), "want %v or %v, have %v", op1, op2, n)
+func assertOp2(target *ir.Package, n ir.Node, op1, op2 ir.Op) {
+	target.Diagnostics.AssertfAt(n.Op() == op1 || n.Op() == op2, n.Pos(), "want %v or %v, have %v", op1, op2, n)
 }
 
 // kindRType asserts that typ has the given kind, and returns an
 // expression that yields the *runtime._type value representing typ.
 func kindRType(curfunc *ir.Func, pos src.XPos, typ *types.Type, k types.Kind) ir.Node {
-	base.AssertfAt(typ.Kind() == k, pos, "want %v type, have %v", k, typ)
+	curfunc.Target.Diagnostics.AssertfAt(typ.Kind() == k, pos, "want %v type, have %v", k, typ)
 	return TypePtrAt(curfunc, pos, typ)
 }
 
@@ -52,7 +51,7 @@ func chanRType(curfunc *ir.Func, pos src.XPos, typ *types.Type) ir.Node {
 // expression that yields the *runtime._type value representing typ's
 // element type.
 func sliceElemRType(curfunc *ir.Func, pos src.XPos, typ *types.Type) ir.Node {
-	base.AssertfAt(typ.IsSlice(), pos, "want slice type, have %v", typ)
+	curfunc.Target.Diagnostics.AssertfAt(typ.IsSlice(), pos, "want slice type, have %v", typ)
 	return TypePtrAt(curfunc, pos, typ.Elem())
 }
 
@@ -60,7 +59,7 @@ func sliceElemRType(curfunc *ir.Func, pos src.XPos, typ *types.Type) ir.Node {
 // returns an expression that yields the *runtime._type value
 // representing typ.
 func concreteRType(curfunc *ir.Func, pos src.XPos, typ *types.Type) ir.Node {
-	base.AssertfAt(!typ.IsInterface(), pos, "want non-interface type, have %v", typ)
+	curfunc.Target.Diagnostics.AssertfAt(!typ.IsInterface(), pos, "want non-interface type, have %v", typ)
 	return TypePtrAt(curfunc, pos, typ)
 }
 
@@ -68,7 +67,7 @@ func concreteRType(curfunc *ir.Func, pos src.XPos, typ *types.Type) ir.Node {
 // returns an expression that yields the *runtime._type value
 // representing the result slice type's element type.
 func AppendElemRType(curfunc *ir.Func, pos src.XPos, n *ir.CallExpr) ir.Node {
-	assertOp(n, ir.OAPPEND)
+	assertOp(curfunc.Target, n, ir.OAPPEND)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -80,8 +79,8 @@ func AppendElemRType(curfunc *ir.Func, pos src.XPos, n *ir.CallExpr) ir.Node {
 // returns an expression that yields the *runtime._type value
 // representing the non-interface type.
 func CompareRType(curfunc *ir.Func, pos src.XPos, n *ir.BinaryExpr) ir.Node {
-	assertOp2(n, ir.OEQ, ir.ONE)
-	base.AssertfAt(n.X.Type().IsInterface() != n.Y.Type().IsInterface(), n.Pos(), "expect mixed interface and non-interface, have %L and %L", n.X, n.Y)
+	assertOp2(curfunc.Target, n, ir.OEQ, ir.ONE)
+	curfunc.Target.Diagnostics.AssertfAt(n.X.Type().IsInterface() != n.Y.Type().IsInterface(), n.Pos(), "expect mixed interface and non-interface, have %L and %L", n.X, n.Y)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -100,9 +99,9 @@ func CompareRType(curfunc *ir.Func, pos src.XPos, n *ir.BinaryExpr) ir.Node {
 //   - *runtime.itab, for T2I conversions
 //   - *runtime._type for the source type, for T2E conversions
 func ConvIfaceTypeWord(curfunc *ir.Func, pos src.XPos, n *ir.ConvExpr) ir.Node {
-	assertOp(n, ir.OCONVIFACE)
+	assertOp(curfunc.Target, n, ir.OCONVIFACE)
 	src, dst := n.X.Type(), n.Type()
-	base.AssertfAt(dst.IsInterface(), n.Pos(), "want interface type, have %L", n)
+	curfunc.Target.Diagnostics.AssertfAt(dst.IsInterface(), n.Pos(), "want interface type, have %L", n)
 	if hasRType(n, n.TypeWord, "TypeWord") {
 		return n.TypeWord
 	}
@@ -120,7 +119,7 @@ func ConvIfaceTypeWord(curfunc *ir.Func, pos src.XPos, n *ir.ConvExpr) ir.Node {
 // returns an expression that yields the *runtime._type for copying
 // the convertee value to the heap.
 func ConvIfaceSrcRType(curfunc *ir.Func, pos src.XPos, n *ir.ConvExpr) ir.Node {
-	assertOp(n, ir.OCONVIFACE)
+	assertOp(curfunc.Target, n, ir.OCONVIFACE)
 	if hasRType(n, n.SrcRType, "SrcRType") {
 		return n.SrcRType
 	}
@@ -131,7 +130,7 @@ func ConvIfaceSrcRType(curfunc *ir.Func, pos src.XPos, n *ir.ConvExpr) ir.Node {
 // expression that yields the *runtime._type value representing the
 // destination slice type's element type.
 func CopyElemRType(curfunc *ir.Func, pos src.XPos, n *ir.BinaryExpr) ir.Node {
-	assertOp(n, ir.OCOPY)
+	assertOp(curfunc.Target, n, ir.OCOPY)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -142,7 +141,7 @@ func CopyElemRType(curfunc *ir.Func, pos src.XPos, n *ir.BinaryExpr) ir.Node {
 // an expression that yields the *runtime._type value representing the
 // map type.
 func DeleteMapRType(curfunc *ir.Func, pos src.XPos, n *ir.CallExpr) ir.Node {
-	assertOp(n, ir.ODELETE)
+	assertOp(curfunc.Target, n, ir.ODELETE)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -153,7 +152,7 @@ func DeleteMapRType(curfunc *ir.Func, pos src.XPos, n *ir.CallExpr) ir.Node {
 // an expression that yields the *runtime._type value representing the
 // map type.
 func IndexMapRType(curfunc *ir.Func, pos src.XPos, n *ir.IndexExpr) ir.Node {
-	assertOp(n, ir.OINDEXMAP)
+	assertOp(curfunc.Target, n, ir.OINDEXMAP)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -164,7 +163,7 @@ func IndexMapRType(curfunc *ir.Func, pos src.XPos, n *ir.IndexExpr) ir.Node {
 // type, and returns an expression that yields the *runtime._type
 // value representing that channel type.
 func MakeChanRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node {
-	assertOp(n, ir.OMAKECHAN)
+	assertOp(curfunc.Target, n, ir.OMAKECHAN)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -175,7 +174,7 @@ func MakeChanRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node {
 // and returns an expression that yields the *runtime._type value
 // representing that map type.
 func MakeMapRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node {
-	assertOp(n, ir.OMAKEMAP)
+	assertOp(curfunc.Target, n, ir.OMAKEMAP)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -186,7 +185,7 @@ func MakeMapRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node {
 // type, and returns an expression that yields the *runtime._type
 // value representing that slice type's element type.
 func MakeSliceElemRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node {
-	assertOp2(n, ir.OMAKESLICE, ir.OMAKESLICECOPY)
+	assertOp2(curfunc.Target, n, ir.OMAKESLICE, ir.OMAKESLICECOPY)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -197,7 +196,7 @@ func MakeSliceElemRType(curfunc *ir.Func, pos src.XPos, n *ir.MakeExpr) ir.Node 
 // and returns an expression that yields the *runtime._type value
 // representing that map type.
 func RangeMapRType(curfunc *ir.Func, pos src.XPos, n *ir.RangeStmt) ir.Node {
-	assertOp(n, ir.ORANGE)
+	assertOp(curfunc.Target, n, ir.ORANGE)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}
@@ -208,7 +207,7 @@ func RangeMapRType(curfunc *ir.Func, pos src.XPos, n *ir.RangeStmt) ir.Node {
 // and returns an expression that yields the *runtime._type value
 // representing the result slice type's element type.
 func UnsafeSliceElemRType(curfunc *ir.Func, pos src.XPos, n *ir.BinaryExpr) ir.Node {
-	assertOp(n, ir.OUNSAFESLICE)
+	assertOp(curfunc.Target, n, ir.OUNSAFESLICE)
 	if hasRType(n, n.RType, "RType") {
 		return n.RType
 	}

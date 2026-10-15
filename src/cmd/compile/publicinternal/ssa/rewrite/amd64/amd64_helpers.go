@@ -5,7 +5,6 @@
 package amd64
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -34,7 +33,7 @@ func flagify(v *ssa.Value) bool {
 	case ssaop.OpAMD64ADDLconst:
 		flagVersion = ssaop.OpAMD64ADDLconstflags
 	default:
-		base.Fatalf("can't flagify op %s", v.Op)
+		v.Block.Func.Fatalf("can't flagify op %s", v.Op)
 	}
 	inner := v.CopyInto(v.Block)
 	inner.Op = flagVersion

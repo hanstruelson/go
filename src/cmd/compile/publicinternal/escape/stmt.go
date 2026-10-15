@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"fmt"
 )
@@ -20,14 +19,14 @@ func (e *escape) stmt(n ir.Node) {
 	defer ir.SetPosValue(e.curfn.Target, lno)
 
 	if e.curfn.Target.Flags.LowerM > 2 {
-		fmt.Printf("%v:[%d] %v stmt: %v\n", base.FmtPos(e.curfn.Target.Pos), e.loopDepth, e.curfn, n)
+		fmt.Printf("%v:[%d] %v stmt: %v\n", e.curfn.Target.Diagnostics.FmtPos(e.curfn.Target.Pos), e.loopDepth, e.curfn, n)
 	}
 
 	e.stmts(n.Init())
 
 	switch n.Op() {
 	default:
-		base.Fatalf("unexpected stmt: %v", n)
+		e.curfn.Target.Diagnostics.Fatalf("unexpected stmt: %v", n)
 
 	case ir.OFALL, ir.OINLMARK:
 		// nop
@@ -54,15 +53,15 @@ func (e *escape) stmt(n ir.Node) {
 		switch e.labels[n.Label] {
 		case nonlooping:
 			if e.curfn.Target.Flags.LowerM > 2 {
-				fmt.Printf("%v:%v non-looping label\n", base.FmtPos(e.curfn.Target.Pos), n)
+				fmt.Printf("%v:%v non-looping label\n", e.curfn.Target.Diagnostics.FmtPos(e.curfn.Target.Pos), n)
 			}
 		case looping:
 			if e.curfn.Target.Flags.LowerM > 2 {
-				fmt.Printf("%v: %v looping label\n", base.FmtPos(e.curfn.Target.Pos), n)
+				fmt.Printf("%v: %v looping label\n", e.curfn.Target.Diagnostics.FmtPos(e.curfn.Target.Pos), n)
 			}
 			e.loopDepth++
 		default:
-			base.Fatalf("label %v missing tag", n.Label)
+			e.curfn.Target.Diagnostics.Fatalf("label %v missing tag", n.Label)
 		}
 		delete(e.labels, n.Label)
 
@@ -78,7 +77,7 @@ func (e *escape) stmt(n ir.Node) {
 
 	case ir.OFOR:
 		n := n.(*ir.ForStmt)
-		base.Assert(!n.DistinctVars) // Should all be rewritten before escape analysis
+		e.curfn.Target.Diagnostics.Assert(!n.DistinctVars) // Should all be rewritten before escape analysis
 		e.loopDepth++
 		e.discard(n.Cond)
 		e.stmt(n.Post)
@@ -88,7 +87,7 @@ func (e *escape) stmt(n ir.Node) {
 	case ir.ORANGE:
 		// for Key, Value = range X { Body }
 		n := n.(*ir.RangeStmt)
-		base.Assert(!n.DistinctVars) // Should all be rewritten before escape analysis
+		e.curfn.Target.Diagnostics.Assert(!n.DistinctVars) // Should all be rewritten before escape analysis
 
 		// X is evaluated outside the loop and persists until the loop
 		// terminates.
@@ -208,7 +207,7 @@ func (e *escape) block(l ir.Nodes) {
 
 func (e *escape) dcl(n *ir.Name) hole {
 	if n.Curfn != e.curfn || n.IsClosureVar() {
-		base.Fatalf("bad declaration of %v", n)
+		e.curfn.Target.Diagnostics.Fatalf("bad declaration of %v", n)
 	}
 	loc := e.oldLoc(n)
 	loc.loopDepth = e.loopDepth

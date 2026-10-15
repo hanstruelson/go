@@ -5,9 +5,7 @@
 package riscv64
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -16,6 +14,7 @@ import (
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/obj/riscv"
+	"fmt"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
 )
@@ -99,7 +98,7 @@ func loadByType(t *types.Type) obj.As {
 		case 8:
 			return riscv.AMOVD
 		default:
-			base.Fatalf("unknown float width for load %d in type %v", width, t)
+			panic(fmt.Sprintf("unknown float width for load %d in type %v", width, t))
 			return 0
 		}
 	}
@@ -126,7 +125,7 @@ func loadByType(t *types.Type) obj.As {
 	case 8:
 		return riscv.AMOV
 	default:
-		base.Fatalf("unknown width for load %d in type %v", width, t)
+		panic(fmt.Sprintf("unknown width for load %d in type %v", width, t))
 		return 0
 	}
 }
@@ -142,7 +141,7 @@ func storeByType(t *types.Type) obj.As {
 		case 8:
 			return riscv.AMOVD
 		default:
-			base.Fatalf("unknown float width for store %d in type %v", width, t)
+			panic(fmt.Sprintf("unknown float width for store %d in type %v", width, t))
 			return 0
 		}
 	}
@@ -157,7 +156,7 @@ func storeByType(t *types.Type) obj.As {
 	case 8:
 		return riscv.AMOV
 	default:
-		base.Fatalf("unknown width for store %d in type %v", width, t)
+		panic(fmt.Sprintf("unknown width for store %d in type %v", width, t))
 		return 0
 	}
 }
@@ -1021,11 +1020,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssagen.AddAux(&p.From, v)
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = riscv.REG_ZERO
-		if logopt.Enabled() {
-			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+		if v.Block.Func.LogOptContext().Enabled() {
+			v.Block.Func.LogOptContext().LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
 		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos == 1 in generated wrappers
-			base.WarnfAt(v.Pos, "generated nil check")
+			v.Block.Func.Config.Target.Diagnostics.WarnfAt(v.Pos, "generated nil check")
 		}
 
 	case ssaop.OpRISCV64LoweredGetClosurePtr:

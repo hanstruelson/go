@@ -5,10 +5,10 @@
 package midway
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
+	"cmd/publicinternal/src"
 	"fmt"
 	"publicinternal/buildcfg"
 	"publicinternal/simd/variants"
@@ -226,7 +226,7 @@ func (r *Rewriter) generateDispatchers(fileAST *syntax.File) {
 			change = true
 			if r.analyzer.HasDependentSignature(sig) {
 				if r.analyzer.target.Debug.Simd > 0 {
-					base.Warn("%s: removing body of dependent-sig original function %v", d.Pos().String(), d.Name.Value)
+					r.analyzer.target.Diagnostics.WarnfAt(src.NoXPos, "%s: removing body of dependent-sig original function %v", d.Pos().String(), d.Name.Value)
 				}
 				d.Body = r.blockOf(d.Pos(), r.panicStmt(d.Pos(),
 					"unexpected call of original function rewritten to specialized SIMD"))
@@ -580,12 +580,12 @@ func RewriteWrapper(target *ir.Package, pkg *types2.Package, info *types2.Info, 
 		return false
 	}
 
-	CheckPositions(files, "before midway")
+	CheckPositions(target, files, "before midway")
 
 	rewriter := NewRewriter(pkg, info, analyzer, sizes)
 	rewriter.Rewrite(files)
 
-	CheckPositions(files, "after midway")
+	CheckPositions(target, files, "after midway")
 
 	return true
 }

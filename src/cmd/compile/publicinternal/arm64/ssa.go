@@ -5,11 +5,10 @@
 package arm64
 
 import (
+	"fmt"
 	"math"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -188,11 +187,11 @@ const simdSVEVectorLengthScaled = arm64.SIMDSVEVectorLengthScaled
 // simdRegArng encodes ssa value's register with specified simd arrangement
 func simdRegArng(reg int16, arng int16) int16 {
 	if reg < arm64.REG_F0 || arm64.REG_F31 < reg {
-		base.Fatalf("expected fp register: r%d", reg)
+		panic(fmt.Sprintf("expected fp register: r%d", reg))
 	}
 	var err error
 	if reg, err = arm64.RegisterArrangement(reg, arng, false); err != nil {
-		base.Fatalf("bad simd register arrangement: %v", err)
+		panic(fmt.Sprintf("bad simd register arrangement: %v", err))
 	}
 	return reg
 }
@@ -200,11 +199,11 @@ func simdRegArng(reg int16, arng int16) int16 {
 // simdRegElem encodes ssa value's reference to a vector register element
 func simdRegElem(reg int16, arng int16, idx int16) (res obj.Addr) {
 	if reg < arm64.REG_F0 || arm64.REG_F31 < reg {
-		base.Fatalf("expected fp register: r%d", reg)
+		panic(fmt.Sprintf("expected fp register: r%d", reg))
 	}
 	elem, err := arm64.RegisterArrangement(reg, arng, true /*indexing*/)
 	if err != nil {
-		base.Fatalf("bad simd register indexing arrangement: %v", err)
+		panic(fmt.Sprintf("bad simd register indexing arrangement: %v", err))
 	}
 	res.Type = obj.TYPE_REG
 	res.Class = arm64.C_ELEM
@@ -226,7 +225,7 @@ func allLanes(arng int16) int16 {
 	case arm64.ARNG_D:
 		return arm64.ARNG_2D
 	default:
-		base.Fatalf("unsupported element arrangement: %d", arng)
+		panic(fmt.Sprintf("unsupported element arrangement: %d", arng))
 		return 0
 	}
 }
@@ -241,7 +240,7 @@ func arngNarrow(arng int16) int16 {
 	case arm64.ARNG_2D:
 		return arm64.ARNG_2S
 	default:
-		base.Fatalf("unsupported narrow input arrangement: %d", arng)
+		panic(fmt.Sprintf("unsupported narrow input arrangement: %d", arng))
 		return 0
 	}
 }
@@ -258,7 +257,7 @@ func arngLong(arng int16) int16 {
 	case arm64.ARNG_1D:
 		return arm64.ARNG_1Q
 	default:
-		base.Fatalf("unsupported long input arrangement: %d", arng)
+		panic(fmt.Sprintf("unsupported long input arrangement: %d", arng))
 		return 0
 	}
 }
@@ -276,7 +275,7 @@ func arngHalfLanes(arng int16) int16 {
 	case arm64.ARNG_2D:
 		return arm64.ARNG_1D
 	default:
-		base.Fatalf("unsupported halfLanes input arrangement: %d", arng)
+		panic(fmt.Sprintf("unsupported halfLanes input arrangement: %d", arng))
 		return 0
 	}
 }
@@ -292,7 +291,7 @@ func arngTwiceLanes(arng int16) int16 {
 	case arm64.ARNG_2S:
 		return arm64.ARNG_4S
 	default:
-		base.Fatalf("unsupported twiceLanes input arrangement: %d", arng)
+		panic(fmt.Sprintf("unsupported twiceLanes input arrangement: %d", arng))
 		return 0
 	}
 }
@@ -2038,11 +2037,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssagen.AddAux(&p.From, v)
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = arm64.REGTMP
-		if logopt.Enabled() {
-			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+		if v.Block.Func.LogOptContext().Enabled() {
+			v.Block.Func.LogOptContext().LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
 		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Line==1 in generated wrappers
-			base.WarnfAt(v.Pos, "generated nil check")
+			v.Block.Func.Config.Target.Diagnostics.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpARM64Equal,
 		ssaop.OpARM64NotEqual,

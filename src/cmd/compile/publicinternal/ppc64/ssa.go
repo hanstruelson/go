@@ -5,9 +5,7 @@
 package ppc64
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -16,9 +14,9 @@ import (
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/obj/ppc64"
+	"math"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
-	"math"
 	"strings"
 )
 
@@ -2044,11 +2042,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			p.To.Type = obj.TYPE_REG
 			p.To.Reg = ppc64.REGTMP
 		}
-		if logopt.Enabled() {
-			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+		if v.Block.Func.LogOptContext().Enabled() {
+			v.Block.Func.LogOptContext().LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
 		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
-			base.WarnfAt(v.Pos, "generated nil check")
+			v.Block.Func.Config.Target.Diagnostics.WarnfAt(v.Pos, "generated nil check")
 		}
 
 	// These should be resolved by rules and not make it here.

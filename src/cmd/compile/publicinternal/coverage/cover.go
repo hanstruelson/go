@@ -12,7 +12,6 @@ package coverage
 // generation).
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -53,7 +52,7 @@ func Fixup(target *ir.Package) {
 
 	ckTypSanity := func(nm *ir.Name, tag string) {
 		if nm.Type() == nil || nm.Type().HasPointers() {
-			base.Fatalf("unsuitable %s %q mentioned in coveragecfg, improper type '%v'", tag, nm.Sym().Name, nm.Type())
+			target.Diagnostics.Fatalf("unsuitable %s %q mentioned in coveragecfg, improper type '%v'", tag, nm.Sym().Name, nm.Type())
 		}
 	}
 
@@ -82,7 +81,7 @@ func Fixup(target *ir.Package) {
 	}
 	cm := coverage.ParseCounterMode(counterMode)
 	if cm == coverage.CtrModeInvalid {
-		base.Fatalf("bad setting %q for covermode in coveragecfg:",
+		target.Diagnostics.Fatalf("bad setting %q for covermode in coveragecfg:",
 			counterMode)
 	}
 	var cg coverage.CounterGranularity
@@ -92,7 +91,7 @@ func Fixup(target *ir.Package) {
 	case "perfunc":
 		cg = coverage.CtrGranularityPerFunc
 	default:
-		base.Fatalf("bad setting %q for covergranularity in coveragecfg:",
+		target.Diagnostics.Fatalf("bad setting %q for covergranularity in coveragecfg:",
 			counterGran)
 	}
 
@@ -127,14 +126,14 @@ func metaHashAndLen(target *ir.Package) ([16]byte, int) {
 	// Read meta-data hash from config entry.
 	mhash := target.Flags.Cfg.CoverageInfo.MetaHash
 	if len(mhash) != 32 {
-		base.Fatalf("unexpected: got metahash length %d want 32", len(mhash))
+		target.Diagnostics.Fatalf("unexpected: got metahash length %d want 32", len(mhash))
 	}
 	var hv [16]byte
 	for i := 0; i < 16; i++ {
 		nib := mhash[i*2 : i*2+2]
 		x, err := strconv.ParseInt(nib, 16, 32)
 		if err != nil {
-			base.Fatalf("metahash bad byte %q", nib)
+			target.Diagnostics.Fatalf("metahash bad byte %q", nib)
 		}
 		hv[i] = byte(x)
 	}

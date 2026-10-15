@@ -43,6 +43,10 @@ func typed(typ *types.Type, n ir.Node) ir.Node {
 // FixValue returns val after converting and truncating it as
 // appropriate for typ.
 func FixValue(typ *types.Type, val constant.Value) constant.Value {
+	return FixValueFor(nil, typ, val)
+}
+
+func FixValueFor(target *ir.Package, typ *types.Type, val constant.Value) constant.Value {
 	assert(typ.Kind() != types.TFORW)
 	switch {
 	case typ.IsInteger():
@@ -53,7 +57,7 @@ func FixValue(typ *types.Type, val constant.Value) constant.Value {
 		val = constant.ToComplex(val)
 	}
 	if !typ.IsUntyped() {
-		val = typecheck.ConvertVal(val, typ, false)
+		val = typecheck.ConvertValFor(target, val, typ, false)
 	}
 	ir.AssertValidTypeForConst(typ, val)
 	return val

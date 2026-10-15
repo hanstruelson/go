@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/staticdata"
@@ -101,7 +100,7 @@ func (s *Schedule) tryStaticInit(curfunc *ir.Func, n ir.Node) bool {
 
 	switch n.Op() {
 	default:
-		base.FatalfAt(n.Pos(), "unexpected initialization statement: %v", n)
+		curfunc.Target.Diagnostics.FatalfAt(n.Pos(), "unexpected initialization statement: %v", n)
 	case ir.OAS:
 		n := n.(*ir.AssignStmt)
 		lhs, rhs = []ir.Node{n.X}, n.Y
@@ -115,14 +114,14 @@ func (s *Schedule) tryStaticInit(curfunc *ir.Func, n ir.Node) bool {
 				rhs = rhs.(*ir.ConvExpr).X
 			}
 			if name, ok := rhs.(*ir.Name); !ok || !name.AutoTemp() {
-				base.FatalfAt(n.Pos(), "unexpected rhs, not an autotmp: %+v", rhs)
+				curfunc.Target.Diagnostics.FatalfAt(n.Pos(), "unexpected rhs, not an autotmp: %+v", rhs)
 			}
 		}
 		return false
 	case ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR, ir.OAS2RECV:
 		n := n.(*ir.AssignListStmt)
 		if len(n.Lhs) < 2 || len(n.Rhs) != 1 {
-			base.FatalfAt(n.Pos(), "unexpected shape for %v: %v", n.Op(), n)
+			curfunc.Target.Diagnostics.FatalfAt(n.Pos(), "unexpected shape for %v: %v", n.Op(), n)
 		}
 		lhs, rhs = n.Lhs, n.Rhs[0]
 	case ir.OCALLFUNC:
@@ -182,14 +181,14 @@ func (s *Schedule) staticcopy(curfunc *ir.Func, l *ir.Name, loff int64, rn *ir.N
 	r := rn.Defn.(*ir.AssignStmt).Y
 	if r == nil {
 		// types2.InitOrder doesn't include default initializers.
-		base.Fatalf("unexpected initializer: %v", rn.Defn)
+		curfunc.Target.Diagnostics.Fatalf("unexpected initializer: %v", rn.Defn)
 	}
 
 	// Variable may have been reassigned by a user-written function call
 	// that was invoked to initialize another global variable (#51913).
 	if s.seenMutation {
 		if curfunc.Target.Debug.StaticCopy != 0 {
-			base.WarnfAt(l.Pos(), "skipping static copy of %v+%v with %v", l, loff, r)
+			curfunc.Target.Diagnostics.WarnfAt(l.Pos(), "skipping static copy of %v+%v with %v", l, loff, r)
 		}
 		return false
 	}
@@ -432,7 +431,7 @@ func (s *Schedule) StaticAssign(curfunc *ir.Func, l *ir.Name, loff int64, r ir.N
 		r := r.(*ir.ClosureExpr)
 		if !r.Func.IsClosure() {
 			if curfunc.Target.Debug.Closure > 0 {
-				base.WarnfAt(r.Pos(), "closure converted to global")
+				curfunc.Target.Diagnostics.WarnfAt(r.Pos(), "closure converted to global")
 			}
 			// Closures with no captured variables are globals,
 			// so the assignment can be done at link time.
@@ -526,7 +525,7 @@ func (s *Schedule) initplan(target *ir.Package, n ir.Node) {
 	s.Plans[n] = p
 	switch n.Op() {
 	default:
-		base.Fatalf("initplan")
+		target.Diagnostics.Fatalf("initplan")
 
 	case ir.OARRAYLIT, ir.OSLICELIT:
 		n := n.(*ir.CompLitExpr)
@@ -545,7 +544,7 @@ func (s *Schedule) initplan(target *ir.Package, n ir.Node) {
 		n := n.(*ir.CompLitExpr)
 		for _, a := range n.List {
 			if a.Op() != ir.OSTRUCTKEY {
-				base.Fatalf("initplan structlit")
+				target.Diagnostics.Fatalf("initplan structlit")
 			}
 			a := a.(*ir.StructKeyExpr)
 			if a.Sym().IsBlank() {
@@ -558,7 +557,7 @@ func (s *Schedule) initplan(target *ir.Package, n ir.Node) {
 		n := n.(*ir.CompLitExpr)
 		for _, a := range n.List {
 			if a.Op() != ir.OKEY {
-				base.Fatalf("initplan maplit")
+				target.Diagnostics.Fatalf("initplan maplit")
 			}
 			a := a.(*ir.KeyExpr)
 			s.addvalue(target, p, -1, a.Value)
@@ -1206,11 +1205,11 @@ func AddKeepRelocations(target *ir.Package) {
 		// Add R_KEEP relocation from map to init function.
 		fs := v.Linksym()
 		if fs == nil {
-			base.Fatalf("bad: func %v has no linksym", v)
+			target.Diagnostics.Fatalf("bad: func %v has no linksym", v)
 		}
 		vs := k.Linksym()
 		if vs == nil {
-			base.Fatalf("bad: mapvar %v has no linksym", k)
+			target.Diagnostics.Fatalf("bad: mapvar %v has no linksym", k)
 		}
 		vs.AddRel(target.Ctxt, obj.Reloc{Type: objabi.R_KEEP, Sym: fs})
 		if target.Debug.WrapGlobalMapDbg > 1 {

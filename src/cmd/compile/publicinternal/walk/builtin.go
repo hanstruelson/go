@@ -11,7 +11,6 @@ import (
 	"publicinternal/abi"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/escape"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
@@ -433,13 +432,13 @@ func (w *walkState) walkMakeSlice(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 	}
 	t := n.Type()
 	if t.Elem().NotInHeap() {
-		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
+		w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
 	}
 
 	tryStack := false
 	if n.Esc() == ir.EscNone {
 		if why := escape.HeapAllocReason(w.curfunc.Target, n); why != "" {
-			base.Fatalf("%v has EscNone, but %v", n, why)
+			w.fatalf("%v has EscNone, but %v", n, why)
 		}
 		if ir.IsSmallIntConst(cap) {
 			// Constant backing array - allocate it and slice it.
@@ -551,12 +550,12 @@ func (w *walkState) walkMakeSlice(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 // walkMakeSliceCopy walks an OMAKESLICECOPY node.
 func (w *walkState) walkMakeSliceCopy(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 	if n.Esc() == ir.EscNone {
-		base.Fatalf("OMAKESLICECOPY with EscNone: %v", n)
+		w.fatalf("OMAKESLICECOPY with EscNone: %v", n)
 	}
 
 	t := n.Type()
 	if t.Elem().NotInHeap() {
-		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
+		w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v can't be allocated in Go; it is incomplete (or unallocatable)", t.Elem())
 	}
 
 	length := typecheck.Conv(w.curfunc, n.Len, w.curfunc.Target.Type(types.TINT))
@@ -603,11 +602,11 @@ func (w *walkState) walkMakeSliceCopy(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 func (w *walkState) walkNew(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
 	t := n.Type().Elem()
 	if t.NotInHeap() {
-		base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", n.Type().Elem())
+		w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v can't be allocated in Go; it is incomplete (or unallocatable)", n.Type().Elem())
 	}
 	if n.Esc() == ir.EscNone {
 		if t.Size() > w.curfunc.Target.ImplicitStackVarSizeLimit() {
-			base.Fatalf("large ONEW with EscNone: %v", n)
+			w.fatalf("large ONEW with EscNone: %v", n)
 		}
 		return w.stackTempAddr(init, t)
 	}
@@ -744,7 +743,7 @@ func (w *walkState) walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 				}
 			}
 		default:
-			badtype(nn.Op(), n.Type(), nil)
+			badtype(w.curfunc.Target, nn.Op(), n.Type(), nil)
 			continue
 		}
 
@@ -940,7 +939,7 @@ func (w *walkState) walkUnsafeString(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 	return w.walkExpr(typecheck.Expr(w.curfunc, h), init)
 }
 
-func badtype(op ir.Op, tl, tr *types.Type) {
+func badtype(target *ir.Package, op ir.Op, tl, tr *types.Type) {
 	var s string
 	if tl != nil {
 		s += fmt.Sprintf("\n\t%v", tl)
@@ -958,7 +957,7 @@ func badtype(op ir.Op, tl, tr *types.Type) {
 		}
 	}
 
-	base.Errorf("illegal types for operand: %v%s", op, s)
+	target.Diagnostics.ErrorfAt(target.Pos, 0, "illegal types for operand: %v%s", op, s)
 }
 
 func writebarrierfn(target *ir.Package, name string, l *types.Type, r *types.Type) ir.Node {

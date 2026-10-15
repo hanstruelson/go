@@ -12,11 +12,11 @@
 package rttype
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
+	"fmt"
 	"publicinternal/abi"
 	"reflect"
 )
@@ -77,19 +77,19 @@ func Init(target *ir.Package) {
 	// so we check the functions it uses here.
 	ptrSize := target.PtrSize
 	if got, want := int64(abi.CommonSize(ptrSize)), c.Type.Size(); got != want {
-		base.Fatalf("abi.CommonSize() == %d, want %d", got, want)
+		target.Diagnostics.Fatalf("abi.CommonSize() == %d, want %d", got, want)
 	}
 	if got, want := int64(abi.StructFieldSize(ptrSize)), c.StructField.Size(); got != want {
-		base.Fatalf("abi.StructFieldSize() == %d, want %d", got, want)
+		target.Diagnostics.Fatalf("abi.StructFieldSize() == %d, want %d", got, want)
 	}
 	if got, want := int64(abi.UncommonSize()), c.UncommonType.Size(); got != want {
-		base.Fatalf("abi.UncommonSize() == %d, want %d", got, want)
+		target.Diagnostics.Fatalf("abi.UncommonSize() == %d, want %d", got, want)
 	}
 	if got, want := int64(abi.TFlagOff(ptrSize)), c.Type.OffsetOf("TFlag"); got != want {
-		base.Fatalf("abi.TFlagOff() == %d, want %d", got, want)
+		target.Diagnostics.Fatalf("abi.TFlagOff() == %d, want %d", got, want)
 	}
 	if got, want := int64(abi.ITabTypeOff(ptrSize)), c.ITab.OffsetOf("Type"); got != want {
-		base.Fatalf("abi.ITabTypeOff() == %d, want %d", got, want)
+		target.Diagnostics.Fatalf("abi.ITabTypeOff() == %d, want %d", got, want)
 	}
 	for _, test := range []struct {
 		kind abi.Kind
@@ -106,7 +106,7 @@ func Init(target *ir.Package) {
 		{abi.Interface, c.InterfaceType, "Interface"},
 	} {
 		if got, want := int64(abi.RTypeSize(test.kind, ptrSize)), test.typ.Size(); got != want {
-			base.Fatalf("abi.RTypeSize(%s) == %d, want %d", test.name, got, want)
+			target.Diagnostics.Fatalf("abi.RTypeSize(%s) == %d, want %d", test.name, got, want)
 		}
 	}
 }
@@ -170,9 +170,16 @@ func reflectToType(target *ir.Package, rt reflect.Type) *types.Type {
 	case reflect.Complex128:
 		return target.Type(types.TCOMPLEX128)
 	default:
-		base.Fatalf("unhandled kind %s", rt.Kind())
-		return nil
+		panicf("unhandled kind %s", rt.Kind())
+		return nil // keep the compiler's control-flow analysis satisfied
 	}
+}
+
+// panicf reports an impossible runtime-type encoding request without relying
+// on process-wide compiler diagnostics. Cursor methods are object-file helpers
+// and don't have a compilation target from which to obtain diagnostics.
+func panicf(format string, args ...any) {
+	panic(fmt.Sprintf(format, args...))
 }
 
 // A Cursor represents a typed location inside a static variable where we
@@ -192,7 +199,7 @@ func NewCursor(ctxt *obj.Link, lsym *obj.LSym, off int64, t *types.Type) Cursor 
 // WritePtr writes a pointer "target" to the component at the location specified by c.
 func (c Cursor) WritePtr(target *obj.LSym) {
 	if c.typ.Kind() != types.TUNSAFEPTR && c.typ.Kind() != types.TPTR {
-		base.Fatalf("can't write ptr, it has kind %s", c.typ.Kind())
+		panicf("can't write ptr, it has kind %s", c.typ.Kind())
 	}
 	if target == nil {
 		objw.Uintptr(c.ctxt, c.lsym, int(c.offset), 0)
@@ -202,49 +209,49 @@ func (c Cursor) WritePtr(target *obj.LSym) {
 }
 func (c Cursor) WritePtrWeak(target *obj.LSym) {
 	if c.typ.Kind() != types.TUINTPTR {
-		base.Fatalf("can't write ptr, it has kind %s", c.typ.Kind())
+		panicf("can't write ptr, it has kind %s", c.typ.Kind())
 	}
 	objw.SymPtrWeak(c.ctxt, c.lsym, int(c.offset), target, 0)
 }
 func (c Cursor) WriteUintptr(val uint64) {
 	if c.typ.Kind() != types.TUINTPTR {
-		base.Fatalf("can't write uintptr, it has kind %s", c.typ.Kind())
+		panicf("can't write uintptr, it has kind %s", c.typ.Kind())
 	}
 	objw.Uintptr(c.ctxt, c.lsym, int(c.offset), val)
 }
 func (c Cursor) WriteUint32(val uint32) {
 	if c.typ.Kind() != types.TUINT32 {
-		base.Fatalf("can't write uint32, it has kind %s", c.typ.Kind())
+		panicf("can't write uint32, it has kind %s", c.typ.Kind())
 	}
 	objw.Uint32(c.ctxt, c.lsym, int(c.offset), val)
 }
 func (c Cursor) WriteUint16(val uint16) {
 	if c.typ.Kind() != types.TUINT16 {
-		base.Fatalf("can't write uint16, it has kind %s", c.typ.Kind())
+		panicf("can't write uint16, it has kind %s", c.typ.Kind())
 	}
 	objw.Uint16(c.ctxt, c.lsym, int(c.offset), val)
 }
 func (c Cursor) WriteUint8(val uint8) {
 	if c.typ.Kind() != types.TUINT8 {
-		base.Fatalf("can't write uint8, it has kind %s", c.typ.Kind())
+		panicf("can't write uint8, it has kind %s", c.typ.Kind())
 	}
 	objw.Uint8(c.ctxt, c.lsym, int(c.offset), val)
 }
 func (c Cursor) WriteInt(val int64) {
 	if c.typ.Kind() != types.TINT {
-		base.Fatalf("can't write int, it has kind %s", c.typ.Kind())
+		panicf("can't write int, it has kind %s", c.typ.Kind())
 	}
 	objw.Uintptr(c.ctxt, c.lsym, int(c.offset), uint64(val))
 }
 func (c Cursor) WriteInt32(val int32) {
 	if c.typ.Kind() != types.TINT32 {
-		base.Fatalf("can't write int32, it has kind %s", c.typ.Kind())
+		panicf("can't write int32, it has kind %s", c.typ.Kind())
 	}
 	objw.Uint32(c.ctxt, c.lsym, int(c.offset), uint32(val))
 }
 func (c Cursor) WriteBool(val bool) {
 	if c.typ.Kind() != types.TBOOL {
-		base.Fatalf("can't write bool, it has kind %s", c.typ.Kind())
+		panicf("can't write bool, it has kind %s", c.typ.Kind())
 	}
 	objw.Bool(c.ctxt, c.lsym, int(c.offset), val)
 }
@@ -253,7 +260,7 @@ func (c Cursor) WriteBool(val bool) {
 // is encoded as a uint32 offset from the start of the section.
 func (c Cursor) WriteSymPtrOff(target *obj.LSym, weak bool) {
 	if c.typ.Kind() != types.TINT32 && c.typ.Kind() != types.TUINT32 {
-		base.Fatalf("can't write SymPtr, it has kind %s", c.typ.Kind())
+		panicf("can't write SymPtr, it has kind %s", c.typ.Kind())
 	}
 	if target == nil {
 		objw.Uint32(c.ctxt, c.lsym, int(c.offset), 0)
@@ -267,7 +274,7 @@ func (c Cursor) WriteSymPtrOff(target *obj.LSym, weak bool) {
 // WriteSlice writes a slice header to c. The pointer is target+off, the len and cap fields are given.
 func (c Cursor) WriteSlice(target *obj.LSym, off, len, cap int64) {
 	if c.typ.Kind() != types.TSLICE {
-		base.Fatalf("can't write slice, it has kind %s", c.typ.Kind())
+		panicf("can't write slice, it has kind %s", c.typ.Kind())
 	}
 	objw.SymPtr(c.ctxt, c.lsym, int(c.offset), target, int(off))
 	objw.Uintptr(c.ctxt, c.lsym, int(c.offset)+c.ctxt.Arch.PtrSize, uint64(len))
@@ -275,7 +282,7 @@ func (c Cursor) WriteSlice(target *obj.LSym, off, len, cap int64) {
 	// TODO: ability to switch len&cap. Maybe not needed here, as every caller
 	// passes the same thing for both?
 	if len != cap {
-		base.Fatalf("len != cap (%d != %d)", len, cap)
+		panicf("len != cap (%d != %d)", len, cap)
 	}
 }
 
@@ -290,23 +297,23 @@ func (c Cursor) Reloc(rel obj.Reloc) {
 // Field selects the field with the given name from the struct pointed to by c.
 func (c Cursor) Field(name string) Cursor {
 	if c.typ.Kind() != types.TSTRUCT {
-		base.Fatalf("can't call Field on non-struct %v", c.typ)
+		panicf("can't call Field on non-struct %v", c.typ)
 	}
 	for _, f := range c.typ.Fields() {
 		if f.Sym.Name == name {
 			return Cursor{ctxt: c.ctxt, lsym: c.lsym, offset: c.offset + f.Offset, typ: f.Type}
 		}
 	}
-	base.Fatalf("couldn't find field %s in %v", name, c.typ)
+	panicf("couldn't find field %s in %v", name, c.typ)
 	return Cursor{}
 }
 
 func (c Cursor) Elem(i int64) Cursor {
 	if c.typ.Kind() != types.TARRAY {
-		base.Fatalf("can't call Elem on non-array %v", c.typ)
+		panicf("can't call Elem on non-array %v", c.typ)
 	}
 	if i < 0 || i >= c.typ.NumElem() {
-		base.Fatalf("element access out of bounds [%d] in [0:%d]", i, c.typ.NumElem())
+		panicf("element access out of bounds [%d] in [0:%d]", i, c.typ.NumElem())
 	}
 	elem := c.typ.Elem()
 	return Cursor{ctxt: c.ctxt, lsym: c.lsym, offset: c.offset + i*elem.Size(), typ: elem}
@@ -328,7 +335,7 @@ func NewArrayCursor(ctxt *obj.Link, lsym *obj.LSym, off int64, t *types.Type, n 
 // Elem selects element i of the array pointed to by c.
 func (a ArrayCursor) Elem(i int) Cursor {
 	if i < 0 || i >= a.n {
-		base.Fatalf("element index %d out of range [0:%d]", i, a.n)
+		panicf("element index %d out of range [0:%d]", i, a.n)
 	}
 	return Cursor{ctxt: a.c.ctxt, lsym: a.c.lsym, offset: a.c.offset + int64(i)*a.c.typ.Size(), typ: a.c.typ}
 }
@@ -338,7 +345,7 @@ func (a ArrayCursor) Elem(i int) Cursor {
 // Also returns the size delta, aka (n-k)*sizeof(T).
 func (c Cursor) ModifyArray(n int) (ArrayCursor, int64) {
 	if c.typ.Kind() != types.TARRAY {
-		base.Fatalf("can't call ModifyArray on non-array %v", c.typ)
+		panicf("can't call ModifyArray on non-array %v", c.typ)
 	}
 	k := c.typ.NumElem()
 	return ArrayCursor{c: Cursor{ctxt: c.ctxt, lsym: c.lsym, offset: c.offset, typ: c.typ.Elem()}, n: n}, (int64(n) - k) * c.typ.Elem().Size()

@@ -41,7 +41,6 @@ var bootstrapDirs = []string{
 	"cmd/compile",
 	"cmd/compile/publicinternal/...",
 	"cmd/go",
-	"cmd/go/publicinternal/jitbundle",
 	"cmd/go/publicinternal/base",
 	"cmd/go/publicinternal/bug",
 	"cmd/go/publicinternal/cache",

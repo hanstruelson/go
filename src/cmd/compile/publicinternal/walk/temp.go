@@ -5,7 +5,6 @@
 package walk
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -15,7 +14,7 @@ import (
 // temporary variable to val, and then returns the expression &tmp.
 func (w *walkState) initStackTemp(init *ir.Nodes, tmp *ir.Name, val ir.Node) *ir.AddrExpr {
 	if val != nil && !types.Identical(tmp.Type(), val.Type()) {
-		base.Fatalf("bad initial value for %L: %L", tmp, val)
+		w.fatalf("bad initial value for %L: %L", tmp, val)
 	}
 	w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, tmp, val))
 	return typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, tmp)).(*ir.AddrExpr)
@@ -35,7 +34,7 @@ func (w *walkState) stackTempAddr(init *ir.Nodes, typ *types.Type) *ir.AddrExpr 
 // initialized, and elem must not contain pointers.
 func (w *walkState) stackBufAddr(len int64, elem *types.Type) *ir.AddrExpr {
 	if elem.HasPointers() {
-		base.FatalfAt(w.curfunc.Target.Pos, "%v has pointers", elem)
+		w.fatalfAt(w.curfunc.Target.Pos, "%v has pointers", elem)
 	}
 	tmp := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, types.NewArray(elem, len))
 	return typecheck.Expr(w.curfunc, typecheck.NodAddr(w.curfunc, tmp)).(*ir.AddrExpr)

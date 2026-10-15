@@ -5,7 +5,6 @@
 package types
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/src"
 )
 
@@ -52,7 +51,7 @@ func InitTypes(builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type)
 func InitTypesFor(context *Context, builtinPkg, unsafePkg *Pkg, defTypeName func(sym *Sym, typ *Type) Object) {
 	ptrSize := ptrSizeFor(context)
 	if ptrSize == 0 {
-		base.Fatalf("InitTypes called before PtrSize was set")
+		fatalfContext(context, src.NoXPos, "InitTypes called before PtrSize was set")
 	}
 
 	context.SlicePtrOffset = 0

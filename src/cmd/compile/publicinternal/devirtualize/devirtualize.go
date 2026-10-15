@@ -12,7 +12,6 @@
 package devirtualize
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -23,6 +22,7 @@ const go126ImprovedConcreteTypeAnalysis = true
 // StaticCall devirtualizes the given call if possible when the concrete callee
 // is available statically.
 func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
+	s.target = curfunc.Target
 	// For promoted methods (including value-receiver methods promoted
 	// to pointer-receivers), the interface method wrapper may contain
 	// expressions that can panic (e.g., ODEREF, ODOTPTR,
@@ -93,7 +93,7 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	// reference to .dict.T[int]).
 	if typ.HasShape() {
 		if curfunc.Target.Flags.LowerM != 0 {
-			base.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped receiver %v", call, typ)
+			curfunc.Target.Diagnostics.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped receiver %v", call, typ)
 		}
 		return
 	}
@@ -112,7 +112,7 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	// now, punting is easy and safe.
 	if sel.X.Type().HasShape() {
 		if curfunc.Target.Flags.LowerM != 0 {
-			base.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped interface %v", call, sel.X.Type())
+			curfunc.Target.Diagnostics.WarnfAt(call.Pos(), "cannot devirtualize %v: shaped interface %v", call, sel.X.Type())
 		}
 		return
 	}
@@ -142,19 +142,19 @@ func StaticCall(curfunc *ir.Func, s *State, call *ir.CallExpr) {
 	switch x.Op() {
 	case ir.ODOTMETH:
 		if curfunc.Target.Flags.LowerM != 0 {
-			base.WarnfAt(call.Pos(), "devirtualizing %v to %v", sel, typ)
+			curfunc.Target.Diagnostics.WarnfAt(call.Pos(), "devirtualizing %v to %v", sel, typ)
 		}
 		call.SetOp(ir.OCALLMETH)
 		call.Fun = x
 	case ir.ODOTINTER:
 		// Promoted method from embedded interface-typed field (#42279).
 		if curfunc.Target.Flags.LowerM != 0 {
-			base.WarnfAt(call.Pos(), "partially devirtualizing %v to %v", sel, typ)
+			curfunc.Target.Diagnostics.WarnfAt(call.Pos(), "partially devirtualizing %v to %v", sel, typ)
 		}
 		call.SetOp(ir.OCALLINTER)
 		call.Fun = x
 	default:
-		base.FatalfAt(call.Pos(), "failed to devirtualize %v (%v)", x, x.Op())
+		curfunc.Target.Diagnostics.FatalfAt(call.Pos(), "failed to devirtualize %v (%v)", x, x.Op())
 	}
 
 	// Duplicated logic from typecheck for function call return
@@ -183,13 +183,13 @@ const concreteTypeDebug = false
 // (different) types assigned to an interface.
 func concreteType(s *State, n ir.Node) (typ *types.Type) {
 	if concreteTypeDebug {
-		base.Warn("concreteType(%v) - analyzing", n)
+		s.target.Diagnostics.WarnfAt(n.Pos(), "concreteType(%v) - analyzing", n)
 		defer func() {
 			t := typ.String()
 			if typ == nil {
 				t = "<nil> (unknown static type)"
 			}
-			base.Warn("concreteType(%v) -> %v", n, t)
+			s.target.Diagnostics.WarnfAt(n.Pos(), "concreteType(%v) -> %v", n, t)
 		}()
 	}
 
@@ -198,7 +198,7 @@ func concreteType(s *State, n ir.Node) (typ *types.Type) {
 		return nil
 	}
 	if typ != nil && typ.IsInterface() {
-		base.FatalfAt(n.Pos(), "typ.IsInterface() = true; want = false; typ = %v", typ)
+		s.target.Diagnostics.FatalfAt(n.Pos(), "typ.IsInterface() = true; want = false; typ = %v", typ)
 	}
 	return typ
 }
@@ -221,13 +221,13 @@ func concreteType1(s *State, n ir.Node, seen map[*ir.Name]struct{}) (outT *types
 			if outT == nil {
 				t = "<nil> (unknown static type)"
 			}
-			base.Warn("concreteType1(%v) -> %v", nn, t)
+			s.target.Diagnostics.WarnfAt(nn.Pos(), "concreteType1(%v) -> %v", nn, t)
 		}()
 	}
 
 	for {
 		if concreteTypeDebug {
-			base.Warn("concreteType1(%v): analyzing %v", nn, n)
+			s.target.Diagnostics.WarnfAt(nn.Pos(), "concreteType1(%v): analyzing %v", nn, n)
 		}
 
 		if !n.Type().IsInterface() {
@@ -240,7 +240,7 @@ func concreteType1(s *State, n ir.Node, seen map[*ir.Name]struct{}) (outT *types
 				if !n1.Type().IsInterface() || !types.Identical(n1.Type().Underlying(), n1.X.Type().Underlying()) {
 					// As we check (directly before this switch) whether n is an interface, thus we should only reach
 					// here for iface conversions where both operands are the same.
-					base.FatalfAt(n1.Pos(), "not identical/interface types found n1.Type = %v; n1.X.Type = %v", n1.Type(), n1.X.Type())
+					s.target.Diagnostics.FatalfAt(n1.Pos(), "not identical/interface types found n1.Type = %v; n1.X.Type = %v", n1.Type(), n1.X.Type())
 				}
 				n = n1.X
 				continue
@@ -274,12 +274,12 @@ func concreteType1(s *State, n ir.Node, seen map[*ir.Name]struct{}) (outT *types
 	}
 
 	if name.Op() != ir.ONAME {
-		base.FatalfAt(name.Pos(), "name.Op = %v; want = ONAME", n.Op())
+		s.target.Diagnostics.FatalfAt(name.Pos(), "name.Op = %v; want = ONAME", n.Op())
 	}
 
 	// name.Curfn must be set, as we checked name.Class != ir.PAUTO before.
 	if name.Curfn == nil {
-		base.FatalfAt(name.Pos(), "name.Curfn = nil; want not nil")
+		s.target.Diagnostics.FatalfAt(name.Pos(), "name.Curfn = nil; want not nil")
 	}
 
 	if name.Addrtaken() {
@@ -292,7 +292,7 @@ func concreteType1(s *State, n ir.Node, seen map[*ir.Name]struct{}) (outT *types
 	seen[name] = struct{}{}
 
 	if concreteTypeDebug {
-		base.Warn("concreteType1(%v): analyzing assignments to %v", nn, name)
+		s.target.Diagnostics.WarnfAt(nn.Pos(), "concreteType1(%v): analyzing assignments to %v", nn, name)
 	}
 
 	var typ *types.Type
@@ -348,6 +348,8 @@ type assignment any
 
 // State holds precomputed state for use in [StaticCall].
 type State struct {
+	target *ir.Package
+
 	// ifaceAssignments maps interface variables to all their assignments
 	// defined inside functions stored in the analyzedFuncs set.
 	// Note: it does not include direct assignments to nil.
@@ -369,6 +371,7 @@ type ifaceAssignRef struct {
 
 // InlinedCall updates the [State] to take into account a newly inlined call.
 func (s *State) InlinedCall(fun *ir.Func, origCall *ir.CallExpr, inlinedCall *ir.InlinedCallExpr) {
+	s.target = fun.Target
 	if _, ok := s.analyzedFuncs[fun]; !ok {
 		// Full analyze has not been yet executed for the provided function, so we can skip it for now.
 		// When no devirtualization happens in a function, it is unnecessary to analyze it.
@@ -389,10 +392,10 @@ func (s *State) InlinedCall(fun *ir.Func, origCall *ir.CallExpr, inlinedCall *ir
 	for _, ref := range refs {
 		vt := &s.ifaceAssignments[ref.name][ref.assignmentIndex]
 		if *vt != nil {
-			base.Fatalf("unexpected non-nil assignment")
+			fun.Target.Diagnostics.Fatalf("unexpected non-nil assignment")
 		}
 		if concreteTypeDebug {
-			base.Warn(
+			fun.Target.Diagnostics.WarnfAt(fun.Target.Pos,
 				"InlinedCall(%v, %v): replacing interface node in (%v,%v) to %v (typ %v)",
 				origCall, inlinedCall, ref.name, ref.assignmentIndex,
 				inlinedCall.ReturnVars[ref.returnIndex],
@@ -412,20 +415,20 @@ func (s *State) InlinedCall(fun *ir.Func, origCall *ir.CallExpr, inlinedCall *ir
 func (s *State) assignments(n *ir.Name) []assignment {
 	fun := n.Curfn
 	if fun == nil {
-		base.FatalfAt(n.Pos(), "n.Curfn = <nil>")
+		s.target.Diagnostics.FatalfAt(n.Pos(), "n.Curfn = <nil>")
 	}
 	if n.Class != ir.PAUTO {
-		base.FatalfAt(n.Pos(), "n.Class = %v; want = PAUTO", n.Class)
+		s.target.Diagnostics.FatalfAt(n.Pos(), "n.Class = %v; want = PAUTO", n.Class)
 	}
 
 	if !n.Type().IsInterface() {
-		base.FatalfAt(n.Pos(), "name passed to assignments is not of an interface type: %v", n.Type())
+		s.target.Diagnostics.FatalfAt(n.Pos(), "name passed to assignments is not of an interface type: %v", n.Type())
 	}
 
 	// Analyze assignments in func, if not analyzed before.
 	if _, ok := s.analyzedFuncs[fun]; !ok {
 		if concreteTypeDebug {
-			base.Warn("assignments(): analyzing assignments in %v func", fun)
+			fun.Target.Diagnostics.WarnfAt(fun.Target.Pos, "assignments(): analyzing assignments in %v func", fun)
 		}
 		if s.analyzedFuncs == nil {
 			s.ifaceAssignments = make(map[*ir.Name][]assignment)
@@ -460,7 +463,7 @@ func (s *State) analyze(nodes ir.Nodes) {
 
 		n = n.Canonical()
 		if n.Op() != ir.ONAME {
-			base.FatalfAt(n.Pos(), "n.Op = %v; want = ONAME", n.Op())
+			s.target.Diagnostics.FatalfAt(n.Pos(), "n.Op = %v; want = ONAME", n.Op())
 		}
 		if n.Class != ir.PAUTO {
 			return nil, -1
@@ -478,11 +481,11 @@ func (s *State) analyze(nodes ir.Nodes) {
 				return nil, -1
 			}
 		default:
-			base.Fatalf("unexpected type: %v", assignment)
+			s.target.Diagnostics.Fatalf("unexpected type: %v", assignment)
 		}
 
 		if concreteTypeDebug {
-			base.Warn("analyze(): assignment found %v = %v", name, assignment)
+			s.target.Diagnostics.WarnfAt(name.Pos(), "analyze(): assignment found %v = %v", name, assignment)
 		}
 
 		s.ifaceAssignments[n] = append(s.ifaceAssignments[n], assignment)
@@ -525,14 +528,14 @@ func (s *State) analyze(nodes ir.Nodes) {
 		case ir.OAS2DOTTYPE:
 			n := n.(*ir.AssignListStmt)
 			if n.Rhs[0] == nil {
-				base.FatalfAt(n.Pos(), "n.Rhs[0] == nil; n = %v", n)
+				s.target.Diagnostics.FatalfAt(n.Pos(), "n.Rhs[0] == nil; n = %v", n)
 			}
 			assign(n.Lhs[0], n.Rhs[0])
 			assign(n.Lhs[1], nil) // boolean does not have methods to devirtualize
 		case ir.OAS2MAPR, ir.OAS2RECV, ir.OSELRECV2:
 			n := n.(*ir.AssignListStmt)
 			if n.Rhs[0] == nil {
-				base.FatalfAt(n.Pos(), "n.Rhs[0] == nil; n = %v", n)
+				s.target.Diagnostics.FatalfAt(n.Pos(), "n.Rhs[0] == nil; n = %v", n)
 			}
 			assign(n.Lhs[0], n.Rhs[0].Type())
 			assign(n.Lhs[1], nil) // boolean does not have methods to devirtualize
@@ -562,7 +565,7 @@ func (s *State) analyze(nodes ir.Nodes) {
 					assign(p, call.ReturnVars[i])
 				}
 			} else {
-				base.FatalfAt(n.Pos(), "unexpected type %T in OAS2FUNC Rhs[0]", call)
+				s.target.Diagnostics.FatalfAt(n.Pos(), "unexpected type %T in OAS2FUNC Rhs[0]", call)
 			}
 		case ir.ORANGE:
 			n := n.(*ir.RangeStmt)
@@ -578,7 +581,7 @@ func (s *State) analyze(nodes ir.Nodes) {
 				assign(n.Value, xTyp.Elem())
 			} else if xTyp.IsChan() {
 				assign(n.Key, xTyp.Elem())
-				base.AssertfAt(n.Value == nil, n.Pos(), "n.Value != nil in range over chan")
+				s.target.Diagnostics.AssertfAt(n.Value == nil, n.Pos(), "n.Value != nil in range over chan")
 			} else if xTyp.IsMap() {
 				assign(n.Key, xTyp.Key())
 				assign(n.Value, xTyp.Elem())
@@ -589,14 +592,14 @@ func (s *State) analyze(nodes ir.Nodes) {
 			} else {
 				// We will not reach here in case of a range-over-func, as it is
 				// rewritten to function calls in the noder package.
-				base.FatalfAt(n.Pos(), "range over unexpected type %v", n.X.Type())
+				s.target.Diagnostics.FatalfAt(n.Pos(), "range over unexpected type %v", n.X.Type())
 			}
 		case ir.OSWITCH:
 			n := n.(*ir.SwitchStmt)
 			if guard, ok := n.Tag.(*ir.TypeSwitchGuard); ok {
 				for _, v := range n.Cases {
 					if v.Var == nil {
-						base.Assert(guard.Tag == nil)
+						s.target.Diagnostics.Assert(guard.Tag == nil)
 						continue
 					}
 					assign(v.Var, guard.X)

@@ -46,17 +46,6 @@ func Callee(curfunc *ir.Func, n ir.Node) ir.Node {
 	return typecheck(curfunc, n, ctxExpr|ctxCallee)
 }
 
-var traceIndent []byte
-
-// SwapTraceIndent replaces the type-checking trace indentation and returns
-// the previous value. Reusable compiler requests use it to isolate debug
-// tracing state between compilations.
-func SwapTraceIndent(indent []byte) []byte {
-	old := append([]byte(nil), traceIndent...)
-	traceIndent = append([]byte(nil), indent...)
-	return old
-}
-
 func contextForFunc(curfunc *ir.Func) *types.Context {
 	if curfunc != nil && curfunc.Target != nil {
 		return curfunc.Target.TypeContext
@@ -65,13 +54,22 @@ func contextForFunc(curfunc *ir.Func) *types.Context {
 }
 
 func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Node) {
-	indent := traceIndent
+	fmtPos := func(pos src.XPos) string {
+		if context != nil && context.Diagnostics != nil {
+			return context.Diagnostics.FmtPos(pos)
+		}
+		return base.FmtPos(pos)
+	}
+	var indent []byte
+	if context != nil {
+		indent = context.TraceIndent
+	}
 
 	// guard against nil
 	var pos, op string
 	var tc uint8
 	if n != nil {
-		pos = base.FmtPos(n.Pos())
+		pos = fmtPos(n.Pos())
 		op = n.Op().String()
 		tc = n.Typecheck()
 	}
@@ -80,15 +78,16 @@ func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Nod
 		old := context.SkipSizeForTrace
 		context.SkipSizeForTrace = true
 		defer func() { context.SkipSizeForTrace = old }()
-	} else {
-		types.SkipSizeForTracing = true
-		defer func() { types.SkipSizeForTracing = false }()
 	}
 	fmt.Printf("%s: %s%s %p %s %v tc=%d\n", pos, indent, title, n, op, n, tc)
-	traceIndent = append(traceIndent, ". "...)
+	if context != nil {
+		context.TraceIndent = append(context.TraceIndent, ". "...)
+	}
 
 	return func(np *ir.Node) {
-		traceIndent = traceIndent[:len(traceIndent)-2]
+		if context != nil {
+			context.TraceIndent = context.TraceIndent[:len(context.TraceIndent)-2]
+		}
 
 		// if we have a result, use that
 		if np != nil {
@@ -100,7 +99,7 @@ func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Nod
 		var tc uint8
 		var typ *types.Type
 		if n != nil {
-			pos = base.FmtPos(n.Pos())
+			pos = fmtPos(n.Pos())
 			op = n.Op().String()
 			tc = n.Typecheck()
 			typ = n.Type()
@@ -110,9 +109,6 @@ func tracePrint(title string, n ir.Node, context *types.Context) func(np *ir.Nod
 			old := context.SkipSizeForTrace
 			context.SkipSizeForTrace = true
 			defer func() { context.SkipSizeForTrace = old }()
-		} else {
-			types.SkipSizeForTracing = true
-			defer func() { types.SkipSizeForTracing = false }()
 		}
 		fmt.Printf("%s: %s=> %p %s %v tc=%d type=%L\n", pos, indent, n, op, n, tc, typ)
 	}
@@ -218,7 +214,7 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 	}
 
 	if n.Typecheck() == 2 {
-		base.FatalfAt(n.Pos(), "typechecking loop")
+		fatalfAt(targetForFunc(curfunc), n.Pos(), "typechecking loop")
 	}
 
 	n.SetTypecheck(2)
@@ -264,14 +260,14 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	switch n.Op() {
 	default:
 		ir.Dump("typecheck", n)
-		base.Fatalf("typecheck %v", n.Op())
+		fatalf(targetForFunc(curfunc), "typecheck %v", n.Op())
 		panic("unreachable")
 
 	case ir.ONAME:
 		n := n.(*ir.Name)
 		if n.BuiltinOp != 0 {
 			if top&ctxCallee == 0 {
-				base.Errorf("use of builtin %v not in function call", n.Sym())
+				errorf(targetForFunc(curfunc), "use of builtin %v not in function call", n.Sym())
 				n.SetType(nil)
 				return n
 			}
@@ -280,7 +276,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		if top&ctxAssign == 0 {
 			// not a write to the variable
 			if ir.IsBlank(n) {
-				base.Errorf("cannot use _ as value")
+				errorf(targetForFunc(curfunc), "cannot use _ as value")
 				n.SetType(nil)
 				return n
 			}
@@ -297,9 +293,9 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OASOP:
 		n := n.(*ir.AssignOpStmt)
 		n.X, n.Y = Expr(curfunc, n.X), Expr(curfunc, n.Y)
-		checkassign(n.X)
+		checkassign(targetForFunc(curfunc), n.X)
 		if n.IncDec && !okforarith[n.X.Type().Kind()] {
-			base.Errorf("invalid operation: %v (non-numeric type %v)", n, n.X.Type())
+			errorf(targetForFunc(curfunc), "invalid operation: %v (non-numeric type %v)", n, n.X.Type())
 			return n
 		}
 		switch n.AsOp {
@@ -308,7 +304,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		case ir.OADD, ir.OAND, ir.OANDNOT, ir.ODIV, ir.OMOD, ir.OMUL, ir.OOR, ir.OSUB, ir.OXOR:
 			n.X, n.Y, _ = tcArith(targetForFunc(curfunc), n, n.AsOp, n.X, n.Y)
 		default:
-			base.Fatalf("invalid assign op: %v", n.AsOp)
+			fatalf(targetForFunc(curfunc), "invalid assign op: %v", n.AsOp)
 		}
 		return n
 
@@ -324,12 +320,12 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		// can't be used with "&&" than to report that "x == x" (type untyped bool)
 		// can't be converted to int (see issue #41500).
 		if !n.X.Type().IsBoolean() {
-			base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(n.X.Type()))
+			errorf(targetForFunc(curfunc), "invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(n.X.Type()))
 			n.SetType(nil)
 			return n
 		}
 		if !n.Y.Type().IsBoolean() {
-			base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(n.Y.Type()))
+			errorf(targetForFunc(curfunc), "invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(n.Y.Type()))
 			n.SetType(nil)
 			return n
 		}
@@ -523,7 +519,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 		// Whoever creates the OIDATA node must know a priori the concrete type at that moment,
 		// usually by just having checked the OITAB.
 		n := n.(*ir.UnaryExpr)
-		base.Fatalf("cannot typecheck interface data %v", n)
+		fatalf(targetForFunc(curfunc), "cannot typecheck interface data %v", n)
 		panic("unreachable")
 
 	case ir.OSPTR:
@@ -539,7 +535,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 	case ir.OGETCALLERSP:
 		n := n.(*ir.CallExpr)
 		if len(n.Args) != 0 {
-			base.FatalfAt(n.Pos(), "unexpected arguments: %v", n)
+			fatalfAt(targetForFunc(curfunc), n.Pos(), "unexpected arguments: %v", n)
 		}
 		n.SetType(curfunc.Target.Type(types.TUINTPTR))
 		return n
@@ -626,7 +622,7 @@ func typecheck1(curfunc *ir.Func, n ir.Node, top int) ir.Node {
 
 	case ir.OTYPESW:
 		n := n.(*ir.TypeSwitchGuard)
-		base.Fatalf("use of .(type) outside type switch")
+		fatalf(targetForFunc(curfunc), "use of .(type) outside type switch")
 		return n
 
 	case ir.ODCLFUNC:
@@ -643,7 +639,7 @@ func typecheckargs(curfunc *ir.Func, n ir.InitNode) {
 	var list []ir.Node
 	switch n := n.(type) {
 	default:
-		base.Fatalf("typecheckargs %+v", n.Op())
+		fatalf(targetForFunc(curfunc), "typecheckargs %+v", n.Op())
 	case *ir.CallExpr:
 		list = n.Args
 		if n.IsDDD {
@@ -708,14 +704,14 @@ func RewriteMultiValueCall(curfunc *ir.Func, n ir.InitNode, call ir.Node) {
 
 	switch n := n.(type) {
 	default:
-		base.Fatalf("RewriteMultiValueCall %+v", n.Op())
+		fatalf(targetForFunc(curfunc), "RewriteMultiValueCall %+v", n.Op())
 	case *ir.CallExpr:
 		n.Args = list
 	case *ir.ReturnStmt:
 		n.Results = list
 	case *ir.AssignListStmt:
 		if n.Op() != ir.OAS2FUNC {
-			base.Fatalf("RewriteMultiValueCall: invalid op %v", n.Op())
+			fatalf(targetForFunc(curfunc), "RewriteMultiValueCall: invalid op %v", n.Op())
 		}
 		as.SetOp(ir.OAS2FUNC)
 		n.SetOp(ir.OAS2)
@@ -732,7 +728,7 @@ func checksliceindex(r ir.Node) bool {
 		return false
 	}
 	if !t.IsInteger() {
-		base.Errorf("invalid slice index %v (type %v)", r, t)
+		errorf(ir.TargetOf(r), "invalid slice index %v (type %v)", r, t)
 		return false
 	}
 	return true
@@ -762,13 +758,13 @@ func implicitstar(curfunc *ir.Func, n ir.Node) ir.Node {
 func needOneArg(n *ir.CallExpr, f string, args ...any) (ir.Node, bool) {
 	if len(n.Args) == 0 {
 		p := fmt.Sprintf(f, args...)
-		base.Errorf("missing argument to %s: %v", p, n)
+		errorf(ir.TargetOf(n), "missing argument to %s: %v", p, n)
 		return nil, false
 	}
 
 	if len(n.Args) > 1 {
 		p := fmt.Sprintf(f, args...)
-		base.Errorf("too many arguments to %s: %v", p, n)
+		errorf(ir.TargetOf(n), "too many arguments to %s: %v", p, n)
 		return n.Args[0], false
 	}
 
@@ -778,9 +774,9 @@ func needOneArg(n *ir.CallExpr, f string, args ...any) (ir.Node, bool) {
 func needTwoArgs(n *ir.CallExpr) (ir.Node, ir.Node, bool) {
 	if len(n.Args) != 2 {
 		if len(n.Args) < 2 {
-			base.Errorf("not enough arguments in call to %v", n)
+			errorf(ir.TargetOf(n), "not enough arguments in call to %v", n)
 		} else {
-			base.Errorf("too many arguments in call to %v", n)
+			errorf(ir.TargetOf(n), "too many arguments in call to %v", n)
 		}
 		return nil, nil, false
 	}
@@ -805,11 +801,11 @@ func Lookdot1(errnode ir.Node, s *types.Sym, t *types.Type, fs []*types.Field, d
 		}
 		if r != nil {
 			if errnode != nil {
-				base.Errorf("ambiguous selector %v", errnode)
+				errorf(ir.TargetOf(errnode), "ambiguous selector %v", errnode)
 			} else if t.IsPtr() {
-				base.Errorf("ambiguous selector (%v).%v", t, s)
+				errorf(ir.TargetOf(errnode), "ambiguous selector (%v).%v", t, s)
 			} else {
-				base.Errorf("ambiguous selector %v.%v", t, s)
+				errorf(ir.TargetOf(errnode), "ambiguous selector %v.%v", t, s)
 			}
 			break
 		}
@@ -830,7 +826,7 @@ func NewMethodExpr(pos src.XPos, recv *types.Type, sym *types.Sym) *ir.SelectorE
 	} else {
 		mt := types.ReceiverBaseType(recv)
 		if mt == nil {
-			base.FatalfAt(pos, "type %v has no receiver base type", recv)
+			fatalfType(recv, pos, "type %v has no receiver base type", recv)
 		}
 		CalcMethods(mt)
 		ms = mt.AllMethods()
@@ -838,11 +834,11 @@ func NewMethodExpr(pos src.XPos, recv *types.Type, sym *types.Sym) *ir.SelectorE
 
 	m := Lookdot1(nil, sym, recv, ms, 0)
 	if m == nil {
-		base.FatalfAt(pos, "type %v has no method %v", recv, sym)
+		fatalfType(recv, pos, "type %v has no method %v", recv, sym)
 	}
 
 	if !types.IsMethodApplicable(recv, m) {
-		base.FatalfAt(pos, "invalid method expression %v.%v (needs pointer receiver)", recv, sym)
+		fatalfType(recv, pos, "invalid method expression %v.%v (needs pointer receiver)", recv, sym)
 	}
 
 	n := ir.NewSelectorExpr(pos, ir.OMETHEXPR, ir.TypeNode(recv), sym)
@@ -890,10 +886,10 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 			return f1
 		}
 		if f2 != nil {
-			base.Errorf("%v is both field and method", n.Sel)
+			errorf(targetForFunc(curfunc), "%v is both field and method", n.Sel)
 		}
 		if f1.Offset == types.BADWIDTH {
-			base.Fatalf("Lookdot badwidth t=%v, f1=%v@%p", t, f1, f1)
+			fatalf(targetForFunc(curfunc), "Lookdot badwidth t=%v, f1=%v@%p", t, f1, f1)
 		}
 		n.Selection = f1
 		n.SetType(f1.Type)
@@ -920,7 +916,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 		rcvr := f2.Type.Recv().Type
 		if !types.Identical(rcvr, tt) {
 			if rcvr.IsPtr() && types.Identical(rcvr.Elem(), tt) {
-				checklvalue(n.X, "call pointer method on")
+				checklvalue(targetForFunc(curfunc), n.X, "call pointer method on")
 				addr := NodAddr(curfunc, n.X)
 				addr.SetImplicit(true)
 				n.X = typecheck(curfunc, addr, ctxType|ctxExpr)
@@ -929,7 +925,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 				star.SetImplicit(true)
 				n.X = typecheck(curfunc, star, ctxType|ctxExpr)
 			} else if tt.IsPtr() && tt.Elem().IsPtr() && types.Identical(derefall(tt), derefall(rcvr)) {
-				base.Errorf("calling method %v with receiver %L requires explicit dereference", n.Sel, n.X)
+				errorf(targetForFunc(curfunc), "calling method %v with receiver %L requires explicit dereference", n.Sel, n.X)
 				for tt.IsPtr() {
 					// Stop one level early for method with pointer receiver.
 					if rcvr.IsPtr() && !tt.Elem().IsPtr() {
@@ -941,7 +937,7 @@ func Lookdot(curfunc *ir.Func, n *ir.SelectorExpr, t *types.Type, dostrcmp int) 
 					tt = tt.Elem()
 				}
 			} else {
-				base.Fatalf("method mismatch: %v for %v", rcvr, tt)
+				fatalf(targetForFunc(curfunc), "method mismatch: %v for %v", rcvr, tt)
 			}
 		}
 
@@ -1087,27 +1083,27 @@ func typecheckaste(curfunc *ir.Func, op ir.Op, call ir.Node, isddd bool, params 
 invalidddd:
 	if isddd {
 		if call != nil {
-			base.Errorf("invalid use of ... in call to %v", call)
+			errorf(targetForFunc(curfunc), "invalid use of ... in call to %v", call)
 		} else {
-			base.Errorf("invalid use of ... in %v", op)
+			errorf(targetForFunc(curfunc), "invalid use of ... in %v", op)
 		}
 	}
 	return
 
 notenough:
 	if n == nil || n.Type() != nil {
-		base.Fatalf("not enough arguments to %v", op)
+		fatalf(targetForFunc(curfunc), "not enough arguments to %v", op)
 	}
 	return
 
 toomany:
-	base.Fatalf("too many arguments to %v", op)
+	fatalf(targetForFunc(curfunc), "too many arguments to %v", op)
 }
 
 // type check composite.
-func fielddup(name string, hash map[string]bool) {
+func fielddup(target *ir.Package, name string, hash map[string]bool) {
 	if hash[name] {
-		base.Errorf("duplicate field name in struct literal: %s", name)
+		errorf(target, "duplicate field name in struct literal: %s", name)
 		return
 	}
 	hash[name] = true
@@ -1149,14 +1145,14 @@ func typecheckarraylit(curfunc *ir.Func, elemType *types.Type, bound int64, elts
 		if key >= 0 {
 			if indices != nil {
 				if indices[key] {
-					base.Errorf("duplicate index in %s: %d", ctx, key)
+					errorf(targetForFunc(curfunc), "duplicate index in %s: %d", ctx, key)
 				} else {
 					indices[key] = true
 				}
 			}
 
 			if bound >= 0 && key >= bound {
-				base.Errorf("array index %d out of bounds [0:%d]", key, bound)
+				errorf(targetForFunc(curfunc), "array index %d out of bounds [0:%d]", key, bound)
 				bound = -1
 			}
 		}
@@ -1180,17 +1176,20 @@ func nonexported(sym *types.Sym) bool {
 	return sym != nil && !types.IsExported(sym.Name)
 }
 
-func checklvalue(n ir.Node, verb string) {
+func checklvalue(target *ir.Package, n ir.Node, verb string) {
 	if !ir.IsAddressable(n) {
-		base.Errorf("cannot %s %v", verb, n)
+		errorf(target, "cannot %s %v", verb, n)
 	}
 }
 
-func checkassign(n ir.Node) {
+func checkassign(target *ir.Package, n ir.Node) {
+	if target == nil {
+		target = ir.TargetOf(n)
+	}
 	// have already complained about n being invalid
 	if n.Type() == nil {
-		if base.Errors() == 0 {
-			base.Fatalf("expected an error about %v", n)
+		if errorsFor(target) == 0 {
+			fatalf(target, "expected an error about %v", n)
 		}
 		return
 	}
@@ -1208,24 +1207,24 @@ func checkassign(n ir.Node) {
 
 	switch {
 	case n.Op() == ir.ODOT && n.(*ir.SelectorExpr).X.Op() == ir.OINDEXMAP:
-		base.Errorf("cannot assign to struct field %v in map", n)
+		errorf(target, "cannot assign to struct field %v in map", n)
 	case (n.Op() == ir.OINDEX && n.(*ir.IndexExpr).X.Type().IsString()) || n.Op() == ir.OSLICESTR:
-		base.Errorf("cannot assign to %v (strings are immutable)", n)
+		errorf(target, "cannot assign to %v (strings are immutable)", n)
 	case n.Op() == ir.OLITERAL && n.Sym() != nil && ir.IsConstNode(n):
-		base.Errorf("cannot assign to %v (declared const)", n)
+		errorf(target, "cannot assign to %v (declared const)", n)
 	default:
-		base.Errorf("cannot assign to %v", n)
+		errorf(target, "cannot assign to %v", n)
 	}
 }
 
-func checkassignto(src *types.Type, dst ir.Node) {
+func checkassignto(target *ir.Package, src *types.Type, dst ir.Node) {
 	// TODO(mdempsky): Handle all untyped types correctly.
 	if src == types.UntypedBool && dst.Type().IsBoolean() {
 		return
 	}
 
 	if op, why := assignOp(src, dst.Type()); op == ir.OXXX {
-		base.Errorf("cannot assign %v to %L in multiple assignment%s", src, dst, why)
+		errorf(target, "cannot assign %v to %L in multiple assignment%s", src, dst, why)
 		return
 	}
 }
@@ -1235,7 +1234,7 @@ func checkassignto(src *types.Type, dst ir.Node) {
 //	n.Left = stringtoruneslit(n.Left)
 func stringtoruneslit(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 	if n.X.Op() != ir.OLITERAL || n.X.Val().Kind() != constant.String {
-		base.Fatalf("stringtoarraylit %v", n)
+		fatalf(targetForFunc(curfunc), "stringtoarraylit %v", n)
 	}
 
 	var l []ir.Node
@@ -1252,7 +1251,7 @@ func stringtoruneslit(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 func checkmake(curfunc *ir.Func, t *types.Type, arg string, np *ir.Node) bool {
 	n := *np
 	if !n.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
-		base.Errorf("non-integer %s argument in make(%v) - %v", arg, t, n.Type())
+		errorf(targetForFunc(curfunc), "non-integer %s argument in make(%v) - %v", arg, t, n.Type())
 		return false
 	}
 
@@ -1271,7 +1270,7 @@ func checkmake(curfunc *ir.Func, t *types.Type, arg string, np *ir.Node) bool {
 func checkunsafesliceorstring(curfunc *ir.Func, op ir.Op, np *ir.Node) bool {
 	n := *np
 	if !n.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
-		base.Errorf("non-integer len argument in %v - %v", op, n.Type())
+		errorf(targetForFunc(curfunc), "non-integer len argument in %v - %v", op, n.Type())
 		return false
 	}
 

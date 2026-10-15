@@ -32,9 +32,9 @@ package ld
 
 import (
 	"bufio"
-	"cmd/publicinternal/objabi"
 	"cmd/link/publicinternal/loader"
 	"cmd/link/publicinternal/sym"
+	"cmd/publicinternal/objabi"
 	"debug/elf"
 	"fmt"
 )
@@ -87,7 +87,6 @@ type Link struct {
 	Bso       *bufio.Writer
 
 	Loaded bool // set after all inputs have been loaded as symbols
-	JIT    bool // retain every symbol from every linked Go package
 
 	compressDWARF bool
 

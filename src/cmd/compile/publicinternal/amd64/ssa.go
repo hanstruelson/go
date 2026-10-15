@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"math"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -1723,11 +1721,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Reg = x86.REG_AX
 		p.To.Type = obj.TYPE_MEM
 		p.To.Reg = v.Args[0].Reg()
-		if logopt.Enabled() {
-			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+		if v.Block.Func.LogOptContext().Enabled() {
+			v.Block.Func.LogOptContext().LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
 		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
-			base.WarnfAt(v.Pos, "generated nil check")
+			v.Block.Func.Config.Target.Diagnostics.WarnfAt(v.Pos, "generated nil check")
 		}
 	case ssaop.OpAMD64MOVBatomicload, ssaop.OpAMD64MOVLatomicload, ssaop.OpAMD64MOVQatomicload:
 		p := s.Prog(v.Op.Asm())
@@ -2750,7 +2748,7 @@ func move16(s *ssagen.State, src, dst, tmp int16, off int64, avx bool) {
 func simdReg(v *ssa.Value) int16 {
 	t := v.Type
 	if !t.IsSIMD() {
-		base.Fatalf("simdReg: not a simd type; v=%s, b=b%d, f=%s", v.LongString(), v.Block.ID, v.Block.Func.Name)
+		v.Block.Func.Config.Target.Diagnostics.Fatalf("simdReg: not a simd type; v=%s, b=b%d, f=%s", v.LongString(), v.Block.ID, v.Block.Func.Name)
 	}
 	return simdRegBySize(v.Reg(), t.Size())
 }
@@ -2771,7 +2769,7 @@ func simdRegBySize(reg int16, size int64) int16 {
 func maskReg(v *ssa.Value) int16 {
 	t := v.Type
 	if !t.IsSIMD() {
-		base.Fatalf("maskReg: not a simd type; v=%s, b=b%d, f=%s", v.LongString(), v.Block.ID, v.Block.Func.Name)
+		v.Block.Func.Config.Target.Diagnostics.Fatalf("maskReg: not a simd type; v=%s, b=b%d, f=%s", v.LongString(), v.Block.ID, v.Block.Func.Name)
 	}
 	switch t.Size() {
 	case 8:

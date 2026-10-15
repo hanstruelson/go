@@ -5,9 +5,7 @@
 package wasm
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
@@ -150,7 +148,7 @@ func zeroRange(pp *objw.Progs, p *obj.Prog, off, cnt int64, state *uint32) *obj.
 		return p
 	}
 	if cnt%8 != 0 {
-		base.Fatalf("zerorange count not a multiple of widthptr %d", cnt)
+		pp.CurFunc.Target.Diagnostics.Fatalf("zerorange count not a multiple of widthptr %d", cnt)
 	}
 
 	for i := int64(0); i < cnt; i += 8 {
@@ -206,7 +204,7 @@ func ssaGenBlock(s *ssagen.State, b, next *ssa.Block) {
 	case block.BlockExit, block.BlockRetJmp:
 
 	default:
-		base.FatalfAt(b.Pos, "unexpected block b%d, kind=%v", b.ID, b.Kind)
+		s.Target().Diagnostics.FatalfAt(b.Pos, "unexpected block b%d, kind=%v", b.ID, b.Kind)
 	}
 
 	// Entry point for the next block. Used by the JMP in goToBlock.
@@ -270,11 +268,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p := s.Prog(wasm.ACALLNORESUME)
 		p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: s.Target().Symbols.SigPanic}
 		s.Prog(wasm.AEnd)
-		if logopt.Enabled() {
-			logopt.LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
+		if v.Block.Func.LogOptContext().Enabled() {
+			v.Block.Func.LogOptContext().LogOpt(v.Pos, "nilcheck", "genssa", v.Block.Func.Name)
 		}
 		if v.Block.Func.Config.Target.Debug.Nil != 0 && v.Pos.Line() > 1 { // v.Pos.Line()==1 in generated wrappers
-			base.WarnfAt(v.Pos, "generated nil check")
+			v.Block.Func.Config.Target.Diagnostics.WarnfAt(v.Pos, "generated nil check")
 		}
 
 	case ssaop.OpWasmLoweredWB:

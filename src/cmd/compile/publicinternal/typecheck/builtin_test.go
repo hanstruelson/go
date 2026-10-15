@@ -6,8 +6,8 @@ package typecheck
 
 import (
 	"bytes"
-	"publicinternal/testenv"
 	"os"
+	"publicinternal/testenv"
 	"testing"
 )
 

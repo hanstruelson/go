@@ -5,11 +5,11 @@
 package ir
 
 import (
+	"fmt"
 	"go/constant"
 	"math"
 	"math/big"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 )
@@ -54,7 +54,7 @@ func NewZero(pos src.XPos, typ *types.Type) Node {
 		return NewCompLitExpr(pos, OCOMPLIT, typ, nil)
 	}
 
-	base.FatalfAt(pos, "unexpected type: %v", typ)
+	fatalfType(typ, pos, "unexpected type: %v", typ)
 	panic("unreachable")
 }
 
@@ -75,7 +75,7 @@ func NewOne(pos src.XPos, typ *types.Type) Node {
 	case typ.IsComplex():
 		val = complexOne
 	default:
-		base.FatalfAt(pos, "%v cannot represent 1", typ)
+		fatalfType(typ, pos, "%v cannot represent 1", typ)
 	}
 
 	return NewBasicLit(pos, typ, val)
@@ -106,7 +106,7 @@ func BigFloat(v constant.Value) *big.Float {
 	case *big.Rat:
 		f.SetRat(u)
 	default:
-		base.Fatalf("unexpected: %v", u)
+		panic(fmt.Sprintf("unexpected constant value %v", u))
 	}
 	return f
 }
@@ -139,7 +139,7 @@ func ConstOverflow(v constant.Value, t *types.Type) bool {
 		ft := types.FloatForComplex(t)
 		return ConstOverflow(constant.Real(v), ft) || ConstOverflow(constant.Imag(v), ft)
 	}
-	base.Fatalf("ConstOverflow: %v, %v", v, t)
+	fatalfType(t, t.Pos(), "ConstOverflow: %v, %v", v, t)
 	panic("unreachable")
 }
 

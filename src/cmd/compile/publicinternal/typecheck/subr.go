@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -87,7 +86,7 @@ func AddImplicitDots(curfunc *ir.Func, n *ir.SelectorExpr) *ir.SelectorExpr {
 			n.X = dot
 		}
 	case ambig:
-		base.Errorf("ambiguous selector %v", n)
+		errorf(targetForFunc(curfunc), "ambiguous selector %v", n)
 		n.X = nil
 	}
 
@@ -226,15 +225,15 @@ func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
 	}
 
 	if t.Kind() == types.TBLANK && n.Type().Kind() == types.TNIL {
-		base.Errorf("use of untyped nil")
+		errorf(ir.TargetOf(n), "use of untyped nil")
 	}
 
 	n = convlit1(nil, n, t, false, context)
 	if n.Type() == nil {
-		base.Fatalf("cannot assign %v to %v", n, t)
+		fatalf(ir.TargetOf(n), "cannot assign %v to %v", n, t)
 	}
 	if n.Type().IsUntyped() {
-		base.Fatalf("%L has untyped type", n)
+		fatalf(ir.TargetOf(n), "%L has untyped type", n)
 	}
 	if t.Kind() == types.TBLANK {
 		return n
@@ -245,7 +244,7 @@ func assignconvfn(n ir.Node, t *types.Type, context func() string) ir.Node {
 
 	op, why := assignOp(n.Type(), t)
 	if op == ir.OXXX {
-		base.Errorf("cannot use %L as type %v in %s%s", n, t, context(), why)
+		errorf(ir.TargetOf(n), "cannot use %L as type %v in %s%s", n, t, context(), why)
 		op = ir.OCONV
 	}
 
@@ -713,10 +712,6 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 		// if pointer receiver in method,
 		// the method does not exist for value types.
 		if !types.IsMethodApplicable(t0, tm) {
-			if false {
-				base.Errorf("interface pointer mismatch")
-			}
-
 			*m = im
 			*samename = nil
 			*ptr = 1

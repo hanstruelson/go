@@ -6,13 +6,9 @@ package gc
 
 import (
 	"cmd/compile/publicinternal/base"
-	"cmd/compile/publicinternal/logopt"
+	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/noder"
-	"cmd/compile/publicinternal/ssacompile"
 	"cmd/compile/publicinternal/ssagen"
-	"cmd/compile/publicinternal/typecheck"
-	"cmd/publicinternal/dwarf"
-	"cmd/publicinternal/obj"
 	"errors"
 	"flag"
 	"fmt"
@@ -110,17 +106,6 @@ func Compile(req Request) (result Result, err error) {
 		flag.Usage = oldUsage
 		log.SetOutput(oldLogWriter)
 	}()
-	oldDwarfLogging := dwarf.LoggingEnabled()
-	defer dwarf.EnableLogging(oldDwarfLogging)
-	restoreFIPSDebugHash := obj.SaveFIPSDebugHash()
-	defer restoreFIPSDebugHash()
-	oldTraceIndent := typecheck.SwapTraceIndent(nil)
-	defer typecheck.SwapTraceIndent(oldTraceIndent)
-	logoptSession := logopt.NewSession()
-	defer logoptSession.Close()
-	ssaSession := ssacompile.NewSession()
-	defer ssaSession.Close()
-
 	os.Stdout, os.Stderr = capture, capture
 	log.SetOutput(capture)
 	flag.CommandLine = flag.NewFlagSet("compile", flag.ContinueOnError)
@@ -128,10 +113,11 @@ func Compile(req Request) (result Result, err error) {
 	os.Args = makeCompileArgs(req, fileNames, outputPath)
 
 	session := base.NewSession()
+	var target *ir.Package
 	var panicValue any
 	func() {
 		defer func() { panicValue = recover() }()
-		mainWithSources(req.ArchInit, sourceFiles)
+		mainWithSources(req.ArchInit, sourceFiles, true, func(t *ir.Package) { target = t })
 	}()
 	func() {
 		defer func() {
@@ -143,6 +129,10 @@ func Compile(req Request) (result Result, err error) {
 	}()
 	result.Errors = session.Errors
 	result.SyntaxErrors = session.SyntaxErrors
+	if target != nil && target.Diagnostics != nil {
+		result.Errors += target.Diagnostics.Errors()
+		result.SyntaxErrors += target.Diagnostics.SyntaxErrors()
+	}
 
 	if err := capture.Sync(); err != nil {
 		return result, err

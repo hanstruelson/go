@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/typecheck"
@@ -68,7 +67,7 @@ func genhashSig(target *ir.Package, sig string) *obj.LSym {
 			// Just M%d. We can make a memhash_varlen closure.
 			// The size of the memory region to hash is encoded in the closure.
 			if target.MemhashVarlen == nil {
-				target.MemhashVarlen = typecheck.LookupRuntimeFunc("memhash_varlen")
+				target.MemhashVarlen = typecheck.LookupRuntimeFuncFor(target, "memhash_varlen")
 			}
 			ot := 0
 			ot = objw.SymPtr(target.Ctxt, closure, ot, target.MemhashVarlen, 0)
@@ -311,7 +310,7 @@ func geneqSig(target *ir.Package, sig string) *obj.LSym {
 			// Just M%d. We can make a memequal_varlen closure.
 			// The size of the memory region to compare is encoded in the closure.
 			if target.MemequalVarlen == nil {
-				target.MemequalVarlen = typecheck.LookupRuntimeFunc("memequal_varlen")
+				target.MemequalVarlen = typecheck.LookupRuntimeFuncFor(target, "memequal_varlen")
 			}
 			ot := 0
 			ot = objw.SymPtr(target.Ctxt, closure, ot, target.MemequalVarlen, 0)
@@ -607,7 +606,7 @@ func EqFor(target *ir.Package, t *types.Type) (ir.Node, bool) {
 		fn := eqFunc(target, eqSignature(target, t))
 		return fn.Nname, false
 	}
-	base.Fatalf("EqFor %v", t)
+	target.Diagnostics.Fatalf("EqFor %v", t)
 	return nil, false
 }
 
@@ -848,7 +847,7 @@ func (e *eqSigBuilder) build(t *types.Type, top bool) {
 			e.r.WriteByte(sigArrayEnd)
 		}
 	default:
-		base.Fatalf("eqSigBuilder %v", t)
+		panic(fmt.Sprintf("eqSigBuilder %v", t))
 	}
 }
 
@@ -860,7 +859,7 @@ func parseNum(s string) (int64, string) {
 	}
 	x, err := strconv.ParseInt(s[:n], 10, 64)
 	if err != nil {
-		base.Fatalf("bad integer: %s", s[:n])
+		panic(fmt.Sprintf("bad integer: %s", s[:n]))
 	}
 	return x, s[n:]
 }
@@ -876,7 +875,7 @@ func parseArray(sig string) (int64, string, string) {
 	depth := 1
 	for {
 		if i == len(sig) {
-			base.Fatalf("mismatched brackets in %s", sig)
+			panic(fmt.Sprintf("mismatched brackets in %s", sig))
 		}
 		switch sig[i] {
 		case sigArrayStart:
@@ -900,7 +899,7 @@ func parseSubroutine(sig string) (string, string) {
 	depth := 1
 	for {
 		if i == len(sig) {
-			base.Fatalf("mismatched brackets in %s", sig)
+			panic(fmt.Sprintf("mismatched brackets in %s", sig))
 		}
 		switch sig[i] {
 		case sigSubroutineStart:

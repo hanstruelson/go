@@ -7,7 +7,6 @@ package typecheck
 import (
 	"fmt"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
@@ -29,13 +28,13 @@ func DeclFunc(target *ir.Package, fn *ir.Func) {
 // TODO: Consider some mechanism to more conveniently create a block scoped temporary.
 func TempAt(pos src.XPos, curfn *ir.Func, typ *types.Type) *ir.Name {
 	if curfn == nil {
-		base.FatalfAt(pos, "no curfn for TempAt")
+		panic("no curfn for TempAt")
 	}
 	if typ == nil {
-		base.FatalfAt(pos, "TempAt called with nil type")
+		fatalfAt(targetForFunc(curfn), pos, "TempAt called with nil type")
 	}
 	if typ.Kind() == types.TFUNC && typ.Recv() != nil {
-		base.FatalfAt(pos, "misuse of method type: %v", typ)
+		fatalfAt(targetForFunc(curfn), pos, "misuse of method type: %v", typ)
 	}
 	types.CalcSize(typ)
 

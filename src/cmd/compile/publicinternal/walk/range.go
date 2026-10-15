@@ -8,7 +8,6 @@ import (
 	"go/constant"
 	"unicode/utf8"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/ssagen"
@@ -39,7 +38,7 @@ func cheapComputableIndex(target *ir.Package, width int64) bool {
 // Node n may also be modified in place, and may also be
 // the returned node.
 func (w *walkState) walkRange(nrange *ir.RangeStmt) ir.Node {
-	base.Assert(!nrange.DistinctVars) // Should all be rewritten before escape analysis
+	w.curfunc.Target.Diagnostics.Assert(!nrange.DistinctVars) // Should all be rewritten before escape analysis
 	if isMapClear(w.curfunc.Target, nrange) {
 		return w.mapRangeClear(nrange)
 	}
@@ -70,14 +69,14 @@ func (w *walkState) walkRange(nrange *ir.RangeStmt) ir.Node {
 	}
 
 	if v1 == nil && v2 != nil {
-		base.Fatalf("walkRange: v2 != nil while v1 == nil")
+		w.fatalf("walkRange: v2 != nil while v1 == nil")
 	}
 
 	var body []ir.Node
 	var init []ir.Node
 	switch k := t.Kind(); {
 	default:
-		base.Fatalf("walkRange")
+		w.fatalf("walkRange")
 
 	case types.IsInt[k]:
 		if nn := w.arrayRangeClear(nrange, v1, v2, a); nn != nil {

@@ -121,10 +121,6 @@ and test commands:
 		arguments to pass on each go tool asm invocation.
 	-buildmode mode
 		build mode to use. See 'go help buildmode' for more.
-	-JIT
-		include all buildable standard-library and Go-toolchain library packages,
-		retain all linked symbols, and append GOROOT, the Go tools, and compiled
-		package archives to the executable. Requires a native gc executable build.
 	-buildvcs
 		Whether to stamp binaries with version control information
 		("true", "false", or "auto"). By default ("auto"), version control
@@ -354,9 +350,6 @@ func AddBuildFlags(cmd *base.Command, mask BuildFlagMask) {
 	}
 	cmd.Flag.Var(&load.BuildLdflags, "ldflags", "`arguments` to pass on each go tool link invocation")
 	cmd.Flag.BoolVar(&cfg.BuildLinkshared, "linkshared", false, "build code that will be linked against shared libraries previously created with -buildmode=shared")
-	if cmd.Name() == "build" || cmd.Name() == "install" || cmd.Name() == "run" || cmd.Name() == "test" {
-		cmd.Flag.BoolVar(&cfg.BuildJIT, "JIT", false, "include the Go toolchain and all standard libraries in the executable (native gc builds only)")
-	}
 	cmd.Flag.BoolVar(&cfg.BuildMSan, "msan", false, "enable interoperation with memory sanitizer")
 	cmd.Flag.StringVar(&cfg.BuildPGO, "pgo", "auto", "specify the `file` path of a profile for profile-guided optimization (PGO); special name \"auto\" selects default.pgo, \"off\" turns off PGO")
 	cmd.Flag.StringVar(&cfg.BuildPkgdir, "pkgdir", "", "install and load all packages from `dir` instead of the usual locations")
@@ -482,7 +475,6 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 
 	pkgs := load.PackagesAndErrors(moduleLoader, ctx, load.PackageOpts{AutoVCS: true}, args)
 	load.CheckPackageErrors(pkgs)
-	requireJITMain(pkgs)
 
 	explicitO := len(cfg.BuildO) > 0
 
@@ -734,25 +726,12 @@ func runInstall(ctx context.Context, cmd *base.Command, args []string) {
 		}
 	}
 	load.CheckPackageErrors(pkgs)
-	requireJITMain(pkgs)
 
 	if cfg.BuildCover {
 		load.PrepareForCoverageBuild(moduleLoader, pkgs)
 	}
 
 	InstallPackages(moduleLoader, ctx, args, pkgs)
-}
-
-func requireJITMain(pkgs []*load.Package) {
-	if !cfg.BuildJIT {
-		return
-	}
-	for _, p := range pkgs {
-		if p.Name == "main" {
-			return
-		}
-	}
-	base.Fatalf("go: -JIT requires at least one main package")
 }
 
 // omitTestOnly returns pkgs with test-only packages removed.

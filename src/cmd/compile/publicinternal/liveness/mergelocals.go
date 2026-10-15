@@ -5,7 +5,6 @@
 package liveness
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/bitvec"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
@@ -115,7 +114,7 @@ func MergeLocals(fn *ir.Func, f *ssa.Func) *MergeLocalsState {
 	// Perform merging within each region of the candidates list.
 	rv := cs.performMerging()
 	if err := rv.check(); err != nil {
-		base.FatalfAt(fn.Pos(), "invalid mergelocals state: %v", err)
+		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "invalid mergelocals state: %v", err)
 	}
 	return rv
 }
@@ -501,7 +500,7 @@ func (cs *cstate) populateIndirectUseTable(cands []*ir.Name) ([]*ir.Name, []cand
 						// we're taking the address of candidate var n
 						if _, ok := pendingUses[v.ID]; ok {
 							// should never happen
-							base.FatalfAt(v.Pos, "internal error: apparent multiple defs for SSA value %d", v.ID)
+							cs.fn.Target.Diagnostics.FatalfAt(v.Pos, "internal error: apparent multiple defs for SSA value %d", v.ID)
 						}
 						// Stash an entry in pendingUses recording
 						// that we took the address of "n" via this
@@ -1013,7 +1012,7 @@ func (cs *cstate) computeIntervals() {
 		ivs[i], err = ibuilders[i].Finish()
 		if err != nil {
 			cs.dumpFunc()
-			base.FatalfAt(cs.cands[i].Pos(), "interval construct error for var %q in func %q (%d instrs): %v", cs.cands[i].Sym().Name, ir.FuncName(cs.fn), ninstr, err)
+			cs.fn.Target.Diagnostics.FatalfAt(cs.cands[i].Pos(), "interval construct error for var %q in func %q (%d instrs): %v", cs.cands[i].Sym().Name, ir.FuncName(cs.fn), ninstr, err)
 		}
 	}
 	cs.ivs = ivs

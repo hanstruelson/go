@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/types"
@@ -31,11 +30,11 @@ func embedFileList(target *ir.Package, v *ir.Name, kind int) []string {
 		for _, pattern := range e.Patterns {
 			files, ok := target.Flags.Cfg.Embed.Patterns[pattern]
 			if !ok {
-				base.ErrorfAt(e.Pos, 0, "invalid go:embed: build system did not map pattern: %s", pattern)
+				target.Diagnostics.ErrorfAt(e.Pos, 0, "invalid go:embed: build system did not map pattern: %s", pattern)
 			}
 			for _, file := range files {
 				if target.Flags.Cfg.Embed.Files[file] == "" {
-					base.ErrorfAt(e.Pos, 0, "invalid go:embed: build system did not map file: %s", file)
+					target.Diagnostics.ErrorfAt(e.Pos, 0, "invalid go:embed: build system did not map file: %s", file)
 					continue
 				}
 				if !have[file] {
@@ -57,7 +56,7 @@ func embedFileList(target *ir.Package, v *ir.Name, kind int) []string {
 
 	if kind == embedString || kind == embedBytes {
 		if len(list) > 1 {
-			base.ErrorfAt(v.Pos(), 0, "invalid go:embed: multiple files for type %v", v.Type())
+			target.Diagnostics.ErrorfAt(v.Pos(), 0, "invalid go:embed: multiple files for type %v", v.Type())
 			return nil
 		}
 	}
@@ -103,17 +102,17 @@ func WriteEmbed(target *ir.Package, v *ir.Name) {
 
 	commentPos := (*v.Embed)[0].Pos
 	if target.Flags.Cfg.Embed.Patterns == nil {
-		base.ErrorfAt(commentPos, 0, "invalid go:embed: build system did not supply embed configuration")
+		target.Diagnostics.ErrorfAt(commentPos, 0, "invalid go:embed: build system did not supply embed configuration")
 		return
 	}
 	kind := embedKind(v.Type())
 	if kind == embedUnknown {
-		base.ErrorfAt(v.Pos(), 0, "go:embed cannot apply to var of type %v", v.Type())
+		target.Diagnostics.ErrorfAt(v.Pos(), 0, "go:embed cannot apply to var of type %v", v.Type())
 		return
 	}
 
 	files := embedFileList(target, v, kind)
-	if base.Errors() > 0 {
+	if target.Diagnostics.Errors() > 0 {
 		return
 	}
 	switch kind {
@@ -121,7 +120,7 @@ func WriteEmbed(target *ir.Package, v *ir.Name) {
 		file := files[0]
 		fsym, size, err := fileStringSym(target, v.Sym().Pkg, v.Pos(), target.Flags.Cfg.Embed.Files[file], kind == embedString, nil)
 		if err != nil {
-			base.ErrorfAt(v.Pos(), 0, "embed %s: %v", file, err)
+			target.Diagnostics.ErrorfAt(v.Pos(), 0, "embed %s: %v", file, err)
 		}
 		sym := v.Linksym()
 		off := 0
@@ -157,7 +156,7 @@ func WriteEmbed(target *ir.Package, v *ir.Name) {
 			} else {
 				fsym, size, err := fileStringSym(target, v.Sym().Pkg, v.Pos(), target.Flags.Cfg.Embed.Files[file], true, hash)
 				if err != nil {
-					base.ErrorfAt(v.Pos(), 0, "embed %s: %v", file, err)
+					target.Diagnostics.ErrorfAt(v.Pos(), 0, "embed %s: %v", file, err)
 				}
 				off = objw.SymPtr(target.Ctxt, slicedata, off, fsym, 0) // data string
 				off = objw.Uintptr(target.Ctxt, slicedata, off, uint64(size))

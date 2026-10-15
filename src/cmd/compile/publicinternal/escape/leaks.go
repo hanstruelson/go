@@ -5,7 +5,7 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
+	"fmt"
 	"math"
 	"strings"
 )
@@ -69,7 +69,7 @@ func (l *leaks) add(i, derefs int) {
 func (l *leaks) set(i, derefs int) {
 	v := derefs + 1
 	if v < 0 {
-		base.Fatalf("invalid derefs count: %v", derefs)
+		panic(fmt.Sprintf("invalid derefs count: %v", derefs))
 	}
 	if v > math.MaxUint8 {
 		v = math.MaxUint8
@@ -92,8 +92,6 @@ func (l *leaks) Optimize() {
 	}
 }
 
-var leakTagCache = map[leaks]string{}
-
 // Encode converts l into a binary string for export data.
 func (l leaks) Encode() string {
 	if l.Heap() == 0 {
@@ -101,16 +99,11 @@ func (l leaks) Encode() string {
 		// efficiently in export data.
 		return ""
 	}
-	if s, ok := leakTagCache[l]; ok {
-		return s
-	}
-
 	n := len(l)
 	for n > 0 && l[n-1] == 0 {
 		n--
 	}
 	s := "esc:" + string(l[:n])
-	leakTagCache[l] = s
 	return s
 }
 

@@ -7,15 +7,14 @@ package ssa
 import (
 	"encoding/binary"
 	"fmt"
-	"publicinternal/buildcfg"
 	"io"
 	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
@@ -86,19 +85,19 @@ func AuxIntToArm64ConditionalParams(i int64) Arm64ConditionalParams {
 	return params
 }
 
-func LogLargeCopy(funcName string, pos src.XPos, s int64) {
+func LogLargeCopy(logctx *logopt.Context, funcName string, pos src.XPos, s int64) {
 	if s < 128 {
 		return
 	}
-	if logopt.Enabled() {
-		logopt.LogOpt(pos, "copy", "lower", funcName, fmt.Sprintf("%d bytes", s))
+	if logctx.Enabled() {
+		logctx.LogOpt(pos, "copy", "lower", funcName, fmt.Sprintf("%d bytes", s))
 	}
 }
 
 // for now only used to mark moves that need to avoid clobbering flags
 type auxMark bool
 
-var AuxMark auxMark
+const AuxMark auxMark = false
 
 // PanicBoundsC contains a constant for a bounds failure.
 type PanicBoundsC struct {
@@ -1135,8 +1134,8 @@ func LogLargeCopyValue(v *Value, s int64) bool {
 	if s < 128 {
 		return true
 	}
-	if logopt.Enabled() {
-		logopt.LogOpt(v.Pos, "copy", "lower", v.Block.Func.Name, fmt.Sprintf("%d bytes", s))
+	if logctx := v.Block.Func.LogOptContext(); logctx.Enabled() {
+		logctx.LogOpt(v.Pos, "copy", "lower", v.Block.Func.Name, fmt.Sprintf("%d bytes", s))
 	}
 	return true
 }
@@ -1376,7 +1375,7 @@ func RewriteStructStore(v *Value) *Value {
 	dst := v.Args[0]
 	x := v.Args[1]
 	if x.Op != ssaop.OpStructMake {
-		base.Fatalf("invalid struct store: %v", x)
+		v.Block.Func.Fatalf("invalid struct store: %v", x)
 	}
 	mem := v.Args[2]
 

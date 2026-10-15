@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
+	"cmd/publicinternal/src"
 )
 
 // DeepCopier clones syntax nodes and maintains types2.Info mappings.
@@ -83,7 +83,7 @@ func (c *DeepCopier) OnName(id *syntax.Name) *syntax.Name {
 		newId := syntax.NewName(id.Pos(), id.Value+c.dependentSuffix)
 		// Object link will be handled manually in deepcopier Use/Def mapper
 		if c.analyzer.target.Debug.Simd > 0 {
-			base.Warn("%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
+			c.analyzer.target.Diagnostics.WarnfAt(src.NoXPos, "%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
 		}
 		return newId
 	}
@@ -136,7 +136,7 @@ func (c *DeepCopier) OnNameExpr(id *syntax.Name) syntax.Expr {
 		newId := syntax.NewName(id.Pos(), id.Value+c.dependentSuffix)
 		// Object link will be handled manually in deepcopier Use/Def mapper
 		if c.analyzer.target.Debug.Simd > 0 {
-			base.Warn("%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
+			c.analyzer.target.Diagnostics.WarnfAt(src.NoXPos, "%s: rewriting name %s to %s", id.Pos().String(), id.Value, newId.Value)
 		}
 		return newId
 	}

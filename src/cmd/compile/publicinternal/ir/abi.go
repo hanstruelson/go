@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/obj"
 )
 
@@ -19,7 +18,7 @@ import (
 // with bodies call a helper to setup up / populate the LSym.
 func InitLSym(f *Func, hasBody bool) {
 	if f.LSym != nil {
-		base.FatalfAt(f.Pos(), "InitLSym called twice on %v", f)
+		fatalfAtTarget(f.Target, f.Pos(), "InitLSym called twice on %v", f)
 	}
 
 	if nam := f.Nname; !IsBlank(nam) {

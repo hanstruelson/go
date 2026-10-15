@@ -5,6 +5,7 @@
 package types
 
 import (
+	"fmt"
 	"math"
 	"slices"
 
@@ -43,15 +44,13 @@ var (
 	StringSize int64
 )
 
-var SkipSizeForTracing bool
-
 // typePos returns the position associated with t.
 // This is where t was declared or where it appeared as a type expression.
 func typePos(t *Type) src.XPos {
 	if pos := t.Pos(); pos.IsKnown() {
 		return pos
 	}
-	base.Fatalf("bad type: %v", t)
+	fatalfType(t, t.Pos(), "bad type: %v", t)
 	panic("unreachable")
 }
 
@@ -65,7 +64,7 @@ var CalcSizeDisabled bool
 // RoundUp rounds o to a multiple of r, r is a power of 2.
 func RoundUp(o int64, r int64) int64 {
 	if r < 1 || r > 16 || r&(r-1) != 0 {
-		base.Fatalf("Round %d", r)
+		panic(fmt.Sprintf("Round %d", r))
 	}
 	return (o + r - 1) &^ (r - 1)
 }
@@ -86,7 +85,7 @@ func expandiface(t *Type) {
 		case !explicit && Identical(m.Type, prev.Type):
 			return
 		default:
-			base.ErrorfAt(m.Pos, errors.DuplicateDecl, "duplicate method %s", m.Sym.Name)
+			errorfContext(contextForType(t), m.Pos, errors.DuplicateDecl, "duplicate method %s", m.Sym.Name)
 		}
 		methods = append(methods, m)
 	}
@@ -149,7 +148,7 @@ func expandiface(t *Type) {
 	slices.SortFunc(methods, CompareFields)
 
 	if int64(len(methods)) >= maxWidth/int64(ptrSize) {
-		base.ErrorfAt(typePos(t), 0, "interface too large")
+		errorfContext(context, typePos(t), 0, "interface too large")
 	}
 	for i, m := range methods {
 		m.Offset = int64(i) * int64(ptrSize)
@@ -203,7 +202,7 @@ func calcStructOffset(t *Type, fields []*Field, offset int64) int64 {
 			if !pos.IsKnown() {
 				pos = f.Pos
 			}
-			base.ErrorfAt(pos, 0, "type %L too large", t)
+			errorfContext(contextForType(t), pos, 0, "type %L too large", t)
 			offset = 8 // small but nonzero
 		}
 	}
@@ -234,7 +233,7 @@ func CalcSize(t *Type) {
 	sliceSize := context.SliceSize
 	// Calling CalcSize when typecheck tracing enabled is not safe.
 	// See issue #33658.
-	if base.EnableTrace && (context.SkipSizeForTrace || context == defaultContext && SkipSizeForTracing) {
+	if base.EnableTrace && context.SkipSizeForTrace {
 		return
 	}
 	if ptrSize == 0 {
@@ -245,7 +244,7 @@ func CalcSize(t *Type) {
 	if t.width == -2 {
 		t.width = 0
 		t.align = 1
-		base.Fatalf("invalid recursive type %v", t)
+		fatalfContext(context, t.Pos(), "invalid recursive type %v", t)
 		return
 	}
 
@@ -254,7 +253,7 @@ func CalcSize(t *Type) {
 	}
 
 	if calcSizeDisabledFor(context) {
-		base.Fatalf("width not calculated: %v", t)
+		fatalfContext(context, t.Pos(), "width not calculated: %v", t)
 	}
 
 	// defer CheckSize calls until after we're done
@@ -280,7 +279,7 @@ func CalcSize(t *Type) {
 	var w int64
 	switch et {
 	default:
-		base.Fatalf("CalcSize: unknown type: %v", t)
+		fatalfContext(context, t.Pos(), "CalcSize: unknown type: %v", t)
 
 	// compiler-specific stuff
 	case TINT8, TUINT8, TBOOL:
@@ -368,7 +367,7 @@ func CalcSize(t *Type) {
 		// chanargs is handled.
 		CalcSize(t1.Elem())
 		if t1.Elem().width >= 1<<16 {
-			base.ErrorfAt(t1.Elem().Pos(), 0, "channel element type too large (>64kB)")
+			errorfContext(contextForType(t1.Elem()), t1.Elem().Pos(), 0, "channel element type too large (>64kB)")
 		}
 		w = 1 // anything will do
 
@@ -378,23 +377,23 @@ func CalcSize(t *Type) {
 		CheckSize(t.Elem())
 		CheckSize(t.Key())
 		if t.Elem().width >= 1<<31 {
-			base.ErrorfAt(t.Elem().Pos(), 0, "map element type too large")
+			errorfContext(contextForType(t.Elem()), t.Elem().Pos(), 0, "map element type too large")
 		}
 		if t.Key().width >= 1<<31 {
-			base.ErrorfAt(t.Key().Pos(), 0, "map key type too large")
+			errorfContext(contextForType(t.Key()), t.Key().Pos(), 0, "map key type too large")
 		}
 		t.setAlg(ANOEQ)
 		t.ptrBytes = int64(ptrSize)
 
 	case TFORW: // should have been filled in
-		base.Fatalf("invalid recursive type %v", t)
+		fatalfContext(context, t.Pos(), "invalid recursive type %v", t)
 
 	case TANY: // not a real type; should be replaced before use.
-		base.Fatalf("CalcSize any")
+		fatalfContext(context, t.Pos(), "CalcSize any")
 
 	case TSTRING:
 		if stringSize == 0 {
-			base.Fatalf("early CalcSize string")
+			fatalfContext(context, t.Pos(), "early CalcSize string")
 		}
 		w = stringSize
 		t.align = uint8(ptrSize)
@@ -424,7 +423,7 @@ func CalcSize(t *Type) {
 
 	case TSTRUCT:
 		if t.IsFuncArgStruct() {
-			base.Fatalf("CalcSize fn struct %v", t)
+			fatalfContext(context, t.Pos(), "CalcSize fn struct %v", t)
 		}
 		CalcStructSize(t)
 		w = t.width
@@ -454,13 +453,13 @@ func CalcSize(t *Type) {
 	}
 
 	if ptrSize == 4 && w != int64(int32(w)) {
-		base.ErrorfAt(t.Pos(), 0, "type %v too large", t)
+		errorfContext(context, t.Pos(), 0, "type %v too large", t)
 	}
 
 	t.width = w
 	if t.align == 0 {
 		if w == 0 || w > 8 || w&(w-1) != 0 {
-			base.Fatalf("invalid alignment for %v", t)
+			fatalfContext(context, t.Pos(), "invalid alignment for %v", t)
 		}
 		t.align = uint8(w)
 	}
@@ -625,7 +624,7 @@ func CalcArraySize(t *Type) {
 	if elem.width != 0 {
 		cap := (uint64(maxWidth) - 1) / uint64(elem.width)
 		if uint64(n) > cap {
-			base.ErrorfAt(t.Pos(), 0, "type %L larger than address space", t)
+			errorfContext(contextForType(t), t.Pos(), 0, "type %L larger than address space", t)
 		}
 	}
 
@@ -699,7 +698,7 @@ func CheckSize(t *Type) {
 	// function arg structs should not be checked
 	// outside of the enclosing function.
 	if t.IsFuncArgStruct() {
-		base.Fatalf("CheckSize %v", t)
+		fatalfType(t, t.Pos(), "CheckSize %v", t)
 	}
 
 	context := contextForType(t)

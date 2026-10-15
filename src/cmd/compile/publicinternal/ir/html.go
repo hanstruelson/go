@@ -6,7 +6,6 @@ package ir
 
 import (
 	"bufio"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 	"crypto/sha256"
@@ -30,6 +29,7 @@ type HTMLWriter struct {
 }
 
 type HTMLWriterBase struct {
+	target        *Package
 	w             *BufferedWriterCloser
 	canonIdMap    map[any]int
 	prevCanonId   int
@@ -72,19 +72,20 @@ func NewHTMLWriter(path string, f *Func, cfgMask string) *HTMLWriter {
 	path = strings.ReplaceAll(path, "/", string(filepath.Separator))
 	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		base.Fatalf("%v", err)
+		fatalfTarget(f.Target, "%v", err)
 	}
 	reportPath := path
 	if !filepath.IsAbs(reportPath) {
 		pwd, err := os.Getwd()
 		if err != nil {
-			base.Fatalf("%v", err)
+			fatalfTarget(f.Target, "%v", err)
 		}
 		reportPath = filepath.Join(pwd, path)
 	}
 	h := HTMLWriter{
 		Func: f,
 	}
+	h.target = f.Target
 	h.Init(out, reportPath, h.FuncHTML)
 	h.start()
 	return &h
@@ -108,7 +109,7 @@ func (h *HTMLWriterBase) CanonId(n any) int {
 
 // Fatalf reports an error and exits.
 func (w *HTMLWriterBase) Fatalf(msg string, args ...any) {
-	base.FatalfAt(src.NoXPos, msg, args...)
+	fatalfAtTarget(w.target, src.NoXPos, msg, args...)
 }
 
 const (

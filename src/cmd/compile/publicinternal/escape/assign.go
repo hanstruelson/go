@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 )
 
@@ -21,7 +20,7 @@ func (e *escape) addr(n ir.Node) hole {
 
 	switch n.Op() {
 	default:
-		base.Fatalf("unexpected addr: %v", n)
+		e.curfn.Target.Diagnostics.Fatalf("unexpected addr: %v", n)
 	case ir.ONAME:
 		n := n.(*ir.Name)
 		if n.Class == ir.PEXTERN {
@@ -94,7 +93,7 @@ func (e *escape) assignList(dsts, srcs []ir.Node, why string, where ir.Node) {
 			// Filter out some no-op assignments for escape analysis.
 			if src != nil && isSelfAssign(dst, src) {
 				if e.curfn.Target.Flags.LowerM != 0 {
-					base.WarnfAt(where.Pos(), "%v ignoring self-assignment in %v", e.curfn, where)
+					e.curfn.Target.Diagnostics.WarnfAt(where.Pos(), "%v ignoring self-assignment in %v", e.curfn, where)
 				}
 				k = e.discardHole()
 			}

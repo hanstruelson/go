@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
@@ -82,7 +81,7 @@ func (n *Name) RecordFrameOffset(offset int64) {
 // The caller is responsible for setting Curfn.
 func NewNameAt(pos src.XPos, sym *types.Sym, typ *types.Type) *Name {
 	if sym == nil {
-		base.Fatalf("NewNameAt nil")
+		panic("NewNameAt nil")
 	}
 	n := newNameAt(pos, ONAME, sym)
 	if typ != nil {
@@ -105,7 +104,7 @@ func NewBuiltin(sym *types.Sym, op Op) *Name {
 // NewLocal returns a new function-local variable with the given name and type.
 func (fn *Func) NewLocal(pos src.XPos, sym *types.Sym, typ *types.Type) *Name {
 	if fn.Dcl == nil {
-		base.FatalfAt(pos, "must call DeclParams on %v first", fn)
+		fatalfAtTarget(fn.Target, pos, "must call DeclParams on %v first", fn)
 	}
 
 	n := NewNameAt(pos, sym, typ)
@@ -119,13 +118,13 @@ func (fn *Func) NewLocal(pos src.XPos, sym *types.Sym, typ *types.Type) *Name {
 // The caller is responsible for setting Curfn.
 func NewDeclNameAt(pos src.XPos, op Op, sym *types.Sym) *Name {
 	if sym == nil {
-		base.Fatalf("NewDeclNameAt nil")
+		panic("NewDeclNameAt nil")
 	}
 	switch op {
 	case ONAME, OTYPE, OLITERAL:
 		// ok
 	default:
-		base.Fatalf("NewDeclNameAt op %v", op)
+		panic(fmt.Sprintf("NewDeclNameAt op %v", op))
 	}
 	return newNameAt(pos, op, sym)
 }
@@ -133,7 +132,7 @@ func NewDeclNameAt(pos src.XPos, op Op, sym *types.Sym) *Name {
 // NewConstAt returns a new OLITERAL Node associated with symbol s at position pos.
 func NewConstAt(pos src.XPos, sym *types.Sym, typ *types.Type, val constant.Value) *Name {
 	if sym == nil {
-		base.Fatalf("NewConstAt nil")
+		panic("NewConstAt nil")
 	}
 	n := newNameAt(pos, OLITERAL, sym)
 	n.SetType(typ)
@@ -244,13 +243,13 @@ func (n *Name) OnStack() bool {
 	}
 	// Note: fmt.go:dumpNodeHeader calls all "func() bool"-typed
 	// methods, but it can only recover from panics, not Fatalf.
-	panic(fmt.Sprintf("%v: not a variable: %v", base.FmtPos(n.Pos()), n))
+	panic(fmt.Sprintf("%v: not a variable: %v", Line(n), n))
 }
 
 // MarkReadonly indicates that n is an ONAME with readonly contents.
 func (n *Name) MarkReadonly() {
 	if n.Op() != ONAME {
-		base.Fatalf("Node.MarkReadonly %v", n.Op())
+		fatalfTarget(nodeTarget(n), "Node.MarkReadonly %v", n.Op())
 	}
 	n.setReadonly(true)
 	// Mark the linksym as readonly immediately
@@ -289,7 +288,7 @@ func (n *Name) Canonical() *Name {
 
 func (n *Name) SetByval(b bool) {
 	if n.Canonical() != n {
-		base.Fatalf("SetByval called on non-canonical variable: %v", n)
+		fatalfTarget(nodeTarget(n), "SetByval called on non-canonical variable: %v", n)
 	}
 	n.flags.set(nameByval, b)
 }
@@ -308,7 +307,7 @@ func NewClosureVar(pos src.XPos, fn *Func, n *Name) *Name {
 		// ok
 	default:
 		// Prevent mistaken capture of global variables.
-		base.Fatalf("NewClosureVar: %+v", n)
+		fatalfTarget(fn.Target, "NewClosureVar: %+v", n)
 	}
 
 	c := NewNameAt(pos, n.Sym(), n.Type())
@@ -327,7 +326,7 @@ func NewClosureVar(pos src.XPos, fn *Func, n *Name) *Name {
 // name and type.
 func NewHiddenParam(pos src.XPos, fn *Func, sym *types.Sym, typ *types.Type) *Name {
 	if fn.OClosure != nil {
-		base.FatalfAt(fn.Pos(), "cannot add hidden parameters to closures")
+		fatalfAtTarget(fn.Target, fn.Pos(), "cannot add hidden parameters to closures")
 	}
 
 	fn.SetNeedctxt(true)
@@ -364,7 +363,7 @@ func SameSource(n1, n2 Node) bool {
 // variable.
 func Uses(x Node, v *Name) bool {
 	if v == nil || v.Op() != ONAME {
-		base.Fatalf("RefersTo bad Name: %v", v)
+		fatalfTarget(nodeTarget(v), "RefersTo bad Name: %v", v)
 	}
 	return x.Op() == ONAME && x.Name() == v
 }
@@ -373,7 +372,7 @@ func Uses(x Node, v *Name) bool {
 // variable that was declared by the given statement.
 func DeclaredBy(x, stmt Node) bool {
 	if stmt == nil {
-		base.Fatalf("DeclaredBy nil")
+		panic("DeclaredBy nil")
 	}
 	return x.Op() == ONAME && SameSource(x.Name().Defn, stmt)
 }

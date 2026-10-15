@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/hash"
 )
 
@@ -458,7 +457,7 @@ func tconv2(b *bytes.Buffer, t *Type, verb rune, mode fmtMode, visited map[*Type
 			case mt.Group:
 				b.WriteString("map.group[")
 			default:
-				base.Fatalf("unknown internal map type")
+				fatalfType(t, t.Pos(), "unknown internal map type")
 			}
 			tconv2(b, m.Key(), 0, mode, visited)
 			b.WriteByte(']')
@@ -551,7 +550,7 @@ func fldconv(b *bytes.Buffer, f *Field, verb rune, mode fmtMode, visited map[*Ty
 				// and deduplicate.
 				typ := f.Type
 				if typ.IsPtr() {
-					base.Assertf(typ.Sym() == nil, "embedded pointer type has name: %L", typ)
+					assertfContext(contextForType(typ), typ.Sym() == nil, "embedded pointer type has name: %L", typ)
 					typ = typ.Elem()
 				}
 				tsym := typ.Sym()

@@ -9,11 +9,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"publicinternal/buildcfg"
-	"publicinternal/platform"
 	"io"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
+	"publicinternal/platform"
 	"runtime"
 	"slices"
 	"strings"
@@ -699,9 +699,6 @@ func (gcToolchain) ld(b *Builder, root *Action, targetPath, importcfg, mainpkg s
 	}
 	ldflags = append(ldflags, forcedLdflags...)
 	ldflags = append(ldflags, root.Package.Internal.Ldflags...)
-	if cfg.BuildJIT {
-		ldflags = append(ldflags, "-JIT")
-	}
 	ldflags, err := setextld(ldflags, compiler)
 	if err != nil {
 		return err

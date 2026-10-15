@@ -18,10 +18,12 @@ import (
 // entry points for compiler utilities that do not have an explicit target.
 // Compiler paths should use a Context and the target-aware constructors.
 type Context struct {
-	Link     *obj.Link
-	PtrSize  int
-	RegSize  int
-	MaxWidth int64
+	Link *obj.Link
+	// Diagnostics owns errors for compilations that use this type universe.
+	Diagnostics *base.Diagnostics
+	PtrSize     int
+	RegSize     int
+	MaxWidth    int64
 
 	SlicePtrOffset int64
 	SliceLenOffset int64
@@ -31,6 +33,7 @@ type Context struct {
 
 	CalcSizeDisabled bool
 	SkipSizeForTrace bool
+	TraceIndent      []byte
 
 	Types          [NTYPE]*Type
 	AnyType        *Type

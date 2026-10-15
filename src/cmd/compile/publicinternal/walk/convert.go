@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"go/constant"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/ssagen"
@@ -63,7 +62,7 @@ func (w *walkState) walkConvInterface(n *ir.ConvExpr, init *ir.Nodes) ir.Node {
 		return l
 	}
 	if fromType.IsEmptyInterface() {
-		base.Fatalf("OCONVIFACE can't operate on an empty interface")
+		w.fatalf("OCONVIFACE can't operate on an empty interface")
 	}
 
 	// Evaluate the input interface.
@@ -146,7 +145,7 @@ func (w *walkState) dataWord(conv *ir.ConvExpr, init *ir.Nodes) ir.Node {
 		if w.curfunc.Target.Debug.EscapeDebug > 0 {
 			// This output is most useful with -gcflags=-W=2 or similar because
 			// it often prints a temp variable name.
-			base.WarnfAt(n.Pos(), "convert: %s: %v", msg, n)
+			w.curfunc.Target.Diagnostics.WarnfAt(n.Pos(), "convert: %s: %v", msg, n)
 		}
 	}
 
@@ -168,7 +167,7 @@ func (w *walkState) dataWord(conv *ir.ConvExpr, init *ir.Nodes) ir.Node {
 		} else {
 			n = w.cheapExpr(n, init)
 			n = w.soleComponent(init, n)
-			base.Assert(fromType.Size() == 1)
+			w.curfunc.Target.Diagnostics.Assert(fromType.Size() == 1)
 		}
 
 		// byteindex widens n so that the multiplication doesn't overflow.
@@ -433,7 +432,7 @@ func (w *walkState) walkStringToRunes(n *ir.ConvExpr, init *ir.Nodes) ir.Node {
 // needsaddr reports whether the value should be passed (needaddr==false) or its address (needsaddr==true).
 func dataWordFuncName(target *ir.Package, from *types.Type) (fnname string, argType *types.Type, needsaddr bool) {
 	if from.IsInterface() {
-		base.Fatalf("can only handle non-interfaces")
+		target.Diagnostics.Fatalf("can only handle non-interfaces")
 	}
 	switch {
 	case from.Size() == 2 && uint8(from.Alignment()) == 2:
@@ -561,7 +560,7 @@ func (w *walkState) walkCheckPtrArithmetic(n *ir.ConvExpr, init *ir.Nodes) ir.No
 	// reflect.Value.Pointer and reflect.Value.UnsafeAddr.
 	switch n.X.Op() {
 	case ir.OCALLMETH:
-		base.FatalfAt(n.X.Pos(), "OCALLMETH missed by typecheck")
+		w.fatalfAt(n.X.Pos(), "OCALLMETH missed by typecheck")
 	case ir.OCALLFUNC, ir.OCALLINTER:
 		return n
 	}

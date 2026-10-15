@@ -5,15 +5,14 @@
 package inlheur
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmp"
 	"encoding/json"
 	"fmt"
-	"publicinternal/buildcfg"
 	"io"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"slices"
 	"strings"
 )
@@ -268,7 +267,7 @@ func emitDumpToFile(ctx *Context, dumpfile string) {
 	}
 	outf, err := os.OpenFile(dumpfile, mode, 0644)
 	if err != nil {
-		base.Fatalf("opening function props dump file %q: %v\n", dumpfile, err)
+		ctx.Target.Diagnostics.Fatalf("opening function props dump file %q: %v\n", dumpfile, err)
 	}
 	defer outf.Close()
 	dumpFilePreamble(outf)
@@ -290,7 +289,7 @@ func emitDumpToFile(ctx *Context, dumpfile string) {
 		prevline = entry.line
 		atl := atline[entry.line]
 		if err := dumpFnPreamble(outf, &entry, nil, idx, atl); err != nil {
-			base.Fatalf("function props dump: %v\n", err)
+			ctx.Target.Diagnostics.Fatalf("function props dump: %v\n", err)
 		}
 	}
 	ctx.dumpBuffer = nil

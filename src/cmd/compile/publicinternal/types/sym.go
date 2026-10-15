@@ -85,7 +85,7 @@ func (sym *Sym) Linksym() *obj.LSym {
 // of (*ir.Name).Sym().LinksymABI(abi).
 func (sym *Sym) LinksymABI(abi obj.ABI) *obj.LSym {
 	if sym == nil {
-		base.Fatalf("nil symbol")
+		panic("nil symbol")
 	}
 	if sym.Pkg != nil && sym.Pkg.Context != nil {
 		if sym.Linkname != "" {

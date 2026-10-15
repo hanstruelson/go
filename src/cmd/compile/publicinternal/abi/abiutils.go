@@ -5,7 +5,6 @@
 package abi
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -107,7 +106,7 @@ type ABIParamAssignment struct {
 // This will panic if "a" describes a register-allocated parameter.
 func (a *ABIParamAssignment) Offset() int32 {
 	if len(a.Registers) > 0 {
-		base.Fatalf("register allocated parameters have no offset")
+		panic("register allocated parameters have no offset")
 	}
 	return a.offset
 }
@@ -248,7 +247,7 @@ func appendParamOffsets(target *ir.Package, offsets []int64, at int64, t *types.
 // spill area to help reduce stack sizes.)
 func (a *ABIParamAssignment) FrameOffset(i *ABIParamResultInfo) int64 {
 	if a.offset == -1 {
-		base.Fatalf("function parameter has no ABI-defined frame-pointer offset")
+		a.target.Diagnostics.Fatalf("function parameter has no ABI-defined frame-pointer offset")
 	}
 	if len(a.Registers) == 0 { // passed on stack
 		return int64(a.offset) - i.config.LocalsOffset()
@@ -304,7 +303,7 @@ func (config *ABIConfig) FloatIndexFor(r RegIndex) int64 {
 func (config *ABIConfig) NumParamRegs(typ *types.Type) int {
 	intRegs, floatRegs := typ.Registers()
 	if intRegs == math.MaxUint8 && floatRegs == math.MaxUint8 {
-		base.Fatalf("cannot represent parameters of type %v in registers", typ)
+		config.target.Diagnostics.Fatalf("cannot represent parameters of type %v in registers", typ)
 	}
 	return int(intRegs) + int(floatRegs)
 }
@@ -412,7 +411,7 @@ func (config *ABIConfig) ABIAnalyze(t *types.Type, setNname bool) *ABIParamResul
 
 func (config *ABIConfig) updateOffset(result *ABIParamResultInfo, f *types.Field, a ABIParamAssignment, isResult, setNname bool) {
 	if f.Offset != types.BADWIDTH {
-		base.Fatalf("field offset for %s at %s has been set to %d", f.Sym, base.FmtPos(f.Pos), f.Offset)
+		config.target.Diagnostics.Fatalf("field offset for %s at %s has been set to %d", f.Sym, config.target.Diagnostics.FmtPos(f.Pos), f.Offset)
 	}
 
 	// Everything except return values in registers has either a frame home (if not in a register) or a frame spill location.
@@ -559,7 +558,7 @@ func (state *assignState) allocateRegs(regs []RegIndex, t *types.Type) []RegInde
 			return state.allocateRegs(regs, state.target.ABISynthIface)
 		}
 	}
-	base.Fatalf("was not expecting type %s", t)
+	state.target.Diagnostics.Fatalf("was not expecting type %s", t)
 	panic("unreachable")
 }
 

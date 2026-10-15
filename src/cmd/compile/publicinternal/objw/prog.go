@@ -31,7 +31,6 @@
 package objw
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
@@ -150,7 +149,7 @@ func (pp *Progs) Prog(as obj.As) *obj.Prog {
 	p.Link = pp.Next
 
 	if !pp.Pos.IsKnown() && pp.CurFunc.Target.Flags.K != 0 {
-		base.Warn("prog: unknown position (line 0)")
+		pp.CurFunc.Target.Diagnostics.WarnfAt(pp.Pos, "prog: unknown position (line 0)")
 	}
 
 	p.As = as
@@ -190,7 +189,7 @@ func (pp *Progs) Append(p *obj.Prog, as obj.As, ftype obj.AddrType, freg int16, 
 
 func (pp *Progs) SetText(fn *ir.Func) {
 	if pp.Text != nil {
-		base.Fatalf("Progs.SetText called twice")
+		pp.CurFunc.Target.Diagnostics.Fatalf("Progs.SetText called twice")
 	}
 	ptxt := pp.Prog(obj.ATEXT)
 	pp.Text = ptxt

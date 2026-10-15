@@ -26,7 +26,7 @@ func MakeDotArgs(curfunc *ir.Func, pos src.XPos, typ *types.Type, args []ir.Node
 
 	n := Expr(curfunc, lit)
 	if n.Type() == nil {
-		base.FatalfAt(pos, "mkdotargslice: typecheck failed")
+		fatalfAt(targetForFunc(curfunc), pos, "mkdotargslice: typecheck failed")
 	}
 	return n
 }
@@ -74,10 +74,10 @@ func FixMethodCall(call *ir.CallExpr) {
 
 func AssertFixedCall(call *ir.CallExpr) {
 	if call.Fun.Type().IsVariadic() && !call.IsDDD {
-		base.FatalfAt(call.Pos(), "missed FixVariadicCall")
+		fatalfAt(ir.TargetOf(call), call.Pos(), "missed FixVariadicCall")
 	}
 	if call.Op() == ir.OCALLMETH {
-		base.FatalfAt(call.Pos(), "missed FixMethodCall")
+		fatalfAt(ir.TargetOf(call), call.Pos(), "missed FixMethodCall")
 	}
 }
 
@@ -138,7 +138,7 @@ func tcFunc(n *ir.Func) {
 	}
 
 	if name := n.Nname; name.Typecheck() == 0 {
-		base.AssertfAt(name.Type() != nil, n.Pos(), "missing type: %v", name)
+		assertfAt(targetForFunc(n), name.Type() != nil, n.Pos(), "missing type: %v", name)
 		name.SetTypecheck(1)
 	}
 }
@@ -153,13 +153,13 @@ func tcCall(curfunc *ir.Func, n *ir.CallExpr, top int) ir.Node {
 	if l.Op() == ir.ONAME && l.(*ir.Name).BuiltinOp != 0 {
 		l := l.(*ir.Name)
 		if n.IsDDD && l.BuiltinOp != ir.OAPPEND {
-			base.Errorf("invalid use of ... with builtin %v", l)
+			errorf(targetForFunc(curfunc), "invalid use of ... with builtin %v", l)
 		}
 
 		// builtin: OLEN, OCAP, etc.
 		switch l.BuiltinOp {
 		default:
-			base.Fatalf("unknown builtin %v", l)
+			fatalf(targetForFunc(curfunc), "unknown builtin %v", l)
 
 		case ir.OAPPEND, ir.ODELETE, ir.OMAKE, ir.OMAX, ir.OMIN, ir.OPRINT, ir.OPRINTLN, ir.ORECOVER:
 			n.SetOp(l.BuiltinOp)
@@ -196,7 +196,7 @@ func tcCall(curfunc *ir.Func, n *ir.CallExpr, top int) ir.Node {
 	l = n.Fun
 	if l.Op() == ir.OTYPE {
 		if n.IsDDD {
-			base.Fatalf("invalid use of ... in type conversion to %v", l.Type())
+			fatalf(targetForFunc(curfunc), "invalid use of ... in type conversion to %v", l.Type())
 		}
 
 		// pick off before type-checking arguments
@@ -235,7 +235,7 @@ func tcCall(curfunc *ir.Func, n *ir.CallExpr, top int) ir.Node {
 		tp := t.Recv().Type
 
 		if l.X == nil || !types.Identical(l.X.Type(), tp) {
-			base.Fatalf("method receiver")
+			fatalf(targetForFunc(curfunc), "method receiver")
 		}
 
 	default:
@@ -244,10 +244,10 @@ func tcCall(curfunc *ir.Func, n *ir.CallExpr, top int) ir.Node {
 			if o := l; curfunc != nil && curfunc.Target != nil && o.Name() != nil && curfunc.Target.BuiltinPkg.Lookup(o.Sym().Name).Def != nil {
 				// be more specific when the non-function
 				// name matches a predeclared function
-				base.Errorf("cannot call non-function %L, declared at %s",
-					l, base.FmtPos(o.Name().Pos()))
+				errorf(targetForFunc(curfunc), "cannot call non-function %L, declared at %s",
+					l, fmtPosFor(targetForFunc(curfunc), o.Name().Pos()))
 			} else {
-				base.Errorf("cannot call non-function %L", l)
+				errorf(targetForFunc(curfunc), "cannot call non-function %L", l)
 			}
 			n.SetType(nil)
 			return n
@@ -279,7 +279,7 @@ func tcCall(curfunc *ir.Func, n *ir.CallExpr, top int) ir.Node {
 
 	// multiple return
 	if top&(ctxMultiOK|ctxStmt) == 0 {
-		base.Errorf("multiple-value %v() in single-value context", l)
+		errorf(targetForFunc(curfunc), "multiple-value %v() in single-value context", l)
 		return n
 	}
 
@@ -292,7 +292,7 @@ func tcAppend(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	typecheckargs(curfunc, n)
 	args := n.Args
 	if len(args) == 0 {
-		base.Errorf("missing arguments to append")
+		errorf(targetForFunc(curfunc), "missing arguments to append")
 		n.SetType(nil)
 		return n
 	}
@@ -306,25 +306,25 @@ func tcAppend(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	n.SetType(t)
 	if !t.IsSlice() {
 		if ir.IsNil(args[0]) {
-			base.Errorf("first argument to append must be typed slice; have untyped nil")
+			errorf(targetForFunc(curfunc), "first argument to append must be typed slice; have untyped nil")
 			n.SetType(nil)
 			return n
 		}
 
-		base.Errorf("first argument to append must be slice; have %L", t)
+		errorf(targetForFunc(curfunc), "first argument to append must be slice; have %L", t)
 		n.SetType(nil)
 		return n
 	}
 
 	if n.IsDDD {
 		if len(args) == 1 {
-			base.Errorf("cannot use ... on first argument to append")
+			errorf(targetForFunc(curfunc), "cannot use ... on first argument to append")
 			n.SetType(nil)
 			return n
 		}
 
 		if len(args) != 2 {
-			base.Errorf("too many arguments to append")
+			errorf(targetForFunc(curfunc), "too many arguments to append")
 			n.SetType(nil)
 			return n
 		}
@@ -362,7 +362,7 @@ func tcClear(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	switch {
 	case t.IsMap(), t.IsSlice():
 	default:
-		base.Errorf("invalid operation: %v (argument must be a map or slice)", n)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (argument must be a map or slice)", n)
 		n.SetType(nil)
 		return n
 	}
@@ -381,13 +381,13 @@ func tcClose(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 	if !t.IsChan() {
-		base.Errorf("invalid operation: %v (non-chan type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (non-chan type %v)", n, t)
 		n.SetType(nil)
 		return n
 	}
 
 	if !t.ChanDir().CanSend() {
-		base.Errorf("invalid operation: %v (cannot close receive-only channel)", n)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (cannot close receive-only channel)", n)
 		n.SetType(nil)
 		return n
 	}
@@ -411,7 +411,7 @@ func tcComplex(curfunc *ir.Func, n *ir.BinaryExpr) ir.Node {
 	n.Y = r
 
 	if !types.Identical(l.Type(), r.Type()) {
-		base.Errorf("invalid operation: %v (mismatched types %v and %v)", n, l.Type(), r.Type())
+		errorf(targetForFunc(curfunc), "invalid operation: %v (mismatched types %v and %v)", n, l.Type(), r.Type())
 		n.SetType(nil)
 		return n
 	}
@@ -419,7 +419,7 @@ func tcComplex(curfunc *ir.Func, n *ir.BinaryExpr) ir.Node {
 	var t *types.Type
 	switch l.Type().Kind() {
 	default:
-		base.Errorf("invalid operation: %v (arguments have type %v, expected floating-point)", n, l.Type())
+		errorf(targetForFunc(curfunc), "invalid operation: %v (arguments have type %v, expected floating-point)", n, l.Type())
 		n.SetType(nil)
 		return n
 
@@ -453,25 +453,25 @@ func tcCopy(curfunc *ir.Func, n *ir.BinaryExpr) ir.Node {
 		if types.Identical(n.X.Type().Elem(), curfunc.Target.ByteType) {
 			return n
 		}
-		base.Errorf("arguments to copy have different element types: %L and string", n.X.Type())
+		errorf(targetForFunc(curfunc), "arguments to copy have different element types: %L and string", n.X.Type())
 		n.SetType(nil)
 		return n
 	}
 
 	if !n.X.Type().IsSlice() || !n.Y.Type().IsSlice() {
 		if !n.X.Type().IsSlice() && !n.Y.Type().IsSlice() {
-			base.Errorf("arguments to copy must be slices; have %L, %L", n.X.Type(), n.Y.Type())
+			errorf(targetForFunc(curfunc), "arguments to copy must be slices; have %L, %L", n.X.Type(), n.Y.Type())
 		} else if !n.X.Type().IsSlice() {
-			base.Errorf("first argument to copy should be slice; have %L", n.X.Type())
+			errorf(targetForFunc(curfunc), "first argument to copy should be slice; have %L", n.X.Type())
 		} else {
-			base.Errorf("second argument to copy should be slice or string; have %L", n.Y.Type())
+			errorf(targetForFunc(curfunc), "second argument to copy should be slice or string; have %L", n.Y.Type())
 		}
 		n.SetType(nil)
 		return n
 	}
 
 	if !types.Identical(n.X.Type().Elem(), n.Y.Type().Elem()) {
-		base.Errorf("arguments to copy have different element types: %L and %L", n.X.Type(), n.Y.Type())
+		errorf(targetForFunc(curfunc), "arguments to copy have different element types: %L and %L", n.X.Type(), n.Y.Type())
 		n.SetType(nil)
 		return n
 	}
@@ -483,19 +483,19 @@ func tcDelete(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	typecheckargs(curfunc, n)
 	args := n.Args
 	if len(args) == 0 {
-		base.Errorf("missing arguments to delete")
+		errorf(targetForFunc(curfunc), "missing arguments to delete")
 		n.SetType(nil)
 		return n
 	}
 
 	if len(args) == 1 {
-		base.Errorf("missing second (key) argument to delete")
+		errorf(targetForFunc(curfunc), "missing second (key) argument to delete")
 		n.SetType(nil)
 		return n
 	}
 
 	if len(args) != 2 {
-		base.Errorf("too many arguments to delete")
+		errorf(targetForFunc(curfunc), "too many arguments to delete")
 		n.SetType(nil)
 		return n
 	}
@@ -503,7 +503,7 @@ func tcDelete(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	l := args[0]
 	r := args[1]
 	if l.Type() != nil && !l.Type().IsMap() {
-		base.Errorf("first argument to delete must be map; have %L", l.Type())
+		errorf(targetForFunc(curfunc), "first argument to delete must be map; have %L", l.Type())
 		n.SetType(nil)
 		return n
 	}
@@ -516,7 +516,7 @@ func tcDelete(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 func tcMake(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	args := n.Args
 	if len(args) == 0 {
-		base.Errorf("missing argument to make")
+		errorf(targetForFunc(curfunc), "missing argument to make")
 		n.SetType(nil)
 		return n
 	}
@@ -534,13 +534,13 @@ func tcMake(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	var nn ir.Node
 	switch t.Kind() {
 	default:
-		base.Errorf("cannot make type %v", t)
+		errorf(targetForFunc(curfunc), "cannot make type %v", t)
 		n.SetType(nil)
 		return n
 
 	case types.TSLICE:
 		if i >= len(args) {
-			base.Errorf("missing len argument to make(%v)", t)
+			errorf(targetForFunc(curfunc), "missing len argument to make(%v)", t)
 			n.SetType(nil)
 			return n
 		}
@@ -607,7 +607,7 @@ func tcMake(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	}
 
 	if i < len(args) {
-		base.Errorf("too many arguments to make(%v)", t)
+		errorf(targetForFunc(curfunc), "too many arguments to make(%v)", t)
 		n.SetType(nil)
 		return n
 	}
@@ -625,19 +625,19 @@ func tcMakeSliceCopy(curfunc *ir.Func, n *ir.MakeExpr) ir.Node {
 	t := n.Type()
 
 	if t == nil {
-		base.Fatalf("no type specified for OMAKESLICECOPY")
+		fatalf(targetForFunc(curfunc), "no type specified for OMAKESLICECOPY")
 	}
 
 	if !t.IsSlice() {
-		base.Fatalf("invalid type %v for OMAKESLICECOPY", n.Type())
+		fatalf(targetForFunc(curfunc), "invalid type %v for OMAKESLICECOPY", n.Type())
 	}
 
 	if n.Len == nil {
-		base.Fatalf("missing len argument for OMAKESLICECOPY")
+		fatalf(targetForFunc(curfunc), "missing len argument for OMAKESLICECOPY")
 	}
 
 	if n.Cap == nil {
-		base.Fatalf("missing slice argument to copy for OMAKESLICECOPY")
+		fatalf(targetForFunc(curfunc), "missing slice argument to copy for OMAKESLICECOPY")
 	}
 
 	n.Len = Expr(curfunc, n.Len)
@@ -646,7 +646,7 @@ func tcMakeSliceCopy(curfunc *ir.Func, n *ir.MakeExpr) ir.Node {
 	n.Len = DefaultLitFor(targetForFunc(curfunc), n.Len, curfunc.Target.Type(types.TINT))
 
 	if !n.Len.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
-		base.Errorf("non-integer len argument in OMAKESLICECOPY")
+		errorf(targetForFunc(curfunc), "non-integer len argument in OMAKESLICECOPY")
 	}
 
 	return n
@@ -657,7 +657,7 @@ func tcNew(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	if n.X == nil {
 		// Fatalf because the OCALL above checked for us,
 		// so this must be an internally-generated mistake.
-		base.Fatalf("missing argument to new")
+		fatalf(targetForFunc(curfunc), "missing argument to new")
 	}
 	l := n.X
 	l = typecheck(curfunc, l, ctxType)
@@ -703,7 +703,7 @@ func tcMinMax(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	arg0 := n.Args[0]
 	for _, arg := range n.Args[1:] {
 		if !types.Identical(arg.Type(), arg0.Type()) {
-			base.FatalfAt(n.Pos(), "mismatched arguments: %L and %L", arg0, arg)
+			fatalfAt(targetForFunc(curfunc), n.Pos(), "mismatched arguments: %L and %L", arg0, arg)
 		}
 	}
 	n.SetType(arg0.Type())
@@ -729,7 +729,7 @@ func tcRealImag(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	case types.TCOMPLEX128:
 		n.SetType(curfunc.Target.Type(types.TFLOAT64))
 	default:
-		base.Errorf("invalid argument %L for %v", l, n.Op())
+		errorf(targetForFunc(curfunc), "invalid argument %L for %v", l, n.Op())
 		n.SetType(nil)
 		return n
 	}
@@ -739,7 +739,7 @@ func tcRealImag(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 // tcRecover typechecks an ORECOVER node.
 func tcRecover(curfunc *ir.Func, n *ir.CallExpr) ir.Node {
 	if len(n.Args) != 0 {
-		base.Errorf("too many arguments to recover")
+		errorf(targetForFunc(curfunc), "too many arguments to recover")
 		n.SetType(nil)
 		return n
 	}
@@ -774,13 +774,13 @@ func tcUnsafeSlice(curfunc *ir.Func, n *ir.BinaryExpr) *ir.BinaryExpr {
 	}
 	t := n.X.Type()
 	if !t.IsPtr() {
-		base.Errorf("first argument to unsafe.Slice must be pointer; have %L", t)
+		errorf(targetForFunc(curfunc), "first argument to unsafe.Slice must be pointer; have %L", t)
 	} else if t.Elem().NotInHeap() {
 		// TODO(mdempsky): This can be relaxed, but should only affect the
 		// Go runtime itself. End users should only see not-in-heap
 		// types due to incomplete C structs in cgo, and those types don't
 		// have a meaningful size anyway.
-		base.Errorf("unsafe.Slice of incomplete (or unallocatable) type not allowed")
+		errorf(targetForFunc(curfunc), "unsafe.Slice of incomplete (or unallocatable) type not allowed")
 	}
 
 	if !checkunsafesliceorstring(curfunc, n.Op(), &n.Y) {
@@ -801,7 +801,7 @@ func tcUnsafeString(curfunc *ir.Func, n *ir.BinaryExpr) *ir.BinaryExpr {
 	}
 	t := n.X.Type()
 	if !t.IsPtr() || !types.Identical(t.Elem(), curfunc.Target.Type(types.TUINT8)) {
-		base.Errorf("first argument to unsafe.String must be *byte; have %L", t)
+		errorf(targetForFunc(curfunc), "first argument to unsafe.String must be *byte; have %L", t)
 	}
 
 	if !checkunsafesliceorstring(curfunc, n.Op(), &n.Y) {

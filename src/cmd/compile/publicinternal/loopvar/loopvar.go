@@ -7,9 +7,7 @@
 package loopvar
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -32,19 +30,19 @@ type VarAndLoop struct {
 // variables, in case it causes allocation/performance problems).
 //
 // The decision to transform loops is normally encoded in the For/Range loop node
-// field DistinctVars but is also dependent on base.LoopVarHash, and some values
-// of base.Debug.LoopVar (which is set per-package).  Decisions encoded in DistinctVars
+// field DistinctVars but is also dependent on the target's LoopVarHash and
+// Debug.LoopVar fields. Decisions encoded in DistinctVars
 // are preserved across inlining, so if package a calls b.F and loops in b.F are
 // transformed, then they are always transformed, whether b.F is inlined or not.
 //
 // Per-package, the debug flag settings that affect this transformer:
 //
-// base.LoopVarHash != nil => use hash setting to govern transformation.
-// note that LoopVarHash != nil sets base.Debug.LoopVar to 1 (unless it is >= 11, for testing/debugging).
+// target.LoopVarHash != nil => use hash setting to govern transformation.
+// LoopVarHash != nil sets target.Debug.LoopVar to 1 (unless it is >= 11, for testing/debugging).
 //
-// base.Debug.LoopVar == 11 => transform ALL loops ignoring syntactic/potential escape. Do not log, can be in addition to GOEXPERIMENT.
+// target.Debug.LoopVar == 11 => transform ALL loops ignoring syntactic/potential escape. Do not log, can be in addition to GOEXPERIMENT.
 //
-// The effect of GOEXPERIMENT=loopvar is to change the default value (0) of base.Debug.LoopVar to 1 for all packages.
+// The effect of GOEXPERIMENT=loopvar is to change the default value (0) of target.Debug.LoopVar to 1 for all packages.
 func ForCapture(fn *ir.Func) []VarAndLoop {
 	// if a loop variable is transformed it is appended to this slice for later logging
 	var transformed []VarAndLoop
@@ -431,7 +429,7 @@ func ForCapture(fn *ir.Func) []VarAndLoop {
 								a.PtrInit().Prepend(d)
 								delete(dclFixups, d.X) // can't be sure of visit order, wouldn't want to visit twice.
 							default:
-								base.Fatalf("not implemented yet for node type %v", s.Op())
+								fn.Target.Diagnostics.Fatalf("not implemented yet for node type %v", s.Op())
 							}
 							continue // do not copy this node, and do not increment j
 						}
@@ -526,7 +524,8 @@ func rewriteNodes(fn *ir.Func, editNodes func(c ir.Nodes) ir.Nodes) {
 func LogTransformations(transformed []VarAndLoop) {
 	print := len(transformed) > 0 && 2 <= transformed[0].Name.Curfn.Target.Debug.LoopVar && transformed[0].Name.Curfn.Target.Debug.LoopVar != 11
 
-	if print || logopt.Enabled() { // 11 is do them all, quietly, 12 includes debugging.
+	logEnabled := len(transformed) > 0 && transformed[0].Name.Curfn.Target.LogOpt.Enabled()
+	if print || logEnabled { // 11 is do them all, quietly, 12 includes debugging.
 		fileToPosBase := make(map[string]*src.PosBase) // used to remove inline context for innermost reporting.
 
 		// trueInlinedPos rebases inner w/o inline context so that it prints correctly in WarnfAt; otherwise it prints as outer.
@@ -561,31 +560,31 @@ func LogTransformations(transformed []VarAndLoop) {
 			inner := n.Curfn.Target.Ctxt.InnermostPos(pos)
 			outer := n.Curfn.Target.Ctxt.OutermostPos(pos)
 
-			if logopt.Enabled() {
+			if n.Curfn.Target.LogOpt.Enabled() {
 				// For automated checking of coverage of this transformation, include this in the JSON information.
 				var nString any = n
 				if inner != outer {
 					nString = fmt.Sprintf("%v (from inline)", n)
 				}
 				if n.Esc() == ir.EscHeap {
-					logopt.LogOpt(pos, "iteration-variable-to-heap", "loopvar", ir.FuncName(n.Curfn), nString)
+					n.Curfn.Target.LogOpt.LogOpt(pos, "iteration-variable-to-heap", "loopvar", ir.FuncName(n.Curfn), nString)
 				} else {
-					logopt.LogOpt(pos, "iteration-variable-to-stack", "loopvar", ir.FuncName(n.Curfn), nString)
+					n.Curfn.Target.LogOpt.LogOpt(pos, "iteration-variable-to-stack", "loopvar", ir.FuncName(n.Curfn), nString)
 				}
 			}
 			if print {
 				if inner == outer {
 					if n.Esc() == ir.EscHeap {
-						base.WarnfAt(pos, "loop variable %v now per-iteration, heap-allocated", n)
+						n.Curfn.Target.Diagnostics.WarnfAt(pos, "loop variable %v now per-iteration, heap-allocated", n)
 					} else {
-						base.WarnfAt(pos, "loop variable %v now per-iteration, stack-allocated", n)
+						n.Curfn.Target.Diagnostics.WarnfAt(pos, "loop variable %v now per-iteration, stack-allocated", n)
 					}
 				} else {
 					innerXPos := trueInlinedPos(n.Curfn.Target.Ctxt, inner)
 					if n.Esc() == ir.EscHeap {
-						base.WarnfAt(innerXPos, "loop variable %v now per-iteration, heap-allocated (loop inlined into %s:%d)", n, outer.Filename(), outer.Line())
+						n.Curfn.Target.Diagnostics.WarnfAt(innerXPos, "loop variable %v now per-iteration, heap-allocated (loop inlined into %s:%d)", n, outer.Filename(), outer.Line())
 					} else {
-						base.WarnfAt(innerXPos, "loop variable %v now per-iteration, stack-allocated (loop inlined into %s:%d)", n, outer.Filename(), outer.Line())
+						n.Curfn.Target.Diagnostics.WarnfAt(innerXPos, "loop variable %v now per-iteration, stack-allocated (loop inlined into %s:%d)", n, outer.Filename(), outer.Line())
 					}
 				}
 			}
@@ -597,9 +596,9 @@ func LogTransformations(transformed []VarAndLoop) {
 			if _, ok := l.loop.(*ir.ForStmt); ok {
 				loopKind = "for"
 			}
-			if logopt.Enabled() {
+			if l.curfn.Target.LogOpt.Enabled() {
 				// Intended to help with performance debugging, we record whole loop ranges
-				logopt.LogOptRange(pos, last, "loop-modified-"+loopKind, "loopvar", ir.FuncName(l.curfn))
+				l.curfn.Target.LogOpt.LogOptRange(pos, last, "loop-modified-"+loopKind, "loopvar", ir.FuncName(l.curfn))
 			}
 			if print && 4 <= l.curfn.Target.Debug.LoopVar {
 				// TODO decide if we want to keep this, or not.  It was helpful for validating logopt, otherwise, eh.
@@ -607,11 +606,11 @@ func LogTransformations(transformed []VarAndLoop) {
 				outer := l.curfn.Target.Ctxt.OutermostPos(pos)
 
 				if inner == outer {
-					base.WarnfAt(pos, "%s loop ending at %d:%d was modified", loopKind, last.Line(), last.Col())
+					l.curfn.Target.Diagnostics.WarnfAt(pos, "%s loop ending at %d:%d was modified", loopKind, last.Line(), last.Col())
 				} else {
 					pos = trueInlinedPos(l.curfn.Target.Ctxt, inner)
 					last = trueInlinedPos(l.curfn.Target.Ctxt, l.curfn.Target.Ctxt.InnermostPos(last))
-					base.WarnfAt(pos, "%s loop ending at %d:%d was modified (loop inlined into %s:%d)", loopKind, last.Line(), last.Col(), outer.Filename(), outer.Line())
+					l.curfn.Target.Diagnostics.WarnfAt(pos, "%s loop ending at %d:%d was modified (loop inlined into %s:%d)", loopKind, last.Line(), last.Col(), outer.Filename(), outer.Line())
 				}
 			}
 		}

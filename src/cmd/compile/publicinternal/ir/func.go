@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/stats"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/hash"
@@ -301,7 +300,7 @@ func (f *Func) SetInlineBodyAvailable(b bool)      { f.flags.set(funcInlineBodyA
 
 func (f *Func) SetWBPos(pos src.XPos) {
 	if f.Target.Debug.WB != 0 {
-		base.WarnfAt(pos, "write barrier")
+		warnfAtTarget(f.Target, pos, "write barrier")
 	}
 	if !f.WBPos.IsKnown() {
 		f.WBPos = pos
@@ -415,25 +414,18 @@ func splitPkg(name string) (pkgpath, sym string) {
 	return "", name
 }
 
-// WithPos invokes do with base.Pos set to curfn.Pos(), and then
-// restores its previous value before returning.
+// WithPos invokes do with the current position set to curfn.Pos(), then
+// restores the previous position before returning. curfn must belong to a
+// compilation target so the operation does not use process-global position
+// state.
 func WithPos(curfn *Func, do func()) {
-	oldpos := base.Pos
-	target := curfn.Target
-	if target == nil {
-		defer func() { base.Pos = oldpos }()
-		base.Pos = curfn.Pos()
-		do()
-		return
+	if curfn == nil || curfn.Target == nil {
+		panic("ir.WithPos requires a function with a compilation target")
 	}
+	target := curfn.Target
 	oldTargetPos := target.Pos
-	defer func() {
-		base.Pos = oldpos
-		target.Pos = oldTargetPos
-	}()
-
+	defer func() { target.Pos = oldTargetPos }()
 	target.Pos = curfn.Pos()
-	base.Pos = target.Pos
 	do()
 }
 
@@ -446,13 +438,13 @@ func FuncSymName(s *types.Sym) string {
 func ClosureDebugRuntimeCheck(clo *ClosureExpr) {
 	if clo.Func.Target.Debug.Closure > 0 {
 		if clo.Esc() == EscHeap {
-			base.WarnfAt(clo.Pos(), "heap closure, captured vars = %v", clo.Func.ClosureVars)
+			warnfAtTarget(clo.Func.Target, clo.Pos(), "heap closure, captured vars = %v", clo.Func.ClosureVars)
 		} else {
-			base.WarnfAt(clo.Pos(), "stack closure, captured vars = %v", clo.Func.ClosureVars)
+			warnfAtTarget(clo.Func.Target, clo.Pos(), "stack closure, captured vars = %v", clo.Func.ClosureVars)
 		}
 	}
 	if clo.Func.Target.Flags.CompilingRuntime && clo.Esc() == EscHeap && !clo.IsGoWrap {
-		base.ErrorfAt(clo.Pos(), 0, "heap-allocated closure %s, not allowed in runtime", FuncName(clo.Func))
+		errorfAtTarget(clo.Func.Target, clo.Pos(), 0, "heap-allocated closure %s, not allowed in runtime", FuncName(clo.Func))
 	}
 }
 
@@ -462,13 +454,13 @@ func ClosureDebugRuntimeCheck(clo *ClosureExpr) {
 func closureName(target *Package, outerfn *Func, pos src.XPos, why Op, gen int) *types.Sym {
 	pkg := target.LocalPkg
 	if pkg == nil {
-		base.FatalfAt(pos, "closureName without a local package")
+		fatalfAtTarget(target, pos, "closureName without a local package")
 	}
 	outer := "glob."
 	var suffix string = "."
 	switch why {
 	default:
-		base.FatalfAt(pos, "closureName: bad Op: %v", why)
+		fatalfAtTarget(target, pos, "closureName: bad Op: %v", why)
 	case OCLOSURE:
 		if outerfn.OClosure == nil {
 			suffix = ".func"
@@ -580,7 +572,7 @@ func (fn *Func) IsInlinedClosure() bool {
 // the counter will be computed based on outerfn.
 func NewClosureFunc(fpos, cpos src.XPos, why Op, typ *types.Type, outerfn *Func, pkg *Package, gen int) *Func {
 	if outerfn == nil {
-		base.FatalfAt(fpos, "outerfn is nil")
+		fatalfAtTarget(pkg, fpos, "outerfn is nil")
 	}
 
 	fn := NewFunc(pkg, fpos, fpos, closureName(pkg, outerfn, cpos, why, gen), typ)
@@ -643,14 +635,14 @@ func IsIfaceOfFunc(n Node) *Func {
 // assertion?
 func FuncPC(target *Package, pos src.XPos, n Node, wantABI obj.ABI) Node {
 	if !n.Type().IsInterface() {
-		base.ErrorfAt(pos, 0, "publicinternal/abi.FuncPC%s expects an interface value, got %v", wantABI, n.Type())
+		errorfAtTarget(target, pos, 0, "publicinternal/abi.FuncPC%s expects an interface value, got %v", wantABI, n.Type())
 	}
 
 	if fn := IsIfaceOfFunc(n); fn != nil {
 		name := fn.Nname
 		abi := fn.ABI
 		if abi != wantABI {
-			base.ErrorfAt(pos, 0, "publicinternal/abi.FuncPC%s expects an %v function, %s is defined as %v", wantABI, wantABI, name.Sym().Name, abi)
+			errorfAtTarget(target, pos, 0, "publicinternal/abi.FuncPC%s expects an %v function, %s is defined as %v", wantABI, wantABI, name.Sym().Name, abi)
 		}
 		var e Node = NewLinksymExpr(pos, name.LinksymABI(abi), target.Type(types.TUINTPTR))
 		e = NewAddrExpr(pos, e)
@@ -662,7 +654,7 @@ func FuncPC(target *Package, pos src.XPos, n Node, wantABI obj.ABI) Node {
 	// fn is not a defined function. It must be ABIInternal.
 	// Read the address from func value, i.e. *(*uintptr)(idata(fn)).
 	if wantABI != obj.ABIInternal {
-		base.ErrorfAt(pos, 0, "publicinternal/abi.FuncPC%s does not accept func expression, which is ABIInternal", wantABI)
+		errorfAtTarget(target, pos, 0, "publicinternal/abi.FuncPC%s does not accept func expression, which is ABIInternal", wantABI)
 	}
 	var e Node = NewUnaryExpr(pos, OIDATA, n)
 	e.SetType(target.Type(types.TUINTPTR).PtrTo())
@@ -680,7 +672,7 @@ func FuncPC(target *Package, pos src.XPos, n Node, wantABI obj.ABI) Node {
 // parameter.
 func (fn *Func) DeclareParams(setNname bool) {
 	if fn.Dcl != nil {
-		base.FatalfAt(fn.Pos(), "%v already has Dcl", fn)
+		fatalfAtTarget(fn.Target, fn.Pos(), "%v already has Dcl", fn)
 	}
 
 	declareParams := func(params []*types.Field, ctxt Class, prefix string, offset int) {

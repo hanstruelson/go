@@ -11,7 +11,6 @@ import (
 	"publicinternal/buildcfg"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/objw"
@@ -36,7 +35,7 @@ func (w *walkState) walkExpr(n ir.Node, init *ir.Nodes) ir.Node {
 		// not okay to use n->ninit when walking n,
 		// because we might replace n with some other node
 		// and would lose the init list.
-		base.Fatalf("walkExpr init == &n->ninit")
+		w.fatalf("walkExpr init == &n->ninit")
 	}
 
 	if len(n.Init()) != 0 {
@@ -51,11 +50,11 @@ func (w *walkState) walkExpr(n ir.Node, init *ir.Nodes) ir.Node {
 	}
 
 	if n.Typecheck() != 1 {
-		base.Fatalf("missed typecheck: %+v", n)
+		w.fatalf("missed typecheck: %+v", n)
 	}
 
 	if n.Type().IsUntyped() {
-		base.Fatalf("expression has untyped type: %+v", n)
+		w.fatalf("expression has untyped type: %+v", n)
 	}
 
 	n = w.walkExpr1(n, init)
@@ -85,7 +84,7 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 	switch n.Op() {
 	default:
 		ir.Dump("walk", n)
-		base.Fatalf("walkExpr: switch 1 unknown op %+v", n.Op())
+		w.fatalf("walkExpr: switch 1 unknown op %+v", n.Op())
 		panic("unreachable")
 
 	case ir.OGETG, ir.OGETCALLERSP:
@@ -262,7 +261,7 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 		return w.walkIndexMap(n, init)
 
 	case ir.ORECV:
-		base.Fatalf("walkExpr ORECV") // should see inside OAS only
+		w.fatalf("walkExpr ORECV") // should see inside OAS only
 		panic("unreachable")
 
 	case ir.OSLICEHEADER:
@@ -286,7 +285,7 @@ func (w *walkState) walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 
 	case ir.OAPPEND:
 		// order should make sure we only see OAS(node, OAPPEND), which we handle above.
-		base.Fatalf("append outside assignment")
+		w.fatalf("append outside assignment")
 		panic("unreachable")
 
 	case ir.OCOPY:
@@ -467,7 +466,7 @@ func (w *walkState) safeExpr(n ir.Node, init *ir.Nodes) ir.Node {
 
 	// make a copy; must not be used as an lvalue
 	if ir.IsAddressable(n) {
-		base.Fatalf("missing lvalue case in safeExpr: %v", n)
+		w.fatalf("missing lvalue case in safeExpr: %v", n)
 	}
 	return w.cheapExpr(n, init)
 }
@@ -483,7 +482,7 @@ func (w *walkState) copyExpr(n ir.Node, t *types.Type, init *ir.Nodes) ir.Node {
 func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.ConvExpr) ir.Node {
 	c := len(x.List)
 	if c < 2 {
-		base.Fatalf("walkAddString count %d too small", c)
+		w.fatalf("walkAddString count %d too small", c)
 	}
 
 	typ := x.Type()
@@ -499,7 +498,7 @@ func (w *walkState) walkAddString(x *ir.AddStringExpr, init *ir.Nodes, conv *ir.
 	buf := typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
 	switch {
 	default:
-		base.FatalfAt(x.Pos(), "unexpected type: %v", typ)
+		w.fatalfAt(x.Pos(), "unexpected type: %v", typ)
 	case typ.IsString():
 		if x.Esc() == ir.EscNone {
 			sz := int64(0)
@@ -572,7 +571,7 @@ var hooks = map[string]hookInfo{
 // walkCall walks an OCALLFUNC or OCALLINTER node.
 func (w *walkState) walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	if n.Op() == ir.OCALLMETH {
-		base.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
+		w.fatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
 	}
 	if n.Op() == ir.OCALLINTER || n.Fun.Op() == ir.OMETHEXPR {
 		// We expect both interface call reflect.Type.Method and concrete
@@ -600,7 +599,7 @@ func (w *walkState) walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 			wantABI = obj.ABIInternal
 		}
 		if n.Type() != w.curfunc.Target.Type(types.TUINTPTR) {
-			base.FatalfAt(n.Pos(), "FuncPC intrinsic should return uintptr, got %v", n.Type()) // as expected by typecheck.FuncPC.
+			w.fatalfAt(n.Pos(), "FuncPC intrinsic should return uintptr, got %v", n.Type()) // as expected by typecheck.FuncPC.
 		}
 		n := ir.FuncPC(w.curfunc.Target, n.Pos(), arg, wantABI)
 		return w.walkExpr(n, init)
@@ -642,7 +641,7 @@ func (w *walkState) walkCall1(n *ir.CallExpr, init *ir.Nodes) {
 	n.SetWalked(true)
 
 	if n.Op() == ir.OCALLMETH {
-		base.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
+		w.fatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
 	}
 
 	args := n.Args
@@ -655,7 +654,7 @@ func (w *walkState) walkCall1(n *ir.CallExpr, init *ir.Nodes) {
 		// Validate argument and parameter types match.
 		param := params[i]
 		if !types.Identical(arg.Type(), param.Type) {
-			base.FatalfAt(n.Pos(), "assigning %L to parameter %v (type %v)", arg, param.Sym, param.Type)
+			w.fatalfAt(n.Pos(), "assigning %L to parameter %v (type %v)", arg, param.Sym, param.Type)
 		}
 
 		// For any argument whose evaluation might require a function call,
@@ -815,7 +814,7 @@ func makeTypeAssertDescriptor(pkg *ir.Package, target *types.Type, canFail bool)
 	pkg.TypeAssertGen++
 	rt := rttype.For(pkg)
 	c := rttype.NewCursor(pkg.Ctxt, lsym, 0, rt.TypeAssert)
-	c.Field("Cache").WritePtr(typecheck.LookupRuntimeVar("emptyTypeAssertCache"))
+	c.Field("Cache").WritePtr(typecheck.LookupRuntimeVarFor(pkg, "emptyTypeAssertCache"))
 	c.Field("Inter").WritePtr(reflectdata.TypeLinksym(pkg, target))
 	c.Field("CanFail").WriteBool(canFail)
 	objw.Global(pkg.Ctxt, lsym, int32(rt.TypeAssert.Size()), obj.LOCAL)
@@ -866,12 +865,12 @@ func (w *walkState) walkIndex(n *ir.IndexExpr, init *ir.Nodes) ir.Node {
 	if t.IsArray() {
 		n.SetBounded(bounded(r, t.NumElem()))
 		if w.curfunc.Target.Flags.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
-			base.Warn("index bounds check elided")
+			w.curfunc.Target.Diagnostics.WarnfAt(n.Pos(), "index bounds check elided")
 		}
 	} else if ir.IsConst(n.X, constant.String) {
 		n.SetBounded(bounded(r, int64(len(ir.StringVal(n.X)))))
 		if w.curfunc.Target.Flags.LowerM != 0 && n.Bounded() && !ir.IsConst(n.Index, constant.Int) {
-			base.Warn("index bounds check elided")
+			w.curfunc.Target.Diagnostics.WarnfAt(n.Pos(), "index bounds check elided")
 		}
 	}
 	return n
@@ -969,7 +968,7 @@ func (w *walkState) walkSlice(n *ir.SliceExpr, init *ir.Nodes) ir.Node {
 	if (n.Op() == ir.OSLICE || n.Op() == ir.OSLICESTR) && n.Low == nil && n.High == nil {
 		// Reduce x[:] to x.
 		if w.curfunc.Target.Debug.Slice > 0 {
-			base.Warn("slice: omit slice operation")
+			w.curfunc.Target.Diagnostics.WarnfAt(n.Pos(), "slice: omit slice operation")
 		}
 		return n.X
 	}
@@ -1133,7 +1132,7 @@ func (w *walkState) usemethod(n *ir.CallExpr) {
 			targetName = n.Args[1]
 		}
 	default:
-		base.FatalfAt(dot.Pos(), "usemethod: unexpected dot.Op() %s", dot.Op())
+		w.fatalfAt(dot.Pos(), "usemethod: unexpected dot.Op() %s", dot.Op())
 	}
 
 	if ir.IsConst(targetName, constant.String) {
@@ -1154,7 +1153,7 @@ func (w *walkState) usefield(n *ir.SelectorExpr) {
 
 	switch n.Op() {
 	default:
-		base.Fatalf("usefield %v", n.Op())
+		w.fatalf("usefield %v", n.Op())
 
 	case ir.ODOT, ir.ODOTPTR:
 		break
@@ -1162,10 +1161,10 @@ func (w *walkState) usefield(n *ir.SelectorExpr) {
 
 	field := n.Selection
 	if field == nil {
-		base.Fatalf("usefield %v %v without paramfld", n.X.Type(), n.Sel)
+		w.fatalf("usefield %v %v without paramfld", n.X.Type(), n.Sel)
 	}
 	if types.CompareSyms(field.Sym, n.Sel) != 0 {
-		base.Fatalf("field inconsistency: %v != %v", field.Sym, n.Sel)
+		w.fatalf("field inconsistency: %v != %v", field.Sym, n.Sel)
 	}
 	if !strings.Contains(field.Note, "go:\"track\"") {
 		return
@@ -1176,7 +1175,7 @@ func (w *walkState) usefield(n *ir.SelectorExpr) {
 		outer = outer.Elem()
 	}
 	if outer.Sym() == nil {
-		base.Errorf("tracked field must be in named struct type")
+		w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "tracked field must be in named struct type")
 	}
 
 	sym := reflectdata.TrackSym(outer, field)

@@ -9,12 +9,12 @@ import (
 	"cmd/publicinternal/src"
 	"encoding/json"
 	"fmt"
-	"publicinternal/buildcfg"
 	"io"
 	"log"
 	"net/url"
 	"os"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,23 +239,45 @@ const (
 	Json0           // version 0 for LSP 3.14, 3.15; future versions of LSP may change the format and the compiler may need to support both as clients are updated.
 )
 
-var Format = None
-var dest string
+// Context owns optimizer-logging settings and records for one package
+// compilation. LogOpt calls can be made concurrently by backend workers.
+type Context struct {
+	mu         sync.Mutex
+	format     logFormat
+	dest       string
+	loggedOpts []*LoggedOpt
+}
+
+// NewContext returns an optimizer-logging context with logging disabled.
+func NewContext() *Context { return new(Context) }
+
+// defaultContext adapts the historical package-level functions for command
+// callers that have not yet been given an explicit compilation context.
+var defaultContext = NewContext()
 
 // LogJsonOption parses and validates the version,directory value attached to the -json compiler flag.
 func LogJsonOption(flagValue string) {
-	version, directory := parseLogFlag("json", flagValue)
+	defaultContext.LogJsonOption(flagValue)
+}
+
+// LogJsonOption parses and validates the version,directory value attached to
+// the -json compiler flag.
+func (c *Context) LogJsonOption(flagValue string) {
+	if c == nil {
+		return
+	}
+	version, directory := parseLogFlag(c, "json", flagValue)
 	if version != 0 {
 		log.Fatal("-json version must be 0")
 	}
-	dest = checkLogPath(directory)
-	Format = Json0
+	c.dest = checkLogPath(directory)
+	c.format = Json0
 }
 
 // parseLogFlag checks the flag passed to -json
 // for version,destination format and returns the two parts.
-func parseLogFlag(flag, value string) (version int, directory string) {
-	if Format != None {
+func parseLogFlag(c *Context, flag, value string) (version int, directory string) {
+	if c.format != None {
 		log.Fatal("Cannot repeat -json flag")
 	}
 	commaAt := strings.Index(value, ",")
@@ -318,42 +340,6 @@ func checkLogPath(destination string) string {
 	return path
 }
 
-var loggedOpts []*LoggedOpt
-var mu = sync.Mutex{} // mu protects loggedOpts.
-
-// Session scopes optimizer-logging state for one compiler request.
-type Session struct {
-	closed     bool
-	format     logFormat
-	dest       string
-	loggedOpts []*LoggedOpt
-}
-
-// NewSession saves and clears optimizer-logging state. Close restores the
-// previous state after the compilation completes.
-func NewSession() *Session {
-	mu.Lock()
-	defer mu.Unlock()
-	s := &Session{format: Format, dest: dest, loggedOpts: loggedOpts}
-	Format = None
-	dest = ""
-	loggedOpts = nil
-	return s
-}
-
-// Close restores the optimizer-logging state saved by NewSession.
-func (s *Session) Close() {
-	if s == nil || s.closed {
-		return
-	}
-	s.closed = true
-	mu.Lock()
-	defer mu.Unlock()
-	Format = s.format
-	dest = s.dest
-	loggedOpts = s.loggedOpts
-}
-
 // NewLoggedOpt allocates a new LoggedOpt, to later be passed to either NewLoggedOpt or LogOpt as "args".
 // Pos is the source position (including inlining), what is the message, pass is which pass created the message,
 // funcName is the name of the function
@@ -367,32 +353,48 @@ func NewLoggedOpt(pos, lastPos src.XPos, what, pass, funcName string, args ...an
 // Pos is the source position (including inlining), what is the message, pass is which pass created the message,
 // funcName is the name of the function.
 func LogOpt(pos src.XPos, what, pass, funcName string, args ...any) {
-	if Format == None {
+	defaultContext.LogOpt(pos, what, pass, funcName, args...)
+}
+
+// LogOpt records one optimization event in this compilation.
+func (c *Context) LogOpt(pos src.XPos, what, pass, funcName string, args ...any) {
+	if !c.Enabled() {
 		return
 	}
 	lo := NewLoggedOpt(pos, pos, what, pass, funcName, args...)
-	mu.Lock()
-	defer mu.Unlock()
-	// Because of concurrent calls from back end, no telling what the order will be, but is stable-sorted by outer Pos before use.
-	loggedOpts = append(loggedOpts, lo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loggedOpts = append(c.loggedOpts, lo)
 }
 
 // LogOptRange is the same as LogOpt, but includes the ability to express a range of positions,
 // not just a point.
 func LogOptRange(pos, lastPos src.XPos, what, pass, funcName string, args ...any) {
-	if Format == None {
+	defaultContext.LogOptRange(pos, lastPos, what, pass, funcName, args...)
+}
+
+// LogOptRange records one optimization event that spans a source range.
+func (c *Context) LogOptRange(pos, lastPos src.XPos, what, pass, funcName string, args ...any) {
+	if !c.Enabled() {
 		return
 	}
 	lo := NewLoggedOpt(pos, lastPos, what, pass, funcName, args...)
-	mu.Lock()
-	defer mu.Unlock()
-	// Because of concurrent calls from back end, no telling what the order will be, but is stable-sorted by outer Pos before use.
-	loggedOpts = append(loggedOpts, lo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loggedOpts = append(c.loggedOpts, lo)
 }
 
 // Enabled returns whether optimization logging is enabled.
 func Enabled() bool {
-	switch Format {
+	return defaultContext.Enabled()
+}
+
+// Enabled reports whether this compilation is collecting optimizer logs.
+func (c *Context) Enabled() bool {
+	if c == nil {
+		return false
+	}
+	switch c.format {
 	case None:
 		return false
 	case Json0:
@@ -463,12 +465,21 @@ func uprootedPath(filename string) string {
 
 // FlushLoggedOpts flushes all the accumulated optimization log entries.
 func FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
-	if Format == None {
+	defaultContext.FlushLoggedOpts(ctxt, slashPkgPath)
+}
+
+// FlushLoggedOpts writes and clears the optimizer records for this package.
+func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
+	if c == nil || c.format == None {
 		return
 	}
+	c.mu.Lock()
+	loggedOpts := c.loggedOpts
+	c.loggedOpts = nil
+	c.mu.Unlock()
 
 	sort.Stable(byPos{ctxt, loggedOpts}) // Stable is necessary to preserve the per-function order, which is repeatable.
-	switch Format {
+	switch c.format {
 
 	case Json0: // LSP 3.15
 		var posTmp, lastTmp []src.Pos
@@ -478,7 +489,7 @@ func FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) {
 		if slashPkgPath == "" {
 			slashPkgPath = "\000"
 		}
-		subdirpath := filepath.Join(dest, url.PathEscape(slashPkgPath))
+		subdirpath := filepath.Join(c.dest, url.PathEscape(slashPkgPath))
 		err := os.MkdirAll(subdirpath, 0755)
 		if err != nil {
 			log.Fatalf("Could not create directory %s for logging optimizer actions, %v", subdirpath, err)

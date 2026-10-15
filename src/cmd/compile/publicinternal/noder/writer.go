@@ -9,14 +9,13 @@ import (
 	"go/constant"
 	"go/token"
 	"go/version"
-	"publicinternal/buildcfg"
-	"publicinternal/pkgbits"
 	"log"
 	"os"
+	"publicinternal/buildcfg"
+	"publicinternal/pkgbits"
 	"slices"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
@@ -61,7 +60,11 @@ import (
 
 type index = pkgbits.Index
 
-func assert(p bool) { base.Assert(p) }
+func assert(p bool) {
+	if !p {
+		panic("noder: assertion failed")
+	}
+}
 
 // A pkgWriter constructs Unified IR export data from the results of
 // running the types2 type checker on a Go compilation unit.
@@ -130,12 +133,12 @@ func newPkgWriter(target *ir.Package, m posMap, pkg *types2.Package, info *types
 
 // errorf reports a user error about thing p.
 func (pw *pkgWriter) errorf(p poser, msg string, args ...any) {
-	base.ErrorfAt(pw.m.pos(p), 0, msg, args...)
+	pw.target.Diagnostics.ErrorfAt(pw.m.pos(p), 0, msg, args...)
 }
 
 // fatalf reports an internal compiler error about thing p.
 func (pw *pkgWriter) fatalf(p poser, msg string, args ...any) {
-	base.FatalfAt(pw.m.pos(p), msg, args...)
+	pw.target.Diagnostics.FatalfAt(pw.m.pos(p), msg, args...)
 }
 
 // unexpected reports a fatal error about a thing of unexpected
@@ -467,7 +470,7 @@ func (pw *pkgWriter) pkgIdx(pkg *types2.Package) index {
 		if pkg != w.p.curpkg {
 			path = pkg.Path()
 		}
-		base.Assertf(path != "builtin" && path != "unsafe", "unexpected path for user-defined package: %q", path)
+		pw.target.Diagnostics.Assertf(path != "builtin" && path != "unsafe", "unexpected path for user-defined package: %q", path)
 		w.String(path)
 		w.String(pkg.Name())
 
@@ -537,12 +540,12 @@ func (pw *pkgWriter) typIdx(typ types2.Type, dict *writerDict) typeInfo {
 
 	switch typ := typ.(type) {
 	default:
-		base.Fatalf("unexpected type: %v (%T)", typ, typ)
+		pw.target.Diagnostics.Fatalf("unexpected type: %v (%T)", typ, typ)
 
 	case *types2.Basic:
 		switch kind := typ.Kind(); {
 		case kind == types2.Invalid:
-			base.Fatalf("unexpected types2.Invalid")
+			pw.target.Diagnostics.Fatalf("unexpected types2.Invalid")
 
 		case types2.Typ[kind] == typ:
 			w.Code(pkgbits.TypeBasic)
@@ -559,11 +562,11 @@ func (pw *pkgWriter) typIdx(typ types2.Type, dict *writerDict) typeInfo {
 
 	case *types2.Named:
 		w.Code(pkgbits.TypeNamed)
-		w.namedType(splitNamed(typ))
+		w.namedType(splitNamed(w.p, typ))
 
 	case *types2.Alias:
 		w.Code(pkgbits.TypeNamed)
-		w.namedType(splitAlias(typ))
+		w.namedType(splitAlias(w.p, typ))
 
 	case *types2.TypeParam:
 		w.derived = true
@@ -590,7 +593,7 @@ func (pw *pkgWriter) typIdx(typ types2.Type, dict *writerDict) typeInfo {
 		w.typ(typ.Elem())
 
 	case *types2.Signature:
-		base.Assertf(typ.TypeParams() == nil, "unexpected type params: %v", typ)
+		pw.target.Diagnostics.Assertf(typ.TypeParams() == nil, "unexpected type params: %v", typ)
 		w.Code(pkgbits.TypeSignature)
 		w.signature(typ)
 
@@ -785,7 +788,7 @@ func (pw *pkgWriter) objIdx(obj types2.Object) index {
 	if isDefinedType(obj) && obj.Pkg() == pw.curpkg {
 		decl, ok := pw.typDecls[obj.(*types2.TypeName)]
 		if !ok {
-			base.Fatalf("%v not in pw.typDecls", obj.(*types2.TypeName))
+			pw.target.Diagnostics.Fatalf("%v not in pw.typDecls", obj.(*types2.TypeName))
 		}
 		dict.implicits = decl.implicits
 	}
@@ -1896,7 +1899,7 @@ func (w *writer) optLabel(label *syntax.Name) {
 
 // expr writes the given expression into the function body bitstream.
 func (w *writer) expr(expr syntax.Expr) {
-	base.Assertf(expr != nil, "missing expression")
+	w.p.target.Diagnostics.Assertf(expr != nil, "missing expression")
 
 	expr = syntax.Unparen(expr) // skip parens; unneeded after typecheck
 
@@ -2367,12 +2370,12 @@ func (w *writer) methodExpr(expr *syntax.SelectorExpr, recv types2.Type, sel *ty
 		return
 	}
 
-	if isInterface(recv) != isInterface(sig.Recv().Type()) {
+	if isInterface(w.p, recv) != isInterface(w.p, sig.Recv().Type()) {
 		w.p.fatalf(expr, "isInterface inconsistency: %v and %v", recv, sig.Recv().Type())
 	}
 
-	if isConcreteMethod(sig) {
-		tname, tExplicits := splitNamed(types2.Unalias(deref2(recv)).(*types2.Named))
+	if isConcreteMethod(w.p, sig) {
+		tname, tExplicits := splitNamed(w.p, types2.Unalias(deref2(recv)).(*types2.Named))
 		var info objInfo
 		if isGenericMethod(sig) {
 			// For generic methods, the shaped object is the method itself.
@@ -2723,7 +2726,9 @@ func (w *writer) convRTTI(src, dst types2.Type) {
 }
 
 func (w *writer) exprType(iface types2.Type, typ syntax.Expr) {
-	base.Assertf(iface == nil || isInterface(iface), "%v must be nil or an interface type", iface)
+	if iface != nil && !isInterface(w.p, iface) {
+		w.p.fatalf(typ, "%v must be nil or an interface type", iface)
+	}
 
 	tv := w.p.typeAndValue(typ)
 	assert(tv.IsType())
@@ -2744,12 +2749,12 @@ func (w *writer) exprType(iface types2.Type, typ syntax.Expr) {
 // isInterface reports whether typ is known to be an interface type.
 // If typ is a type parameter, then isInterface reports an internal
 // compiler error instead.
-func isInterface(typ types2.Type) bool {
+func isInterface(pw *pkgWriter, typ types2.Type) bool {
 	if _, ok := types2.Unalias(typ).(*types2.TypeParam); ok {
 		// typ is a type parameter and may be instantiated as either a
 		// concrete or interface type, so the writer can't depend on
 		// knowing this.
-		base.Fatalf("%v is a type parameter", typ)
+		pw.target.Diagnostics.Fatalf("%v is a type parameter", typ)
 	}
 
 	_, ok := typ.Underlying().(*types2.Interface)
@@ -2758,9 +2763,9 @@ func isInterface(typ types2.Type) bool {
 
 // isConcreteMethod reports whether typ is a concrete method. That is,
 // it's a method with a receiver that isn't an interface type.
-func isConcreteMethod(typ types2.Type) bool {
+func isConcreteMethod(pw *pkgWriter, typ types2.Type) bool {
 	sig, ok := typ.(*types2.Signature)
-	return ok && sig.Recv() != nil && !isInterface(sig.Recv().Type())
+	return ok && sig.Recv() != nil && !isInterface(pw, sig.Recv().Type())
 }
 
 // TODO(mark): Use isGenericMethod. It is included now to help justify
@@ -3297,20 +3302,20 @@ func asTypeParamSlice(l *types2.TypeParamList) []*types2.TypeParam {
 
 // splitNamed decomposes a use of a defined type into its original
 // type definition and the type arguments used to instantiate it.
-func splitNamed(typ *types2.Named) (*types2.TypeName, []types2.Type) {
-	base.Assertf(typ.TypeParams().Len() == typ.TypeArgs().Len(), "use of uninstantiated type: %v", typ)
+func splitNamed(pw *pkgWriter, typ *types2.Named) (*types2.TypeName, []types2.Type) {
+	pw.target.Diagnostics.Assertf(typ.TypeParams().Len() == typ.TypeArgs().Len(), "use of uninstantiated type: %v", typ)
 
 	orig := typ.Origin()
-	base.Assertf(orig.TypeArgs() == nil, "origin %v of %v has type arguments", orig, typ)
-	base.Assertf(typ.Obj() == orig.Obj(), "%v has object %v, but %v has object %v", typ, typ.Obj(), orig, orig.Obj())
+	pw.target.Diagnostics.Assertf(orig.TypeArgs() == nil, "origin %v of %v has type arguments", orig, typ)
+	pw.target.Diagnostics.Assertf(typ.Obj() == orig.Obj(), "%v has object %v, but %v has object %v", typ, typ.Obj(), orig, orig.Obj())
 
 	return typ.Obj(), asTypeSlice(typ.TypeArgs())
 }
 
 // splitAlias is like splitNamed, but for an alias type.
-func splitAlias(typ *types2.Alias) (*types2.TypeName, []types2.Type) {
+func splitAlias(pw *pkgWriter, typ *types2.Alias) (*types2.TypeName, []types2.Type) {
 	orig := typ.Origin()
-	base.Assertf(typ.Obj() == orig.Obj(), "alias type %v has object %v, but %v has object %v", typ, typ.Obj(), orig, orig.Obj())
+	pw.target.Diagnostics.Assertf(typ.Obj() == orig.Obj(), "alias type %v has object %v, but %v has object %v", typ, typ.Obj(), orig, orig.Obj())
 
 	return typ.Obj(), asTypeSlice(typ.TypeArgs())
 }

@@ -7,9 +7,9 @@ package ssacompile
 import (
 	"fmt"
 	"hash/crc32"
-	"publicinternal/buildcfg"
 	"log"
 	"math/rand"
+	"publicinternal/buildcfg"
 	"regexp"
 	"runtime"
 	"slices"
@@ -18,35 +18,64 @@ import (
 	"strings"
 	"time"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
-	"cmd/compile/publicinternal/ssa/ssaconfig"
 )
 
 // Compiler satisfies the ssacore.Compiler interface.
 type Compiler struct {
 	passes []ssa.Pass
+	target *ir.Package
+}
+
+// Options owns SSA phase selections and debug settings for one compilation.
+// Command-line compilation uses a process-level Options adapter, while
+// reusable callers should allocate a fresh Options and pass its PhaseOption
+// callback to the flag parser.
+type Options struct {
+	checkEnabled  bool
+	checkRandSeed int
+	passes        []ssa.Pass
+
+	intrinsicsDebug   int
+	intrinsicsDisable bool
+	buildDebug        int
+	buildTest         int
+	buildStats        int
+	buildDump         map[string]bool
+	genssaDump        map[string]bool
+}
+
+// NewOptions returns the default SSA settings for one compilation.
+func NewOptions() *Options {
+	return &Options{
+		passes:     copyPasses(passDefaults[:]),
+		buildDump:  make(map[string]bool),
+		genssaDump: make(map[string]bool),
+	}
 }
 
 func (c Compiler) Passes() []ssa.Pass {
 	if c.passes != nil {
 		return c.passes
 	}
-	return passes[:]
+	return passDefaults[:]
 }
 
 // ConfigureTarget copies command-line SSA consistency-check options into the
 // target context. Reusable compiler callers can set these target fields
 // directly without using the command-line option globals.
-func ConfigureTarget(target *ir.Package) Compiler {
-	target.SSACheck = checkEnabled
-	target.SSACheckSeed = checkRandSeed
-	target.SSAIntrinsicsDebug = ssaconfig.IntrinsicsDebug
-	target.SSAIntrinsicsDisable = ssaconfig.IntrinsicsDisable
-	target.SSABuildDump = copySet(ssaconfig.BuildDump)
-	target.SSAGenssaDump = copySet(ssaconfig.GenssaDump)
-	return Compiler{passes: copyPasses(passes[:])}
+func ConfigureTarget(target *ir.Package, options *Options) Compiler {
+	if options == nil {
+		options = commandOptions
+	}
+	target.SSACheck = options.checkEnabled
+	target.SSACheckSeed = options.checkRandSeed
+	target.SSAIntrinsicsDebug = options.intrinsicsDebug
+	target.SSAIntrinsicsDisable = options.intrinsicsDisable
+	target.SSABuildDump = copySet(options.buildDump)
+	target.SSAGenssaDump = copySet(options.genssaDump)
+	return Compiler{passes: copyPasses(options.passes), target: target}
 }
 
 func copySet(src map[string]bool) map[string]bool {
@@ -79,21 +108,21 @@ func buildDumpForFunc(f *ssa.Func) bool {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSABuildDump[f.Name]
 	}
-	return ssaconfig.BuildDump[f.Name]
+	return commandOptions.buildDump[f.Name]
 }
 
 func checkEnabledForFunc(f *ssa.Func) bool {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSACheck
 	}
-	return checkEnabled
+	return commandOptions.checkEnabled
 }
 
 func checkSeedForFunc(f *ssa.Func) int {
 	if f != nil && f.Config != nil && f.Config.Target != nil {
 		return f.Config.Target.SSACheckSeed
 	}
-	return checkRandSeed
+	return commandOptions.checkRandSeed
 }
 
 // Compile is the main entry point for this package.
@@ -249,11 +278,9 @@ func (c Compiler) Compile(f *ssa.Func, htmlWriter ssa.HTMLWriter) {
 	phaseName = ""
 }
 
-// Run consistency checker between each phase
-var (
-	checkEnabled  = false
-	checkRandSeed = 0
-)
+// commandOptions is the legacy command-line adapter. Reusable compilation
+// creates a separate Options value for each request.
+var commandOptions *Options
 
 // PhaseOption sets the specified flag in the specified ssa phase,
 // returning empty string if this was successful or a string explaining
@@ -273,11 +300,19 @@ var (
 //
 // BOOT_GO_GCFLAGS=-d='ssa/~^.*scc$/off' GO_GCFLAGS='-d=ssa/~^.*scc$/off' ./make.bash
 func PhaseOption(phase, flag string, val int, valString string) string {
+	return commandOptions.PhaseOption(phase, flag, val, valString)
+}
+
+// PhaseOption applies one -d=ssa option to this compilation's SSA settings.
+func (o *Options) PhaseOption(phase, flag string, val int, valString string) string {
+	if o == nil {
+		return "missing SSA options context"
+	}
 	switch phase {
 	case "", "help":
 		lastcr := 0
 		phasenames := "    check, all, build, intrinsics, genssa"
-		for _, p := range passes {
+		for _, p := range o.passes {
 			pn := strings.ReplaceAll(p.Name, " ", "_")
 			if len(pn)+len(phasenames)-lastcr > 70 {
 				phasenames += "\n    "
@@ -341,14 +376,14 @@ commas. For example:
 	if phase == "check" {
 		switch flag {
 		case "on":
-			checkEnabled = val != 0
+			o.checkEnabled = val != 0
 			return ""
 		case "off":
-			checkEnabled = val == 0
+			o.checkEnabled = val == 0
 			return ""
 		case "seed":
-			checkEnabled = true
-			checkRandSeed = val
+			o.checkEnabled = true
+			o.checkRandSeed = val
 			return ""
 		}
 	}
@@ -365,8 +400,8 @@ commas. For example:
 		case "dump":
 			alldump = val != 0
 			if alldump {
-				ssaconfig.BuildDump[valString] = true
-				ssaconfig.GenssaDump[valString] = true
+				o.buildDump[valString] = true
+				o.genssaDump[valString] = true
 			}
 		default:
 			return fmt.Sprintf("Did not find a flag matching %s in -d=ssa/%s debug option (expected ssa/all/{time,mem,dump=function_name})", flag, phase)
@@ -376,11 +411,11 @@ commas. For example:
 	if phase == "intrinsics" {
 		switch flag {
 		case "on":
-			ssaconfig.IntrinsicsDisable = val == 0
+			o.intrinsicsDisable = val == 0
 		case "off":
-			ssaconfig.IntrinsicsDisable = val != 0
+			o.intrinsicsDisable = val != 0
 		case "debug":
-			ssaconfig.IntrinsicsDebug = val
+			o.intrinsicsDebug = val
 		default:
 			return fmt.Sprintf("Did not find a flag matching %s in -d=ssa/%s debug option (expected ssa/intrinsics/{on,off,debug})", flag, phase)
 		}
@@ -389,13 +424,13 @@ commas. For example:
 	if phase == "build" {
 		switch flag {
 		case "debug":
-			ssaconfig.BuildDebug = val
+			o.buildDebug = val
 		case "test":
-			ssaconfig.BuildTest = val
+			o.buildTest = val
 		case "stats":
-			ssaconfig.BuildStats = val
+			o.buildStats = val
 		case "dump":
-			ssaconfig.BuildDump[valString] = true
+			o.buildDump[valString] = true
 		default:
 			return fmt.Sprintf("Did not find a flag matching %s in -d=ssa/%s debug option (expected ssa/build/{debug,test,stats,dump=function_name})", flag, phase)
 		}
@@ -404,7 +439,7 @@ commas. For example:
 	if phase == "genssa" {
 		switch flag {
 		case "dump":
-			ssaconfig.GenssaDump[valString] = true
+			o.genssaDump[valString] = true
 		default:
 			return fmt.Sprintf("Did not find a flag matching %s in -d=ssa/%s debug option (expected ssa/genssa/dump=function_name)", flag, phase)
 		}
@@ -421,14 +456,14 @@ commas. For example:
 		re = r
 	}
 	matchedOne := false
-	for i, p := range passes {
+	for i, p := range o.passes {
 		if phase == "all" {
 			p.Time = alltime
 			p.Mem = allmem
 			if alldump {
 				p.AddDump(valString)
 			}
-			passes[i] = p
+			o.passes[i] = p
 			matchedOne = true
 		} else if p.Name == phase || p.Name == underphase || re != nil && re.MatchString(p.Name) {
 			switch flag {
@@ -466,7 +501,7 @@ commas. For example:
 			if p.Disabled && p.Required {
 				return fmt.Sprintf("Cannot disable required SSA phase %s using -d=ssa/%s debug option", phase, phase)
 			}
-			passes[i] = p
+			o.passes[i] = p
 			matchedOne = true
 		}
 	}
@@ -477,7 +512,7 @@ commas. For example:
 }
 
 // list of passes for the compiler
-var passes = [...]ssa.Pass{
+var passDefaults = [...]ssa.Pass{
 	{Name: "number lines", Fn: numberLines, Required: true},
 	{Name: "early phielim and copyelim", Fn: copyelim},
 	{Name: "early deadcode", Fn: deadcode}, // remove generated dead code to avoid doing pointless work during opt
@@ -645,7 +680,9 @@ func (c Compiler) PostCompile() {
 				if !pass.UsedKW[k] {
 					// If someone specified a debugging keyword that was not
 					// consumed, they might want to know about this.
-					base.Warn("Keyword %s for pass %s was not used", k, pass.Name)
+					if c.target != nil && c.target.Diagnostics != nil {
+						c.target.Diagnostics.WarnfAt(c.target.Pos, "Keyword %s for pass %s was not used", k, pass.Name)
+					}
 				}
 			}
 		}
@@ -653,11 +690,12 @@ func (c Compiler) PostCompile() {
 }
 
 func init() {
+	commandOptions = NewOptions()
 	for _, c := range passOrder {
 		a, b := c.a, c.b
 		i := -1
 		j := -1
-		for k, p := range passes {
+		for k, p := range passDefaults {
 			if p.Name == a {
 				i = k
 			}

@@ -5,11 +5,11 @@
 package ld
 
 import (
+	"cmd/link/publicinternal/loader"
+	"cmd/link/publicinternal/sym"
 	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/sys"
-	"cmd/link/publicinternal/loader"
-	"cmd/link/publicinternal/sym"
 	"fmt"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
@@ -43,18 +43,6 @@ func (d *deadcodePass) init() {
 		d.ldr.Reachparent = make([]loader.Sym, d.ldr.NSym())
 	}
 	d.dynlink = d.ctxt.DynlinkingGo()
-	if d.ctxt.JIT {
-		// A JIT-enabled executable must expose the complete compiled API of all
-		// packages in its import graph, including symbols that ordinary static
-		// reachability would remove.
-		for i := 1; i < d.ldr.NDef(); i++ {
-			s := loader.Sym(i)
-			if d.ldr.SymType(s) != 0 {
-				d.mark(s, 0)
-			}
-		}
-	}
-
 	if d.ctxt.BuildMode == BuildModeShared {
 		// Mark all symbols defined in this library as reachable when
 		// building a shared library.

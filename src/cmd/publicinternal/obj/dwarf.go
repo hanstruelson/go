@@ -375,6 +375,7 @@ func (ctxt *Link) populateDWARF(curfn Func, s *LSym) {
 		Scopes:        scopes,
 		InlCalls:      inlcalls,
 		UseBASEntries: ctxt.UseBASEntries,
+		Log:           ctxt.LogDwarf,
 	}
 	if absfunc != nil {
 		err = dwarf.PutAbstractFunc(dwctxt, fnstate)
@@ -442,6 +443,7 @@ func (ctxt *Link) DwarfAbstractFunc(curfn Func, s *LSym) {
 		External:      !s.Static(),
 		Scopes:        scopes,
 		UseBASEntries: ctxt.UseBASEntries,
+		Log:           ctxt.LogDwarf,
 	}
 	if err := dwarf.PutAbstractFunc(dwctxt, &fnstate); err != nil {
 		ctxt.Diag("emitting DWARF for %s failed: %v", s.Name, err)

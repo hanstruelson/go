@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/bitvec"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
@@ -239,7 +238,7 @@ func getvariables(fn *ir.Func) ([]*ir.Name, map[*ir.Name]int32) {
 
 func (lv *Liveness) initcache() {
 	if lv.cache.initialized {
-		base.Fatalf("liveness cache initialized twice")
+		lv.fn.Target.Diagnostics.Fatalf("liveness cache initialized twice")
 		return
 	}
 	lv.cache.initialized = true
@@ -381,7 +380,7 @@ func affectedVar(v *ssa.Value) (*ir.Name, ssaop.SymEffect) {
 	case *ir.Name:
 		return a, e
 	default:
-		base.Fatalf("weird aux: %s", v.LongString())
+		v.Block.Func.Config.Target.Diagnostics.Fatalf("weird aux: %s", v.LongString())
 		return nil, e
 	}
 }
@@ -481,7 +480,7 @@ func (lv *Liveness) pointerMap(liveout bitvec.BitVec, vars []*ir.Name, args, loc
 		case ir.PAUTO:
 			if checkForDuplicateSlots {
 				if prev, ok := slotsSeen[node.FrameOffset()]; ok {
-					base.FatalfAt(node.Pos(), "two vars live at pointerMap generation: %q and %q", prev.Sym().Name, node.Sym().Name)
+					lv.fn.Target.Diagnostics.FatalfAt(node.Pos(), "two vars live at pointerMap generation: %q and %q", prev.Sym().Name, node.Sym().Name)
 				}
 				slotsSeen[node.FrameOffset()] = node
 			}
@@ -798,7 +797,7 @@ func (lv *Liveness) epilogue() {
 			if n.Class == ir.PPARAMOUT {
 				if n.IsOutputParamHeapAddr() {
 					// Just to be paranoid.  Heap addresses are PAUTOs.
-					base.Fatalf("variable %v both output param and heap output param", n)
+					lv.fn.Target.Diagnostics.Fatalf("variable %v both output param and heap output param", n)
 				}
 				if n.Heapaddr != nil {
 					// If this variable moved to the heap, then
@@ -823,7 +822,7 @@ func (lv *Liveness) epilogue() {
 				livedefer.Set(int32(i))
 				// It was already marked as Needzero when created.
 				if !n.Needzero() {
-					base.Fatalf("all pointer-containing defer arg slots should have Needzero set")
+					lv.fn.Target.Diagnostics.Fatalf("all pointer-containing defer arg slots should have Needzero set")
 				}
 			}
 		}
@@ -885,7 +884,7 @@ func (lv *Liveness) epilogue() {
 
 		if b == lv.f.Entry {
 			if index != 0 {
-				base.Fatalf("bad index for entry point: %v", index)
+				lv.fn.Target.Diagnostics.Fatalf("bad index for entry point: %v", index)
 			}
 
 			// Check to make sure only input variables are live.
@@ -896,7 +895,7 @@ func (lv *Liveness) epilogue() {
 				if n.Class == ir.PPARAM {
 					continue // ok
 				}
-				base.FatalfAt(n.Pos(), "bad live variable at entry of %v: %L", lv.fn.Nname, n)
+				lv.fn.Target.Diagnostics.FatalfAt(n.Pos(), "bad live variable at entry of %v: %L", lv.fn.Nname, n)
 			}
 
 			// Record live variables.
@@ -1128,7 +1127,7 @@ func clobberWalk(b *ssa.Block, v *ir.Name, offset int64, t *types.Type) {
 		}
 
 	default:
-		base.Fatalf("clobberWalk: unexpected type, %v", t)
+		b.Func.Config.Target.Diagnostics.Fatalf("clobberWalk: unexpected type, %v", t)
 	}
 }
 
@@ -1157,7 +1156,7 @@ func (lv *Liveness) showlive(v *ssa.Value, live bitvec.BitVec) {
 
 	pos, s := lv.format(v, live)
 
-	base.WarnfAt(pos, "%s", s)
+	lv.fn.Target.Diagnostics.WarnfAt(pos, "%s", s)
 }
 
 func (lv *Liveness) Format(v *ssa.Value) string {
@@ -1289,7 +1288,7 @@ func (lv *Liveness) printDebug() {
 
 		if b == lv.f.Entry {
 			live := lv.stackMaps[0]
-			fmt.Printf("(%s) function entry\n", base.FmtPos(lv.fn.Nname.Pos()))
+			fmt.Printf("(%s) function entry\n", lv.fn.Target.Diagnostics.FmtPos(lv.fn.Nname.Pos()))
 			fmt.Printf("\tlive=")
 			printed = false
 			for j, n := range lv.vars {
@@ -1306,7 +1305,7 @@ func (lv *Liveness) printDebug() {
 		}
 
 		for _, v := range b.Values {
-			fmt.Printf("(%s) %v\n", base.FmtPos(v.Pos), v.LongString())
+			fmt.Printf("(%s) %v\n", lv.fn.Target.Diagnostics.FmtPos(v.Pos), v.LongString())
 
 			pcdata := lv.livenessMap.Get(v)
 
@@ -1404,8 +1403,8 @@ func (lv *Liveness) emit() (argsSym, liveSym *obj.LSym) {
 	loff = objw.Uint32(lv.fn.Target.Ctxt, &liveSymTmp, loff, uint32(locals.N))        // number of bits in each bitmap
 
 	// Check for overflow before serializing stackmaps
-	checkStackmapOverflow(args, len(lv.stackMaps), lv.fn.Pos())
-	checkStackmapOverflow(locals, len(lv.stackMaps), lv.fn.Pos())
+	checkStackmapOverflow(lv.fn.Target, args, len(lv.stackMaps), lv.fn.Pos())
+	checkStackmapOverflow(lv.fn.Target, locals, len(lv.stackMaps), lv.fn.Pos())
 
 	for _, live := range lv.stackMaps {
 		args.Clear()
@@ -1525,14 +1524,14 @@ func (lv *Liveness) emitStackObjects() *obj.LSym {
 		// should not be too big.
 		frameOffset := v.FrameOffset()
 		if frameOffset != int64(int32(frameOffset)) {
-			base.Fatalf("frame offset too big: %v %d", v, frameOffset)
+			lv.fn.Target.Diagnostics.Fatalf("frame offset too big: %v %d", v, frameOffset)
 		}
 		off = objw.Uint32(lv.fn.Target.Ctxt, x, off, uint32(frameOffset))
 
 		t := v.Type()
 		sz := t.Size()
 		if sz != int64(int32(sz)) {
-			base.Fatalf("stack object too big: %v of type %v, size %d", v, t, sz)
+			lv.fn.Target.Diagnostics.Fatalf("stack object too big: %v of type %v, size %d", v, t, sz)
 		}
 		lsym, ptrBytes := reflectdata.GCSym(lv.fn.Target, t, false)
 		off = objw.Uint32(lv.fn.Target.Ctxt, x, off, uint32(sz))
@@ -1542,7 +1541,7 @@ func (lv *Liveness) emitStackObjects() *obj.LSym {
 
 	if lv.fn.Target.Flags.Live != 0 {
 		for _, v := range vars {
-			base.WarnfAt(v.Pos(), "stack object %v %v", v, v.Type())
+			lv.fn.Target.Diagnostics.WarnfAt(v.Pos(), "stack object %v %v", v, v.Type())
 		}
 	}
 
@@ -1609,7 +1608,7 @@ func WriteFuncMap(fn *ir.Func, abiInfo *abi.ABIParamResultInfo) {
 	}
 
 	// defensive check: function arguments can't realistically be large enough for overflow here
-	checkStackmapOverflow(bv, nbitmap, fn.Pos())
+	checkStackmapOverflow(fn.Target, bv, nbitmap, fn.Pos())
 
 	lsym := fn.Target.Ctxt.Lookup(fn.LSym.Name + ".args_stackmap")
 	lsym.Set(obj.AttrLinkname, true) // allow args_stackmap referenced from assembly
@@ -1632,7 +1631,7 @@ func WriteFuncMap(fn *ir.Func, abiInfo *abi.ABIParamResultInfo) {
 // checkStackmapOverflow checks for potential overflow in runtime stackmap reading.
 // Runtime computes: n * ((nbit+7)/8) using int32 arithmetic.
 // See runtime.stackmapdata implementation.
-func checkStackmapOverflow(bv bitvec.BitVec, count int, pos src.XPos) {
+func checkStackmapOverflow(target *ir.Package, bv bitvec.BitVec, count int, pos src.XPos) {
 	if bv.N <= 0 || count <= 0 {
 		return
 	}
@@ -1640,6 +1639,6 @@ func checkStackmapOverflow(bv bitvec.BitVec, count int, pos src.XPos) {
 	totalBytes := bytesPerBitVec * int64(count)
 	if totalBytes > math.MaxInt32 {
 		// runtime.stackmap has to support 64-bit values to avoid this restriction, see issue 77170
-		base.FatalfAt(pos, "liveness stackmaps are too large: nbit=%d count=%d totalBytes=%d exceeds MaxInt32", bv.N, count, totalBytes)
+		target.Diagnostics.FatalfAt(pos, "liveness stackmaps are too large: nbit=%d count=%d totalBytes=%d exceeds MaxInt32", bv.N, count, totalBytes)
 	}
 }

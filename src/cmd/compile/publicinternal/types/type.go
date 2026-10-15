@@ -5,7 +5,6 @@
 package types
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/src"
 	"fmt"
@@ -535,7 +534,7 @@ func newTypeIn(context *Context, et Kind) *Type {
 // NewArray returns a new fixed-length array Type.
 func NewArray(elem *Type, bound int64) *Type {
 	if bound < 0 {
-		base.Fatalf("NewArray: invalid bound %v", bound)
+		fatalfType(elem, src.NoXPos, "NewArray: invalid bound %v", bound)
 	}
 	t := newTypeIn(contextForType(elem), TARRAY)
 	t.extra = &Array{Elem: elem, Bound: bound}
@@ -552,10 +551,10 @@ func NewArray(elem *Type, bound int64) *Type {
 func NewSlice(elem *Type) *Type {
 	if t := elem.cache.slice.Load(); t != nil {
 		if t.Elem() != elem {
-			base.Fatalf("elem mismatch")
+			fatalfType(elem, elem.Pos(), "elem mismatch")
 		}
 		if elem.HasShape() != t.HasShape() {
-			base.Fatalf("Incorrect HasShape flag for cached slice type")
+			fatalfType(elem, elem.Pos(), "Incorrect HasShape flag for cached slice type")
 		}
 		return t
 	}
@@ -638,15 +637,15 @@ func NewMap(k, v *Type) *Type {
 // NewPtr returns the pointer type pointing to t.
 func NewPtr(elem *Type) *Type {
 	if elem == nil {
-		base.Fatalf("NewPtr: pointer to elem Type is nil")
+		panic("NewPtr: pointer to elem Type is nil")
 	}
 
 	if t := elem.cache.ptr.Load(); t != nil {
 		if t.Elem() != elem {
-			base.Fatalf("NewPtr: elem mismatch")
+			fatalfType(elem, elem.Pos(), "NewPtr: elem mismatch")
 		}
 		if elem.HasShape() != t.HasShape() {
-			base.Fatalf("Incorrect HasShape flag for cached pointer type")
+			fatalfType(elem, elem.Pos(), "Incorrect HasShape flag for cached pointer type")
 		}
 		return t
 	}
@@ -696,7 +695,7 @@ func NewField(pos src.XPos, sym *Sym, typ *Type) *Field {
 		Offset: BADWIDTH,
 	}
 	if typ == nil {
-		base.Fatalf("typ is nil")
+		panic("typ is nil")
 	}
 	return f
 }
@@ -714,7 +713,7 @@ func SubstAny(t *Type, types *[]*Type) *Type {
 
 	case TANY:
 		if len(*types) == 0 {
-			base.Fatalf("SubstArgTypes: not enough argument types")
+			fatalfType(t, t.Pos(), "SubstArgTypes: not enough argument types")
 		}
 		t = (*types)[0]
 		*types = (*types)[1:]
@@ -841,7 +840,7 @@ func (t *Type) copy() *Type {
 		x := *t.extra.(*Array)
 		nt.extra = &x
 	case TTUPLE, TSSA, TRESULTS:
-		base.Fatalf("ssa types cannot be copied")
+		fatalfType(t, t.Pos(), "ssa types cannot be copied")
 	}
 	// TODO(mdempsky): Find out why this is necessary and explain.
 	if t.underlying == t {
@@ -857,7 +856,7 @@ func (f *Field) Copy() *Field {
 
 func (t *Type) wantEtype(et Kind) {
 	if t.kind != et {
-		base.Fatalf("want %v, but have %v", et, t)
+		fatalfType(t, t.Pos(), "want %v, but have %v", et, t)
 	}
 }
 
@@ -933,7 +932,7 @@ func (t *Type) Elem() *Type {
 	case TMAP:
 		return t.extra.(*Map).Elem
 	}
-	base.Fatalf("Type.Elem %s", t.kind)
+	fatalfType(t, t.Pos(), "Type.Elem %s", t.kind)
 	return nil
 }
 
@@ -1008,7 +1007,7 @@ func (t *Type) setFields(fields []*Field) {
 	// enforce that SetFields cannot be called once
 	// t's width has been calculated.
 	if t.widthCalculated() {
-		base.Fatalf("SetFields of %v: width previously calculated", t)
+		fatalfType(t, t.Pos(), "SetFields of %v: width previously calculated", t)
 	}
 	t.wantEtype(TSTRUCT)
 	t.fields().Set(fields)
@@ -1345,7 +1344,7 @@ var unsignedEType = [...]Kind{
 // ToUnsigned returns the unsigned equivalent of integer type t.
 func (t *Type) ToUnsigned() *Type {
 	if !t.IsInteger() {
-		base.Fatalf("unsignedType(%v)", t)
+		fatalfType(t, t.Pos(), "unsignedType(%v)", t)
 	}
 	return contextForType(t).Types[unsignedEType[t.kind]]
 }
@@ -1506,14 +1505,14 @@ func (t *Type) FieldName(i int) string {
 // The field is looked up by name.
 func (t *Type) OffsetOf(name string) int64 {
 	if t.kind != TSTRUCT {
-		base.Fatalf("can't call OffsetOf on non-struct %v", t)
+		fatalfType(t, t.Pos(), "can't call OffsetOf on non-struct %v", t)
 	}
 	for _, f := range t.Fields() {
 		if f.Sym.Name == name {
 			return f.Offset
 		}
 	}
-	base.Fatalf("couldn't find field %s in %v", name, t)
+	fatalfType(t, t.Pos(), "couldn't find field %s in %v", name, t)
 	return -1
 }
 
@@ -1539,7 +1538,7 @@ func (t *Type) NumComponents(countBlank componentsIncludeBlankFields) int64 {
 	switch t.kind {
 	case TSTRUCT:
 		if t.IsFuncArgStruct() {
-			base.Fatalf("NumComponents func arg struct")
+			fatalfType(t, t.Pos(), "NumComponents func arg struct")
 		}
 		var n int64
 		for _, f := range t.Fields() {
@@ -1563,7 +1562,7 @@ func (t *Type) SoleComponent() *Type {
 	switch t.kind {
 	case TSTRUCT:
 		if t.IsFuncArgStruct() {
-			base.Fatalf("SoleComponent func arg struct")
+			fatalfType(t, t.Pos(), "SoleComponent func arg struct")
 		}
 		if t.NumFields() != 1 {
 			return nil
@@ -1759,7 +1758,7 @@ func (t *Type) SetUnderlying(underlying *Type) {
 	// Double-check use of type as embedded type.
 	if ft.Embedlineno.IsKnown() {
 		if t.IsPtr() || t.IsUnsafePtr() {
-			base.ErrorfAt(ft.Embedlineno, errors.InvalidPtrEmbed, "embedded type cannot be a pointer")
+			errorfContext(contextForType(t), ft.Embedlineno, errors.InvalidPtrEmbed, "embedded type cannot be a pointer")
 		}
 	}
 }
@@ -1942,7 +1941,7 @@ func IsReflexive(t *Type) bool {
 		return true
 
 	default:
-		base.Fatalf("bad type for map key: %v", t)
+		fatalfType(t, t.Pos(), "bad type for map key: %v", t)
 		return false
 	}
 }
@@ -2047,7 +2046,7 @@ func FloatForComplex(t *Type) *Type {
 	case TCOMPLEX128:
 		return context.Types[TFLOAT64]
 	}
-	base.Fatalf("unexpected type: %v", t)
+	fatalfType(t, t.Pos(), "unexpected type: %v", t)
 	return nil
 }
 
@@ -2059,7 +2058,7 @@ func ComplexForFloat(t *Type) *Type {
 	case TFLOAT64:
 		return context.Types[TCOMPLEX128]
 	}
-	base.Fatalf("unexpected type: %v", t)
+	fatalfType(t, t.Pos(), "unexpected type: %v", t)
 	return nil
 }
 

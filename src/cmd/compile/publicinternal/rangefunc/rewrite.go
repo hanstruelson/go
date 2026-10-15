@@ -559,14 +559,13 @@ if it is still the one being processed.
 package rangefunc
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
 	"fmt"
 	"go/constant"
-	"publicinternal/abi"
 	"os"
+	"publicinternal/abi"
 )
 
 // nopos is the zero syntax.Pos.
@@ -1120,11 +1119,11 @@ func (r *rewriter) endLoop(loop *forLoop) {
 	rclause := nfor.Init.(*syntax.RangeClause)
 	rfunc := types2.CoreType(rclause.X.GetTypeInfo().Type).(*types2.Signature) // type of X - func(func(...)bool)
 	if rfunc.Params().Len() != 1 {
-		base.Fatalf("invalid typecheck of range func")
+		r.target.Diagnostics.Fatalf("invalid typecheck of range func")
 	}
 	ftyp := types2.CoreType(rfunc.Params().At(0).Type()).(*types2.Signature) // func(...) bool
 	if ftyp.Results().Len() != 1 {
-		base.Fatalf("invalid typecheck of range func")
+		r.target.Diagnostics.Fatalf("invalid typecheck of range func")
 	}
 
 	// Give the closure generated for the body a name, to help the debugger connect it to its frame, if active.

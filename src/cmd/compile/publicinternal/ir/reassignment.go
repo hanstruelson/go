@@ -4,10 +4,7 @@
 
 package ir
 
-import (
-	"cmd/compile/publicinternal/base"
-	"cmd/compile/publicinternal/types"
-)
+import "cmd/compile/publicinternal/types"
 
 // A ReassignOracle efficiently answers queries about whether local
 // variables are reassigned. This helper works by looking for function
@@ -216,7 +213,7 @@ FindRHS:
 				break FindRHS
 			}
 		}
-		base.FatalfAt(defn.Pos(), "%v missing from LHS of %v", n, defn)
+		fatalfAtTarget(nodeTarget(n), defn.Pos(), "%v missing from LHS of %v", n, defn)
 	default:
 		return nil
 	}
@@ -224,7 +221,7 @@ FindRHS:
 		if n.AutoTemp() {
 			return nil
 		}
-		base.FatalfAt(defn.Pos(), "RHS is nil: %v", defn)
+		fatalfAtTarget(nodeTarget(n), defn.Pos(), "RHS is nil: %v", defn)
 	}
 
 	if _, ok := ro.singleDef[n]; !ok {

@@ -5,7 +5,6 @@
 package inlheur
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/pgoir"
 	"cmp"
@@ -103,7 +102,7 @@ func SetupScoreAdjustments(ctx *Context) {
 		return
 	}
 	if err := parseScoreAdj(ctx, ctx.Target.Debug.InlScoreAdj); err != nil {
-		base.Fatalf("malformed -d=inlscoreadj argument %q: %v",
+		ctx.Target.Diagnostics.Fatalf("malformed -d=inlscoreadj argument %q: %v",
 			ctx.Target.Debug.InlScoreAdj, err)
 	}
 }
@@ -535,7 +534,7 @@ func (csa *callSiteAnalyzer) scoreCallsRegion(fn *ir.Func, region ir.Nodes, csta
 	if ic != nil && csa.ctx.callSiteTab != nil {
 		// Integrate the calls from this cstab into the table for the caller.
 		if err := csa.ctx.callSiteTab.merge(cstab); err != nil {
-			base.FatalfAt(ic.Pos(), "%v", err)
+			fn.Target.Diagnostics.FatalfAt(ic.Pos(), "%v", err)
 		}
 	} else {
 		csa.ctx.callSiteTab = cstab

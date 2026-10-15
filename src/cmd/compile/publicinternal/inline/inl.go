@@ -33,10 +33,8 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/inline/inlheur"
 	"cmd/compile/publicinternal/ir"
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/pgoir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -129,7 +127,7 @@ func (c *Context) PGOInlinePrologue(p *pgoir.Profile, target *ir.Package) {
 		if s, err := strconv.ParseFloat(target.Debug.PGOInlineCDFThreshold, 64); err == nil && s >= 0 && s <= 100 {
 			c.inlineCDFHotCallSiteThresholdPercent = s
 		} else {
-			base.Fatalf("invalid PGOInlineCDFThreshold, must be between 0 and 100")
+			target.Diagnostics.Fatalf("invalid PGOInlineCDFThreshold, must be between 0 and 100")
 		}
 	}
 	var hotCallsites []pgo.NamedCallEdge
@@ -267,18 +265,18 @@ func inlineBudget(ctx *Context, fn *ir.Func, profile *pgoir.Profile, relaxed boo
 // fn and fn.Body will already have been typechecked.
 func CanInline(ctx *Context, fn *ir.Func, profile *pgoir.Profile) {
 	if fn.Nname == nil {
-		base.Fatalf("CanInline no nname %+v", fn)
+		fn.Target.Diagnostics.Fatalf("CanInline no nname %+v", fn)
 	}
 
 	var reason string // reason, if any, that the function was not inlined
-	if fn.Target.Flags.LowerM > 1 || logopt.Enabled() {
+	if fn.Target.Flags.LowerM > 1 || fn.Target.LogOpt.Enabled() {
 		defer func() {
 			if reason != "" {
 				if fn.Target.Flags.LowerM > 1 {
-					fmt.Printf("%v: cannot inline %v: %s\n", ir.Line(fn), fn.Nname, reason)
+					fmt.Printf("%v: cannot inline %v: %s\n", ir.LineFor(fn.Target, fn), fn.Nname, reason)
 				}
-				if logopt.Enabled() {
-					logopt.LogOpt(fn.Pos(), "cannotInlineFunction", "inline", ir.FuncName(fn), reason)
+				if fn.Target.LogOpt.Enabled() {
+					fn.Target.LogOpt.LogOpt(fn.Pos(), "cannotInlineFunction", "inline", ir.FuncName(fn), reason)
 				}
 			}
 		}()
@@ -289,7 +287,7 @@ func CanInline(ctx *Context, fn *ir.Func, profile *pgoir.Profile) {
 		return
 	}
 	if fn.Typecheck() == 0 {
-		base.Fatalf("CanInline on non-typechecked function %v", fn)
+		fn.Target.Diagnostics.Fatalf("CanInline on non-typechecked function %v", fn)
 	}
 
 	n := fn.Nname
@@ -348,7 +346,7 @@ func CanInline(ctx *Context, fn *ir.Func, profile *pgoir.Profile) {
 		HaveDcl:         true,
 		CanDelayResults: canDelayResults(fn),
 	}
-	if fn.Target.Flags.LowerM != 0 || logopt.Enabled() {
+	if fn.Target.Flags.LowerM != 0 || fn.Target.LogOpt.Enabled() {
 		noteInlinableFunc(n, fn, budget-visitor.budget)
 	}
 }
@@ -357,13 +355,13 @@ func CanInline(ctx *Context, fn *ir.Func, profile *pgoir.Profile) {
 // function is inlinable.
 func noteInlinableFunc(n *ir.Name, fn *ir.Func, cost int32) {
 	if fn.Target.Flags.LowerM > 1 {
-		fmt.Printf("%v: can inline %v with cost %d as: %v { %v }\n", ir.Line(fn), n.DiagName(), cost, fn.Type(), fn.Body)
+		fmt.Printf("%v: can inline %v with cost %d as: %v { %v }\n", ir.LineFor(fn.Target, fn), n.DiagName(), cost, fn.Type(), fn.Body)
 	} else if fn.Target.Flags.LowerM != 0 {
-		fmt.Printf("%v: can inline %v\n", ir.Line(fn), n.DiagName())
+		fmt.Printf("%v: can inline %v\n", ir.LineFor(fn.Target, fn), n.DiagName())
 	}
 	// JSON optimization log output.
-	if logopt.Enabled() {
-		logopt.LogOpt(fn.Pos(), "canInlineFunction", "inline", ir.FuncName(fn), fmt.Sprintf("cost: %d", cost))
+	if fn.Target.LogOpt.Enabled() {
+		fn.Target.LogOpt.LogOpt(fn.Pos(), "canInlineFunction", "inline", ir.FuncName(fn), fmt.Sprintf("cost: %d", cost))
 	}
 }
 
@@ -516,7 +514,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		return false
 	}
 	if v.debug {
-		fmt.Printf("%v: doNode %v budget is %d\n", ir.Line(n), n.Op(), v.budget)
+		fmt.Printf("%v: doNode %v budget is %d\n", ir.LineFor(v.curFunc.Target, n), n.Op(), v.budget)
 	}
 opSwitch:
 	switch n.Op() {
@@ -640,7 +638,7 @@ opSwitch:
 		if cheap {
 			if v.debug {
 				if v.curFunc.Target.IsIntrinsicCall(n) {
-					fmt.Printf("%v: cheap call is also intrinsic, %v\n", ir.Line(n), n)
+					fmt.Printf("%v: cheap call is also intrinsic, %v\n", ir.LineFor(v.curFunc.Target, n), n)
 				}
 			}
 			break // treat like any other node, that is, cost of 1
@@ -648,7 +646,7 @@ opSwitch:
 
 		if v.curFunc.Target.IsIntrinsicCall(n) {
 			if v.debug {
-				fmt.Printf("%v: intrinsic call, %v\n", ir.Line(n), n)
+				fmt.Printf("%v: intrinsic call, %v\n", ir.LineFor(v.curFunc.Target, n), n)
 			}
 			break // Treat like any other node.
 		}
@@ -678,20 +676,20 @@ opSwitch:
 		}
 
 		if v.debug {
-			fmt.Printf("%v: costly OCALLFUNC %v\n", ir.Line(n), n)
+			fmt.Printf("%v: costly OCALLFUNC %v\n", ir.LineFor(v.curFunc.Target, n), n)
 		}
 
 		// Call cost for non-leaf inlining.
 		v.budget -= extraCost
 
 	case ir.OCALLMETH:
-		base.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
+		v.curFunc.Target.Diagnostics.FatalfAt(n.Pos(), "OCALLMETH missed by typecheck")
 
 	// Things that are too hairy, irrespective of the budget
 	case ir.OCALL, ir.OCALLINTER:
 		// Call cost for non-leaf inlining.
 		if v.debug {
-			fmt.Printf("%v: costly OCALL %v\n", ir.Line(n), n)
+			fmt.Printf("%v: costly OCALL %v\n", ir.LineFor(v.curFunc.Target, n), n)
 		}
 		v.budget -= v.extraCallCost
 
@@ -855,7 +853,7 @@ opSwitch:
 	v.budget--
 
 	// When debugging, don't stop early, to get full cost of inlining this function
-	if v.budget < 0 && v.curFunc.Target.Flags.LowerM < 2 && !logopt.Enabled() && !v.debug {
+	if v.budget < 0 && v.curFunc.Target.Flags.LowerM < 2 && !v.curFunc.Target.LogOpt.Enabled() && !v.debug {
 		v.reason = "too expensive"
 		return true
 	}
@@ -939,7 +937,7 @@ func TryInlineCall(ctx *Context, callerfn *ir.Func, call *ir.CallExpr, bigCaller
 
 	// Preserve old logging behavior
 	if (mightInline || isIntrinsic) && callerfn.Target.Flags.LowerM > 3 {
-		fmt.Printf("%v:call to func %+v\n", ir.Line(call), call.Fun)
+		fmt.Printf("%v:call to func %+v\n", ir.LineFor(callerfn.Target, call), call.Fun)
 	}
 	if !mightInline {
 		return nil
@@ -1051,7 +1049,7 @@ func inlineCostOK(ctx *Context, n *ir.CallExpr, caller, callee *ir.Func, bigCall
 
 	if bigCaller {
 		if caller.Target.Debug.PGODebug > 0 {
-			fmt.Printf("hot-big check disallows inlining for call %s (cost %d) at %v in big function %s\n", ir.PkgFuncName(callee), callee.Inl.Cost, ir.Line(n), ir.PkgFuncName(caller))
+			fmt.Printf("hot-big check disallows inlining for call %s (cost %d) at %v in big function %s\n", ir.PkgFuncName(callee), callee.Inl.Cost, ir.LineFor(caller.Target, n), ir.PkgFuncName(caller))
 		}
 		return false, maxCost, metric, false
 	}
@@ -1066,7 +1064,7 @@ func inlineCostOK(ctx *Context, n *ir.CallExpr, caller, callee *ir.Func, bigCall
 	}
 
 	if caller.Target.Debug.PGODebug > 0 {
-		fmt.Printf("hot-budget check allows inlining for call %s (cost %d) at %v in function %s\n", ir.PkgFuncName(callee), callee.Inl.Cost, ir.Line(n), ir.PkgFuncName(caller))
+		fmt.Printf("hot-budget check allows inlining for call %s (cost %d) at %v in function %s\n", ir.PkgFuncName(callee), callee.Inl.Cost, ir.LineFor(caller.Target, n), ir.PkgFuncName(caller))
 	}
 
 	return true, 0, metric, hot
@@ -1091,8 +1089,8 @@ func parsePos(ctxt *obj.Link, pos src.XPos, posTmp []src.Pos) ([]src.Pos, src.Po
 func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *ir.Func, bigCaller, closureCalledOnce bool, log bool) (bool, int32, bool) {
 	if callee.Inl == nil {
 		// callee is never inlinable.
-		if log && logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+		if log && callerfn.Target.LogOpt.Enabled() {
+			callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf("%s cannot be inlined", ir.PkgFuncName(callee)))
 		}
 		return false, 0, false
@@ -1101,8 +1099,8 @@ func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *
 	ok, maxCost, callSiteScore, hot := inlineCostOK(ctx, n, callerfn, callee, bigCaller, closureCalledOnce)
 	if !ok {
 		// callee cost too high for this call site.
-		if log && logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+		if log && callerfn.Target.LogOpt.Enabled() {
+			callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf("cost %d of %s exceeds max caller cost %d", callee.Inl.Cost, ir.PkgFuncName(callee), maxCost))
 		}
 		return false, 0, false
@@ -1112,8 +1110,8 @@ func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *
 
 	for _, p := range callees {
 		if p.Line() == calleeInner.Line() && p.Col() == calleeInner.Col() && p.AbsFilename() == calleeInner.AbsFilename() {
-			if log && logopt.Enabled() {
-				logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", fmt.Sprintf("recursive call to %s", ir.FuncName(callerfn)))
+			if log && callerfn.Target.LogOpt.Enabled() {
+				callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", fmt.Sprintf("recursive call to %s", ir.FuncName(callerfn)))
 			}
 			return false, 0, false
 		}
@@ -1126,16 +1124,16 @@ func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *
 		// we disable inlining of runtime functions when instrumenting.
 		// The example that we observed is inlining of LockOSThread,
 		// which lead to false race reports on m contents.
-		if log && logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+		if log && callerfn.Target.LogOpt.Enabled() {
+			callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf("call to runtime function %s in instrumented build", ir.PkgFuncName(callee)))
 		}
 		return false, 0, false
 	}
 
 	if callerfn.Target.Flags.Race && types.IsNoRacePkg(callee.Sym().Pkg) {
-		if log && logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+		if log && callerfn.Target.LogOpt.Enabled() {
+			callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf(`call to into "no-race" package function %s in race build`, ir.PkgFuncName(callee)))
 		}
 		return false, 0, false
@@ -1143,8 +1141,8 @@ func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *
 
 	if callerfn.Target.Debug.Checkptr != 0 && types.IsRuntimePkg(callee.Sym().Pkg) {
 		// We don't instrument runtime packages for checkptr (see base/flag.go).
-		if log && logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+		if log && callerfn.Target.LogOpt.Enabled() {
+			callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf(`call to into runtime package function %s in -d=checkptr build`, ir.PkgFuncName(callee)))
 		}
 		return false, 0, false
@@ -1163,10 +1161,10 @@ func canInlineCallExpr(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, callee *
 		if callerfn.Target.Ctxt.InlTree.InlinedFunction(inlIndex) == sym {
 			if log {
 				if callerfn.Target.Flags.LowerM > 1 {
-					fmt.Printf("%v: cannot inline %v into %v: repeated recursive cycle\n", ir.Line(n), callee, ir.FuncName(callerfn))
+					fmt.Printf("%v: cannot inline %v into %v: repeated recursive cycle\n", ir.LineFor(callerfn.Target, n), callee, ir.FuncName(callerfn))
 				}
-				if logopt.Enabled() {
-					logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
+				if callerfn.Target.LogOpt.Enabled() {
+					callerfn.Target.LogOpt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 						fmt.Sprintf("repeated recursive cycle to %s", ir.PkgFuncName(callee)))
 				}
 			}
@@ -1256,23 +1254,23 @@ func mkinlcall(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, fn *ir.Func, big
 	if callerfn.Target.Flags.LowerM != 0 {
 		if buildcfg.Experiment.NewInliner {
 			fmt.Printf("%v: inlining call to %v with score %d\n",
-				ir.Line(n), fn.Nname.DiagName(), score)
+				ir.LineFor(callerfn.Target, n), fn.Nname.DiagName(), score)
 		} else {
-			fmt.Printf("%v: inlining call to %v\n", ir.Line(n), fn.Nname.DiagName())
+			fmt.Printf("%v: inlining call to %v\n", ir.LineFor(callerfn.Target, n), fn.Nname.DiagName())
 		}
 	}
 	if callerfn.Target.Flags.LowerM > 2 {
-		fmt.Printf("%v: Before inlining: %+v\n", ir.Line(n), n)
+		fmt.Printf("%v: Before inlining: %+v\n", ir.LineFor(callerfn.Target, n), n)
 	}
 
 	res := inlineCall(callerfn, n, fn, inlIndex, profile)
 
 	if res == nil {
-		base.FatalfAt(n.Pos(), "inlining call to %v failed", fn.Nname.DiagName())
+		callerfn.Target.Diagnostics.FatalfAt(n.Pos(), "inlining call to %v failed", fn.Nname.DiagName())
 	}
 
 	if callerfn.Target.Flags.LowerM > 2 {
-		fmt.Printf("%v: After inlining %+v\n\n", ir.Line(res), res)
+		fmt.Printf("%v: After inlining %+v\n\n", ir.LineFor(callerfn.Target, res), res)
 	}
 
 	if inlheur.Enabled(callerfn.Target) {
@@ -1283,7 +1281,7 @@ func mkinlcall(ctx *Context, callerfn *ir.Func, n *ir.CallExpr, fn *ir.Func, big
 }
 
 // CalleeEffects appends any side effects from evaluating callee to init.
-func CalleeEffects(init *ir.Nodes, callee ir.Node) {
+func CalleeEffects(target *ir.Package, init *ir.Nodes, callee ir.Node) {
 	for {
 		init.Append(ir.TakeInit(callee)...)
 
@@ -1301,7 +1299,7 @@ func CalleeEffects(init *ir.Nodes, callee ir.Node) {
 			callee = ic.SingleResult()
 
 		default:
-			base.FatalfAt(callee.Pos(), "unexpected callee expression: %v", callee)
+			target.Diagnostics.FatalfAt(callee.Pos(), "unexpected callee expression: %v", callee)
 		}
 	}
 }
@@ -1313,7 +1311,7 @@ func pruneUnusedAutos(ll []*ir.Name, vis *hairyVisitor) []*ir.Name {
 			if !vis.usedLocals.Has(n) {
 				// TODO(mdempsky): Simplify code after confident that this
 				// never happens anymore.
-				base.FatalfAt(n.Pos(), "unused auto: %v", n)
+				vis.curFunc.Target.Diagnostics.FatalfAt(n.Pos(), "unused auto: %v", n)
 				continue
 			}
 		}

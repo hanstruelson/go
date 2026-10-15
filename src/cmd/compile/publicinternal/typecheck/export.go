@@ -5,7 +5,6 @@
 package typecheck
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
@@ -27,7 +26,7 @@ func importvar(s *types.Sym, t *types.Type) {
 func importsym(name *ir.Name) {
 	sym := name.Sym()
 	if sym.Def != nil {
-		base.Fatalf("importsym of symbol that already exists: %v", sym.Def)
+		fatalf(ir.TargetOf(name), "importsym of symbol that already exists: %v", sym.Def)
 	}
 	sym.Def = name
 }

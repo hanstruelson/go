@@ -5,7 +5,6 @@
 package pkginit
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/objw"
@@ -34,7 +33,7 @@ func MakeTask(compileCtx *noder.Context) {
 			continue
 		}
 		if n.Op() != ir.ONAME || n.Class != ir.PEXTERN {
-			base.Fatalf("bad inittask: %v", n)
+			compileCtx.Target.Diagnostics.Fatalf("bad inittask: %v", n)
 		}
 		deps = append(deps, n.Linksym())
 	}

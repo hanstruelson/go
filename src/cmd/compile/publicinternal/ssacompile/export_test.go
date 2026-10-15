@@ -31,6 +31,8 @@ var testCtxts = map[string]*obj.Link{
 	"arm64": obj.Linknew(&arm64.Linkarm64),
 }
 
+var testTarget *ir.Package
+
 func testConfig(tb testing.TB) *Conf      { return testConfigArch(tb, "amd64") }
 func testConfigS390X(tb testing.TB) *Conf { return testConfigArch(tb, "s390x") }
 func testConfigARM64(tb testing.TB) *Conf { return testConfigArch(tb, "arm64") }
@@ -43,8 +45,10 @@ func testConfigArch(tb testing.TB, arch string) *Conf {
 	if ctxt.Arch.PtrSize != 8 {
 		tb.Fatal("testTypes is 64-bit only")
 	}
+	testTarget.Ctxt = ctxt
+	testTarget.TypeContext.Link = ctxt
 	c := &Conf{
-		config: newConfig(arch, testTypes, ctxt, true, false),
+		config: newConfig(testTarget, arch, testTypes, ctxt, true, false),
 		tb:     tb,
 	}
 	return c
@@ -119,8 +123,13 @@ func init() {
 	types.MaxWidth = 1 << 50
 
 	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
-	target := &ir.Package{LocalPkg: types.NewPkgInstance("ssacompile/test", "test")}
-	target.LocalPkg.Local = true
-	typecheck.InitUniverse(target)
-	testTypes.SetTypPtrs(target)
+	testTarget = &ir.Package{
+		Ctxt:        base.Ctxt,
+		TypeContext: types.NewContext(8, 8, 1<<50),
+		LocalPkg:    types.NewPkgInstance("ssacompile/test", "test"),
+	}
+	testTarget.TypeContext.Link = testTarget.Ctxt
+	testTarget.LocalPkg.Local = true
+	typecheck.InitUniverse(testTarget)
+	testTypes.SetTypPtrs(testTarget)
 }

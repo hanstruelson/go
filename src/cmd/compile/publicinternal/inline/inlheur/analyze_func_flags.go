@@ -5,7 +5,6 @@
 package inlheur
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"fmt"
@@ -159,7 +158,7 @@ func (ffa *funcFlagsAnalyzer) stateForList(list ir.Nodes) pstate {
 		psi := ffa.getState(n)
 		if debugTrace&debugTraceFuncFlags != 0 {
 			fmt.Fprintf(os.Stderr, "=-= %v: stateForList n=%s ps=%s\n",
-				ir.Line(n), n.Op().String(), psi.String())
+				ir.LineFor(ffa.fn.Target, n), n.Op().String(), psi.String())
 		}
 		st = blockCombine(psi, st)
 		ffa.updateState(n, st)
@@ -226,7 +225,7 @@ func shouldVisit(n ir.Node) bool {
 func (ffa *funcFlagsAnalyzer) nodeVisitPost(n ir.Node) {
 	if debugTrace&debugTraceFuncFlags != 0 {
 		fmt.Fprintf(os.Stderr, "=+= nodevis %v %s should=%v\n",
-			ir.Line(n), n.Op().String(), shouldVisit(n))
+			ir.LineFor(ffa.fn.Target, n), n.Op().String(), shouldVisit(n))
 	}
 	if !shouldVisit(n) {
 		return
@@ -341,15 +340,15 @@ func (ffa *funcFlagsAnalyzer) nodeVisitPost(n ir.Node) {
 		// these should all be benign/uninteresting
 	case ir.OTAILCALL, ir.OJUMPTABLE, ir.OTYPESW:
 		// don't expect to see these at all.
-		base.Fatalf("unexpected op %s in func %s",
+		ffa.fn.Target.Diagnostics.Fatalf("unexpected op %s in func %s",
 			n.Op().String(), ir.FuncName(ffa.fn))
 	default:
-		base.Fatalf("%v: unhandled op %s in func %v",
-			ir.Line(n), n.Op().String(), ir.FuncName(ffa.fn))
+		ffa.fn.Target.Diagnostics.Fatalf("%v: unhandled op %s in func %v",
+			ir.LineFor(ffa.fn.Target, n), n.Op().String(), ir.FuncName(ffa.fn))
 	}
 	if debugTrace&debugTraceFuncFlags != 0 {
 		fmt.Fprintf(os.Stderr, "=-= %v: visit n=%s returns %s\n",
-			ir.Line(n), n.Op().String(), st.String())
+			ir.LineFor(ffa.fn.Target, n), n.Op().String(), st.String())
 	}
 	ffa.setState(n, st)
 }

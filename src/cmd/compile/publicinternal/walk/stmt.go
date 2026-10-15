@@ -5,7 +5,6 @@
 package walk
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 )
@@ -26,9 +25,9 @@ func (w *walkState) walkStmt(n ir.Node) ir.Node {
 	default:
 		if n.Op() == ir.ONAME {
 			n := n.(*ir.Name)
-			base.Errorf("%v is not a top level statement", n.Sym())
+			w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v is not a top level statement", n.Sym())
 		} else {
-			base.Errorf("%v is not a top level statement", n.Op())
+			w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v is not a top level statement", n.Op())
 		}
 		ir.Dump("nottop", n)
 		return n
@@ -54,7 +53,7 @@ func (w *walkState) walkStmt(n ir.Node) ir.Node {
 		ir.ORECOVER,
 		ir.OGETG:
 		if n.Typecheck() == 0 {
-			base.Fatalf("missing typecheck: %+v", n)
+			w.fatalf("missing typecheck: %+v", n)
 		}
 
 		init := ir.TakeInit(n)
@@ -100,7 +99,7 @@ func (w *walkState) walkStmt(n ir.Node) ir.Node {
 		return n
 
 	case ir.OCASE:
-		base.Errorf("case statement out of place")
+		w.curfunc.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "case statement out of place")
 		panic("unreachable")
 
 	case ir.ODEFER:
@@ -216,7 +215,7 @@ func validGoDeferCall(call ir.Node) bool {
 // walkGoDefer walks an OGO or ODEFER node.
 func (w *walkState) walkGoDefer(n *ir.GoDeferStmt) ir.Node {
 	if !validGoDeferCall(n.Call) {
-		base.FatalfAt(n.Pos(), "invalid %v call: %v", n.Op(), n.Call)
+		w.fatalfAt(n.Pos(), "invalid %v call: %v", n.Op(), n.Call)
 	}
 
 	var init ir.Nodes

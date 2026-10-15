@@ -7,11 +7,11 @@ package noder
 import (
 	"errors"
 	"fmt"
+	"os"
+	pathpkg "path"
 	"publicinternal/buildcfg"
 	"publicinternal/exportdata"
 	"publicinternal/pkgbits"
-	"os"
-	pathpkg "path"
 	"runtime"
 	"strings"
 	"unicode"
@@ -201,7 +201,7 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 		pkg2 = packages[path]
 		if !(pkg1.Direct == (pkg2 != nil && pkg2.Complete())) {
 
-			base.Fatalf("pkg1.Direct == (pkg2 != nil && pkg2.Complete()), path=%s\npackages=%v", path, packages)
+			target.Diagnostics.Fatalf("pkg1.Direct == (pkg2 != nil && pkg2.Complete()), path=%s\npackages=%v", path, packages)
 		}
 	}
 

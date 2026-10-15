@@ -6,13 +6,13 @@ package ssa
 
 import (
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa/ssabase"
 	"cmd/compile/publicinternal/ssa/ssaop"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
+	"fmt"
 )
 
 type (
@@ -188,7 +188,7 @@ func (c *Config) HaveByteSwap(size int64) bool {
 	case 2:
 		return c.HaveBswap16
 	default:
-		base.Fatalf("bad size %d\n", size)
+		panic(fmt.Sprintf("bad size %d", size))
 		return false
 	}
 }

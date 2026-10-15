@@ -5,9 +5,8 @@
 package bitvec
 
 import (
+	"fmt"
 	"math/bits"
-
-	"cmd/compile/publicinternal/base"
 )
 
 const (
@@ -51,7 +50,7 @@ func (b *Bulk) Next() BitVec {
 
 func (bv1 BitVec) Eq(bv2 BitVec) bool {
 	if bv1.N != bv2.N {
-		base.Fatalf("bvequal: lengths %d and %d are not equal", bv1.N, bv2.N)
+		panic(fmt.Sprintf("bvequal: lengths %d and %d are not equal", bv1.N, bv2.N))
 	}
 	for i, x := range bv1.B {
 		if x != bv2.B[i] {
@@ -67,7 +66,7 @@ func (dst BitVec) Copy(src BitVec) {
 
 func (bv BitVec) Get(i int32) bool {
 	if i < 0 || i >= bv.N {
-		base.Fatalf("bvget: index %d is out of bounds with length %d\n", i, bv.N)
+		panic(fmt.Sprintf("bvget: index %d is out of bounds with length %d\n", i, bv.N))
 	}
 	mask := uint32(1 << uint(i%wordBits))
 	return bv.B[i>>wordShift]&mask != 0
@@ -75,7 +74,7 @@ func (bv BitVec) Get(i int32) bool {
 
 func (bv BitVec) Set(i int32) {
 	if i < 0 || i >= bv.N {
-		base.Fatalf("bvset: index %d is out of bounds with length %d\n", i, bv.N)
+		panic(fmt.Sprintf("bvset: index %d is out of bounds with length %d\n", i, bv.N))
 	}
 	mask := uint32(1 << uint(i%wordBits))
 	bv.B[i/wordBits] |= mask
@@ -83,7 +82,7 @@ func (bv BitVec) Set(i int32) {
 
 func (bv BitVec) Unset(i int32) {
 	if i < 0 || i >= bv.N {
-		base.Fatalf("bvunset: index %d is out of bounds with length %d\n", i, bv.N)
+		panic(fmt.Sprintf("bvunset: index %d is out of bounds with length %d\n", i, bv.N))
 	}
 	mask := uint32(1 << uint(i%wordBits))
 	bv.B[i/wordBits] &^= mask

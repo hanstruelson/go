@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/types"
@@ -164,9 +163,9 @@ type note struct {
 
 func (k hole) note(where ir.Node, why string) hole {
 	if where == nil || why == "" {
-		base.Fatalf("note: missing where/why")
+		panic("note: missing where/why")
 	}
-	if k.target.Flags.LowerM >= 2 || logopt.Enabled() {
+	if k.target.Flags.LowerM >= 2 || k.target.LogOpt.Enabled() {
 		k.notes = &note{
 			next:  k.notes,
 			where: where,
@@ -179,7 +178,7 @@ func (k hole) note(where ir.Node, why string) hole {
 func (k hole) shift(delta int) hole {
 	k.derefs += delta
 	if k.derefs < -1 {
-		base.Fatalf("derefs underflow: %v", k.derefs)
+		panic(fmt.Sprintf("derefs underflow: %v", k.derefs))
 	}
 	k.addrtaken = delta < 0
 	return k
@@ -208,15 +207,15 @@ func (b *batch) flow(k hole, src *location) {
 		return
 	}
 	if dst.hasAttr(attrEscapes) && k.derefs < 0 { // dst = &src
-		if b.target.Flags.LowerM >= 2 || logopt.Enabled() {
-			pos := base.FmtPos(src.n.Pos())
+		if b.target.Flags.LowerM >= 2 || b.target.LogOpt.Enabled() {
+			pos := b.target.Diagnostics.FmtPos(src.n.Pos())
 			if b.target.Flags.LowerM >= 2 {
 				fmt.Printf("%s: %v escapes to heap in %v:\n", pos, src.n, ir.FuncName(src.curfn))
 			}
 			explanation := b.explainFlow(pos, dst, src, k.derefs, k.notes, []*logopt.LoggedOpt{})
-			if logopt.Enabled() {
+			if b.target.LogOpt.Enabled() {
 				var e_curfn *ir.Func // TODO(mdempsky): Fix.
-				logopt.LogOpt(src.n.Pos(), "escapes", "escape", ir.FuncName(e_curfn), fmt.Sprintf("%v escapes to heap", src.n), explanation)
+				b.target.LogOpt.LogOpt(src.n.Pos(), "escapes", "escape", ir.FuncName(e_curfn), fmt.Sprintf("%v escapes to heap", src.n), explanation)
 			}
 
 		}
@@ -235,22 +234,22 @@ func (b *batch) discardHole() hole { h := b.blankLoc.asHole(); h.target = b.targ
 
 func (b *batch) oldLoc(n *ir.Name) *location {
 	if n.Canonical().Opt == nil {
-		base.FatalfAt(n.Pos(), "%v has no location", n)
+		b.target.Diagnostics.FatalfAt(n.Pos(), "%v has no location", n)
 	}
 	return n.Canonical().Opt.(*location)
 }
 
 func (e *escape) newLoc(n ir.Node, persists bool) *location {
 	if e.curfn == nil {
-		base.Fatalf("e.curfn isn't set")
+		panic("e.curfn isn't set")
 	}
 	if n != nil && n.Type() != nil && n.Type().NotInHeap() {
-		base.ErrorfAt(n.Pos(), 0, "%v is incomplete (or unallocatable); stack allocation disallowed", n.Type())
+		e.curfn.Target.Diagnostics.ErrorfAt(n.Pos(), 0, "%v is incomplete (or unallocatable); stack allocation disallowed", n.Type())
 	}
 
 	if n != nil && n.Op() == ir.ONAME {
 		if canon := n.(*ir.Name).Canonical(); n != canon {
-			base.FatalfAt(n.Pos(), "newLoc on non-canonical %v (canonical is %v)", n, canon)
+			e.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "newLoc on non-canonical %v (canonical is %v)", n, canon)
 		}
 	}
 	loc := &location{
@@ -274,11 +273,11 @@ func (e *escape) newLoc(n ir.Node, persists bool) *location {
 			if n.Class == ir.PPARAM && n.Curfn == nil {
 				// ok; hidden parameter
 			} else if n.Curfn != e.curfn {
-				base.FatalfAt(n.Pos(), "curfn mismatch: %v != %v for %v", n.Curfn, e.curfn, n)
+				e.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "curfn mismatch: %v != %v for %v", n.Curfn, e.curfn, n)
 			}
 
 			if n.Opt != nil {
-				base.FatalfAt(n.Pos(), "%v already has a location", n)
+				e.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "%v already has a location", n)
 			}
 			n.Opt = loc
 		}
@@ -308,7 +307,7 @@ func (e *escape) teeHole(ks ...hole) hole {
 		// *ltmp" and "l2 = ltmp" and return "ltmp = &_"
 		// instead.
 		if k.derefs < 0 {
-			base.Fatalf("teeHole: negative derefs")
+			panic("teeHole: negative derefs")
 		}
 
 		e.flow(k, loc)

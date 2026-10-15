@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -94,7 +93,7 @@ func (c *nowritebarrierrecChecker) findExtraCalls(nn ir.Node) {
 		arg := arg.(*ir.ClosureExpr)
 		callee = arg.Func
 	default:
-		base.Fatalf("expected ONAME or OCLOSURE node, got %+v", arg)
+		c.target.Diagnostics.Fatalf("expected ONAME or OCLOSURE node, got %+v", arg)
 	}
 	c.extraCalls[c.curfn] = append(c.extraCalls[c.curfn], nowritebarrierrecCall{callee, n.Pos()})
 }
@@ -141,7 +140,7 @@ func (c *nowritebarrierrecChecker) check() {
 		}
 		// Check go:nowritebarrier functions.
 		if fn.Pragma&ir.Nowritebarrier != 0 && fn.WBPos.IsKnown() {
-			base.ErrorfAt(fn.WBPos, 0, "write barrier prohibited")
+			c.target.Diagnostics.ErrorfAt(fn.WBPos, 0, "write barrier prohibited")
 		}
 	}
 
@@ -169,7 +168,7 @@ func (c *nowritebarrierrecChecker) check() {
 			var err strings.Builder
 			call := funcs[fn]
 			for call.target != nil {
-				fmt.Fprintf(&err, "\n\t%v: called by %v", base.FmtPos(call.lineno), call.target.Nname)
+				fmt.Fprintf(&err, "\n\t%v: called by %v", c.target.Diagnostics.FmtPos(call.lineno), call.target.Nname)
 				call = funcs[call.target]
 			}
 			// Seeing this error in a failed CI run? It indicates that
@@ -180,7 +179,7 @@ func (c *nowritebarrierrecChecker) check() {
 			//
 			// Even if the call path is infeasable,
 			// you will need to reorganize the code to avoid it.
-			base.ErrorfAt(fn.WBPos, 0, "write barrier prohibited by caller; %v%s", fn.Nname, err.String())
+			c.target.Diagnostics.ErrorfAt(fn.WBPos, 0, "write barrier prohibited by caller; %v%s", fn.Nname, err.String())
 			continue
 		}
 

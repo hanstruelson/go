@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/ssa"
@@ -36,7 +35,7 @@ func Info(target *ir.Package, ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym
 			expect = fn.LinksymABI(obj.ABI0)
 		}
 		if fnsym != expect {
-			base.Fatalf("unexpected fnsym: %v != %v", fnsym, expect)
+			target.Diagnostics.Fatalf("unexpected fnsym: %v != %v", fnsym, expect)
 		}
 	}
 
@@ -86,7 +85,7 @@ func Info(target *ir.Package, ctxt *obj.Link, fnsym *obj.LSym, infosym *obj.LSym
 				if !n.Used() {
 					// Text == nil -> generating abstract function
 					if fnsym.Func().Text != nil {
-						base.Fatalf("debuginfo unused node (AllocFrame should truncate fn.Func.Dcl)")
+						target.Diagnostics.Fatalf("debuginfo unused node (AllocFrame should truncate fn.Func.Dcl)")
 					}
 					continue
 				}
@@ -281,7 +280,7 @@ func createDwarfVars(fnsym *obj.LSym, complexOK bool, fn *ir.Func, apDecls []*ir
 				continue
 			}
 			if n.Class != ir.PPARAMOUT || !n.IsOutputParamInRegisters() {
-				base.Fatalf("invalid ir.Name on debugInfo.RegOutputParams list")
+				fn.Target.Diagnostics.Fatalf("invalid ir.Name on debugInfo.RegOutputParams list")
 			}
 			dcl = append(dcl, n)
 		}
@@ -475,7 +474,7 @@ func createSimpleVar(target *ir.Package, fnsym *obj.LSym, n *ir.Name, closureVar
 		}
 
 	default:
-		base.Fatalf("createSimpleVar unexpected class %v for node %v", n.Class, n)
+		target.Diagnostics.Fatalf("createSimpleVar unexpected class %v for node %v", n.Class, n)
 	}
 
 	typename := dwarf.InfoPrefix + types.TypeSymName(n.Type())
@@ -595,7 +594,7 @@ func createHeapDerefLocationList(target *ir.Package, n *ir.Name, entryID ssa.ID)
 // in the DWARF info.
 func RecordFlags(target *ir.Package, flags ...string) {
 	if target.Ctxt.Pkgpath == "" {
-		base.Fatalf("missing pkgpath")
+		target.Diagnostics.Fatalf("missing pkgpath")
 	}
 
 	type BoolFlag interface {

@@ -5,7 +5,6 @@
 package ssacompile
 
 import (
-	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
 	"cmd/compile/publicinternal/ssa/ssaop"
@@ -16,7 +15,8 @@ import (
 // corresponding debug options, so it's off by default.
 // See test/checkbce.go
 func checkbce(f *ssa.Func) {
-	if f.Pass.Debug <= 0 && !logopt.Enabled() {
+	logctx := f.LogOptContext()
+	if f.Pass.Debug <= 0 && !logctx.Enabled() {
 		return
 	}
 
@@ -29,12 +29,12 @@ func checkbce(f *ssa.Func) {
 				if f.Pass.Debug > 0 {
 					f.Warnl(v.Pos, "Found %v", v.Op)
 				}
-				if logopt.Enabled() {
+				if logctx.Enabled() {
 					if v.Op == ssaop.OpIsInBounds {
-						logopt.LogOpt(v.Pos, "isInBounds", "checkbce", f.Name)
+						logctx.LogOpt(v.Pos, "isInBounds", "checkbce", f.Name)
 					}
 					if v.Op == ssaop.OpIsSliceInBounds {
-						logopt.LogOpt(v.Pos, "isSliceInBounds", "checkbce", f.Name)
+						logctx.LogOpt(v.Pos, "isSliceInBounds", "checkbce", f.Name)
 					}
 				}
 			}

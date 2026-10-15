@@ -5,8 +5,8 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/publicinternal/src"
+	"fmt"
 )
 
 // checkStaticValueResult compares the result from ReassignOracle.StaticValue
@@ -15,7 +15,7 @@ import (
 func checkStaticValueResult(n Node, newres Node) {
 	oldres := StaticValue(n)
 	if oldres != newres {
-		base.Fatalf("%s: new/old static value disagreement on %v:\nnew=%v\nold=%v", fmtFullPos(n.Pos()), n, newres, oldres)
+		panic(fmt.Sprintf("%s: new/old static value disagreement on %v:\nnew=%v\nold=%v", fmtFullPos(n.Pos()), n, newres, oldres))
 	}
 }
 
@@ -25,7 +25,7 @@ func checkStaticValueResult(n Node, newres Node) {
 func checkReassignedResult(n *Name, newres bool) {
 	origres := Reassigned(n)
 	if newres != origres {
-		base.Fatalf("%s: new/old reassigned disagreement on %v (class %s) newres=%v oldres=%v", fmtFullPos(n.Pos()), n, n.Class.String(), newres, origres)
+		panic(fmt.Sprintf("%s: new/old reassigned disagreement on %v (class %s) newres=%v oldres=%v", fmtFullPos(n.Pos()), n, n.Class.String(), newres, origres))
 	}
 }
 

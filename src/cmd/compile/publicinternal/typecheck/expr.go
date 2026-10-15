@@ -23,12 +23,12 @@ func tcShift(curfunc *ir.Func, n, l, r ir.Node) (ir.Node, ir.Node, *types.Type) 
 	r = DefaultLitFor(targetForFunc(curfunc), r, targetType(curfunc, types.TUINT))
 	t := r.Type()
 	if !t.IsInteger() {
-		base.Errorf("invalid operation: %v (shift count type %v, must be integer)", n, r.Type())
+		errorf(targetForFunc(curfunc), "invalid operation: %v (shift count type %v, must be integer)", n, r.Type())
 		return l, r, nil
 	}
 	t = l.Type()
 	if t != nil && t.Kind() != types.TIDEAL && !t.IsInteger() {
-		base.Errorf("invalid operation: %v (shift of type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (shift of type %v)", n, t)
 		return l, r, nil
 	}
 
@@ -70,7 +70,7 @@ func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir
 			aop, _ = assignOp(l.Type(), r.Type())
 			if aop != ir.OXXX {
 				if r.Type().IsInterface() && !l.Type().IsInterface() && !types.IsComparable(l.Type()) {
-					base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, op, typekind(l.Type()))
+					errorf(target, "invalid operation: %v (operator %v not defined on %s)", n, op, typekind(l.Type()))
 					return l, r, nil
 				}
 
@@ -89,7 +89,7 @@ func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir
 			aop, _ = assignOp(r.Type(), l.Type())
 			if aop != ir.OXXX {
 				if l.Type().IsInterface() && !r.Type().IsInterface() && !types.IsComparable(r.Type()) {
-					base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, op, typekind(r.Type()))
+					errorf(target, "invalid operation: %v (operator %v not defined on %s)", n, op, typekind(r.Type()))
 					return l, r, nil
 				}
 
@@ -110,7 +110,7 @@ func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir
 			return l, r, nil
 		}
 		if l.Type().IsInterface() == r.Type().IsInterface() || aop == 0 {
-			base.Errorf("invalid operation: %v (mismatched types %v and %v)", n, l.Type(), r.Type())
+			errorf(target, "invalid operation: %v (mismatched types %v and %v)", n, l.Type(), r.Type())
 			return l, r, nil
 		}
 	}
@@ -119,35 +119,35 @@ func tcArith(target *ir.Package, n ir.Node, op ir.Op, l, r ir.Node) (ir.Node, ir
 		t = mixUntyped(l.Type(), r.Type())
 	}
 	if dt := defaultType(target, t); !okfor[op][dt.Kind()] {
-		base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, op, typekind(t))
+		errorf(target, "invalid operation: %v (operator %v not defined on %s)", n, op, typekind(t))
 		return l, r, nil
 	}
 
 	// okfor allows any array == array, map == map, func == func.
 	// restrict to slice/map/func == nil and nil == slice/map/func.
 	if l.Type().IsArray() && !types.IsComparable(l.Type()) {
-		base.Errorf("invalid operation: %v (%v cannot be compared)", n, l.Type())
+		errorf(target, "invalid operation: %v (%v cannot be compared)", n, l.Type())
 		return l, r, nil
 	}
 
 	if l.Type().IsSlice() && !ir.IsNil(l) && !ir.IsNil(r) {
-		base.Errorf("invalid operation: %v (slice can only be compared to nil)", n)
+		errorf(target, "invalid operation: %v (slice can only be compared to nil)", n)
 		return l, r, nil
 	}
 
 	if l.Type().IsMap() && !ir.IsNil(l) && !ir.IsNil(r) {
-		base.Errorf("invalid operation: %v (map can only be compared to nil)", n)
+		errorf(target, "invalid operation: %v (map can only be compared to nil)", n)
 		return l, r, nil
 	}
 
 	if l.Type().Kind() == types.TFUNC && !ir.IsNil(l) && !ir.IsNil(r) {
-		base.Errorf("invalid operation: %v (func can only be compared to nil)", n)
+		errorf(target, "invalid operation: %v (func can only be compared to nil)", n)
 		return l, r, nil
 	}
 
 	if l.Type().IsStruct() {
 		if f := types.IncomparableField(l.Type()); f != nil {
-			base.Errorf("invalid operation: %v (struct containing %v cannot be compared)", n, f.Type)
+			errorf(target, "invalid operation: %v (struct containing %v cannot be compared)", n, f.Type)
 			return l, r, nil
 		}
 	}
@@ -169,11 +169,11 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 	ir.SetPosIn(curfunc, n)
 
 	t := n.Type()
-	base.AssertfAt(t != nil, n.Pos(), "missing type in composite literal")
+	assertfAt(targetForFunc(curfunc), t != nil, n.Pos(), "missing type in composite literal")
 
 	switch t.Kind() {
 	default:
-		base.Errorf("invalid composite literal type %v", t)
+		errorf(targetForFunc(curfunc), "invalid composite literal type %v", t)
 		n.SetType(nil)
 
 	case types.TARRAY:
@@ -190,7 +190,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 			ir.SetPosIn(curfunc, l)
 			if l.Op() != ir.OKEY {
 				n.List[i3] = Expr(curfunc, l)
-				base.Errorf("missing key in map literal")
+				errorf(targetForFunc(curfunc), "missing key in map literal")
 				continue
 			}
 			l := l.(*ir.KeyExpr)
@@ -220,7 +220,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 				ls[i] = n1
 				if i >= t.NumFields() {
 					if !errored {
-						base.Errorf("too many values in %v", n)
+						errorf(targetForFunc(curfunc), "too many values in %v", n)
 						errored = true
 					}
 					continue
@@ -239,7 +239,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 				// package of the generic function.
 				if !(curfunc != nil && strings.Contains(curfunc.Nname.Sym().Name, "[")) {
 					if s != nil && !types.IsExported(s.Name) && s.Pkg != curfunc.Target.LocalPkg {
-						base.Errorf("implicit assignment of unexported field '%s' in %v literal", s.Name, t)
+						errorf(targetForFunc(curfunc), "implicit assignment of unexported field '%s' in %v literal", s.Name, t)
 					}
 				}
 				// No pushtype allowed here. Must name fields for that.
@@ -247,7 +247,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 				ls[i] = ir.NewStructKeyExpr(ir.CurrentPos(curfunc), f, n1)
 			}
 			if len(ls) < t.NumFields() {
-				base.Errorf("too few values in %v", n)
+				errorf(targetForFunc(curfunc), "too few values in %v", n)
 			}
 		} else {
 			hash := make(map[string]bool)
@@ -262,7 +262,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 					kv, ok := n.(*ir.KeyExpr)
 					if !ok {
 						if !errored {
-							base.Errorf("mixture of field:value and value initializers")
+							errorf(targetForFunc(curfunc), "mixture of field:value and value initializers")
 							errored = true
 						}
 						ls[i] = Expr(curfunc, n)
@@ -274,7 +274,7 @@ func tcCompLit(curfunc *ir.Func, n *ir.CompLitExpr) (res ir.Node) {
 						continue
 					}
 
-					fielddup(sk.Sym().Name, hash)
+					fielddup(targetForFunc(curfunc), sk.Sym().Name, hash)
 				}
 
 				// No pushtype allowed here. Tried and rejected.
@@ -302,7 +302,7 @@ func tcStructLitKey(curfunc *ir.Func, typ *types.Type, kv *ir.KeyExpr) *ir.Struc
 	// so s will be non-nil, but an OXDOT
 	// is never a valid struct literal key.
 	if sym == nil || sym.Pkg != curfunc.Target.LocalPkg || key.Op() == ir.OXDOT || sym.IsBlank() {
-		base.Errorf("invalid field name %v in struct initializer", key)
+		errorf(targetForFunc(curfunc), "invalid field name %v in struct initializer", key)
 		return nil
 	}
 
@@ -313,11 +313,11 @@ func tcStructLitKey(curfunc *ir.Func, typ *types.Type, kv *ir.KeyExpr) *ir.Struc
 	var f *types.Field
 	if p, ambig := dotpath(sym, typ, &f, false); p != nil {
 		if ambig {
-			base.Errorf("ambiguous promoted field '%v' in struct literal of type %v", sym, typ)
+			errorf(targetForFunc(curfunc), "ambiguous promoted field '%v' in struct literal of type %v", sym, typ)
 			return nil
 		}
 		if f.IsMethod() {
-			base.Errorf("cannot use method '%v' in struct literal of type %v", sym, typ)
+			errorf(targetForFunc(curfunc), "cannot use method '%v' in struct literal of type %v", sym, typ)
 			return nil
 		}
 		return ir.NewStructKeyExpr(kv.Pos(), f, kv.Value)
@@ -325,18 +325,18 @@ func tcStructLitKey(curfunc *ir.Func, typ *types.Type, kv *ir.KeyExpr) *ir.Struc
 
 	if ci := Lookdot1(nil, sym, typ, typ.Fields(), 2); ci != nil { // Case-insensitive lookup.
 		if visible(curfunc, ci.Sym) {
-			base.Errorf("unknown field '%v' in struct literal of type %v (but does have %v)", sym, typ, ci.Sym)
+			errorf(targetForFunc(curfunc), "unknown field '%v' in struct literal of type %v (but does have %v)", sym, typ, ci.Sym)
 		} else if nonexported(sym) && sym.Name == ci.Sym.Name { // Ensure exactness before the suggestion.
-			base.Errorf("cannot refer to unexported field '%v' in struct literal of type %v", sym, typ)
+			errorf(targetForFunc(curfunc), "cannot refer to unexported field '%v' in struct literal of type %v", sym, typ)
 		} else {
-			base.Errorf("unknown field '%v' in struct literal of type %v", sym, typ)
+			errorf(targetForFunc(curfunc), "unknown field '%v' in struct literal of type %v", sym, typ)
 		}
 		return nil
 	}
 
 	p, _ := dotpath(sym, typ, &f, true)
 	if p == nil || f.IsMethod() {
-		base.Errorf("unknown field '%v' in struct literal of type %v", sym, typ)
+		errorf(targetForFunc(curfunc), "unknown field '%v' in struct literal of type %v", sym, typ)
 		return nil
 	}
 
@@ -346,7 +346,7 @@ func tcStructLitKey(curfunc *ir.Func, typ *types.Type, kv *ir.KeyExpr) *ir.Struc
 		ep = append(ep, p[ei].field.Sym.Name)
 	}
 	ep = append(ep, f.Sym.Name)
-	base.Errorf("unknown field '%v' in struct literal of type %v (but does have %v)", sym, typ, strings.Join(ep, "."))
+	errorf(targetForFunc(curfunc), "unknown field '%v' in struct literal of type %v (but does have %v)", sym, typ, strings.Join(ep, "."))
 	return nil
 }
 
@@ -363,7 +363,7 @@ func tcConv(curfunc *ir.Func, n *ir.ConvExpr) ir.Node {
 	op, why := convertOp(n.X.Op() == ir.OLITERAL, t, n.Type())
 	if op == ir.OXXX {
 		// Due to //go:nointerface, we may be stricter than types2 here (#63333).
-		base.ErrorfAt(n.Pos(), errors.InvalidConversion, "cannot convert %L to type %v%s", n.X, n.Type(), why)
+		errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidConversion, "cannot convert %L to type %v%s", n.X, n.Type(), why)
 		n.SetType(nil)
 		return n
 	}
@@ -423,7 +423,7 @@ func DotField(pos src.XPos, x ir.Node, index int) *ir.SelectorExpr {
 		op, typ = ir.ODOTPTR, typ.Elem()
 	}
 	if !typ.IsStruct() {
-		base.FatalfAt(pos, "DotField of non-struct: %L", x)
+		fatalfAt(ir.TargetOf(x), pos, "DotField of non-struct: %L", x)
 	}
 
 	// TODO(mdempsky): This is the backend's responsibility.
@@ -447,7 +447,7 @@ func dot(pos src.XPos, typ *types.Type, op ir.Op, x ir.Node, selection *types.Fi
 func XDotField(curfunc *ir.Func, pos src.XPos, x ir.Node, sym *types.Sym) *ir.SelectorExpr {
 	n := Expr(curfunc, ir.NewSelectorExpr(pos, ir.OXDOT, x, sym)).(*ir.SelectorExpr)
 	if n.Op() != ir.ODOT && n.Op() != ir.ODOTPTR {
-		base.FatalfAt(pos, "unexpected result op: %v (%v)", n.Op(), n)
+		fatalfAt(targetForFunc(curfunc), pos, "unexpected result op: %v (%v)", n.Op(), n)
 	}
 	return n
 }
@@ -463,12 +463,12 @@ func XDotMethod(curfunc *ir.Func, pos src.XPos, x ir.Node, sym *types.Sym, calle
 	if callee {
 		n = Callee(curfunc, n).(*ir.SelectorExpr)
 		if n.Op() != ir.ODOTMETH && n.Op() != ir.ODOTINTER {
-			base.FatalfAt(pos, "unexpected result op: %v (%v)", n.Op(), n)
+			fatalfAt(targetForFunc(curfunc), pos, "unexpected result op: %v (%v)", n.Op(), n)
 		}
 	} else {
 		n = Expr(curfunc, n).(*ir.SelectorExpr)
 		if n.Op() != ir.OMETHVALUE {
-			base.FatalfAt(pos, "unexpected result op: %v (%v)", n.Op(), n)
+			fatalfAt(targetForFunc(curfunc), pos, "unexpected result op: %v (%v)", n.Op(), n)
 		}
 	}
 	return n
@@ -490,13 +490,13 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 
 	t := n.X.Type()
 	if t == nil {
-		base.UpdateErrorDot(ir.Line(n), fmt.Sprint(n.X), fmt.Sprint(n))
+		updateErrorDot(targetForFunc(curfunc), ir.LineFor(targetForFunc(curfunc), n), fmt.Sprint(n.X), fmt.Sprint(n))
 		n.SetType(nil)
 		return n
 	}
 
 	if n.X.Op() == ir.OTYPE {
-		base.FatalfAt(n.Pos(), "use NewMethodExpr to construct OMETHEXPR")
+		fatalfAt(targetForFunc(curfunc), n.Pos(), "use NewMethodExpr to construct OMETHEXPR")
 	}
 
 	if t.IsPtr() && !t.Elem().IsInterface() {
@@ -510,7 +510,7 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 	}
 
 	if n.Sel.IsBlank() {
-		base.Errorf("cannot refer to blank field or method")
+		errorf(targetForFunc(curfunc), "cannot refer to blank field or method")
 		n.SetType(nil)
 		return n
 	}
@@ -519,21 +519,21 @@ func tcDot(curfunc *ir.Func, n *ir.SelectorExpr, top int) ir.Node {
 		// Legitimate field or method lookup failed, try to explain the error
 		switch {
 		case t.IsEmptyInterface():
-			base.Errorf("%v undefined (type %v is interface with no methods)", n, n.X.Type())
+			errorf(targetForFunc(curfunc), "%v undefined (type %v is interface with no methods)", n, n.X.Type())
 
 		case t.IsPtr() && t.Elem().IsInterface():
 			// Pointer to interface is almost always a mistake.
-			base.Errorf("%v undefined (type %v is pointer to interface, not interface)", n, n.X.Type())
+			errorf(targetForFunc(curfunc), "%v undefined (type %v is pointer to interface, not interface)", n, n.X.Type())
 
 		case Lookdot(curfunc, n, t, 1) != nil:
 			// Field or method matches by name, but it is not exported.
-			base.Errorf("%v undefined (cannot refer to unexported field or method %v)", n, n.Sel)
+			errorf(targetForFunc(curfunc), "%v undefined (cannot refer to unexported field or method %v)", n, n.Sel)
 
 		default:
 			if mt := Lookdot(curfunc, n, t, 2); mt != nil && visible(curfunc, mt.Sym) { // Case-insensitive lookup.
-				base.Errorf("%v undefined (type %v has no field or method %v, but does have %v)", n, n.X.Type(), n.Sel, mt.Sym)
+				errorf(targetForFunc(curfunc), "%v undefined (type %v has no field or method %v, but does have %v)", n, n.X.Type(), n.Sel, mt.Sym)
 			} else {
-				base.Errorf("%v undefined (type %v has no field or method %v)", n, n.X.Type(), n.Sel)
+				errorf(targetForFunc(curfunc), "%v undefined (type %v has no field or method %v)", n, n.X.Type(), n.Sel)
 			}
 		}
 		n.SetType(nil)
@@ -558,17 +558,17 @@ func tcDotType(curfunc *ir.Func, n *ir.TypeAssertExpr) ir.Node {
 		return n
 	}
 	if !t.IsInterface() {
-		base.Errorf("invalid type assertion: %v (non-interface type %v on left)", n, t)
+		errorf(targetForFunc(curfunc), "invalid type assertion: %v (non-interface type %v on left)", n, t)
 		n.SetType(nil)
 		return n
 	}
 
-	base.AssertfAt(n.Type() != nil, n.Pos(), "missing type: %v", n)
+	assertfAt(targetForFunc(curfunc), n.Type() != nil, n.Pos(), "missing type: %v", n)
 
 	if n.Type() != nil && !n.Type().IsInterface() {
 		why := ImplementsExplain(n.Type(), t)
 		if why != "" {
-			base.Fatalf("impossible type assertion:\n\t%s", why)
+			fatalf(targetForFunc(curfunc), "impossible type assertion:\n\t%s", why)
 			n.SetType(nil)
 			return n
 		}
@@ -585,7 +585,7 @@ func tcITab(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 	if !t.IsInterface() {
-		base.Fatalf("OITAB of %v", t)
+		fatalf(targetForFunc(curfunc), "OITAB of %v", t)
 	}
 	n.SetType(types.NewPtr(curfunc.Target.Type(types.TUINTPTR)))
 	return n
@@ -606,7 +606,7 @@ func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 	}
 	switch t.Kind() {
 	default:
-		base.Errorf("invalid operation: %v (type %v does not support indexing)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (type %v does not support indexing)", n, t)
 		n.SetType(nil)
 		return n
 
@@ -625,7 +625,7 @@ func tcIndex(curfunc *ir.Func, n *ir.IndexExpr) ir.Node {
 		}
 
 		if n.Index.Type() != nil && !n.Index.Type().IsInteger() {
-			base.Errorf("non-integer %s index %v", why, n.Index)
+			errorf(targetForFunc(curfunc), "non-integer %s index %v", why, n.Index)
 			return n
 		}
 
@@ -657,7 +657,7 @@ func tcLenCap(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		ok = okforcap[t.Kind()]
 	}
 	if !ok {
-		base.Errorf("invalid argument %L for %v", l, n.Op())
+		errorf(targetForFunc(curfunc), "invalid argument %L for %v", l, n.Op())
 		n.SetType(nil)
 		return n
 	}
@@ -686,7 +686,7 @@ func tcUnsafeData(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	}
 
 	if t.Kind() != kind {
-		base.Errorf("invalid argument %L for %v", l, n.Op())
+		errorf(targetForFunc(curfunc), "invalid argument %L for %v", l, n.Op())
 		n.SetType(nil)
 		return n
 	}
@@ -711,13 +711,13 @@ func tcRecv(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 	if !t.IsChan() {
-		base.Errorf("invalid operation: %v (receive from non-chan type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (receive from non-chan type %v)", n, t)
 		n.SetType(nil)
 		return n
 	}
 
 	if !t.ChanDir().CanRecv() {
-		base.Errorf("invalid operation: %v (receive from send-only type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (receive from send-only type %v)", n, t)
 		n.SetType(nil)
 		return n
 	}
@@ -735,7 +735,7 @@ func tcSPtr(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 	if !t.IsSlice() && !t.IsString() {
-		base.Fatalf("OSPTR of %v", t)
+		fatalf(targetForFunc(curfunc), "OSPTR of %v", t)
 	}
 	if t.IsString() {
 		n.SetType(types.NewPtr(curfunc.Target.Type(types.TUINT8)))
@@ -759,7 +759,7 @@ func tcSlice(curfunc *ir.Func, n *ir.SliceExpr) ir.Node {
 	}
 	if l.Type().IsArray() {
 		if !ir.IsAddressable(n.X) {
-			base.Errorf("invalid operation %v (slice of unaddressable value)", n)
+			errorf(targetForFunc(curfunc), "invalid operation %v (slice of unaddressable value)", n)
 			n.SetType(nil)
 			return n
 		}
@@ -773,7 +773,7 @@ func tcSlice(curfunc *ir.Func, n *ir.SliceExpr) ir.Node {
 	var tp *types.Type
 	if t.IsString() {
 		if hasmax {
-			base.Errorf("invalid operation %v (3-index slice of string)", n)
+			errorf(targetForFunc(curfunc), "invalid operation %v (3-index slice of string)", n)
 			n.SetType(nil)
 			return n
 		}
@@ -791,7 +791,7 @@ func tcSlice(curfunc *ir.Func, n *ir.SliceExpr) ir.Node {
 	} else if t.IsSlice() {
 		n.SetType(t)
 	} else {
-		base.Errorf("cannot slice %v (type %v)", l, t)
+		errorf(targetForFunc(curfunc), "cannot slice %v (type %v)", l, t)
 		n.SetType(nil)
 		return n
 	}
@@ -819,15 +819,15 @@ func tcSliceHeader(curfunc *ir.Func, n *ir.SliceHeaderExpr) ir.Node {
 	// have already been typechecked in e.g. OMAKESLICE earlier.
 	t := n.Type()
 	if t == nil {
-		base.Fatalf("no type specified for OSLICEHEADER")
+		fatalf(targetForFunc(curfunc), "no type specified for OSLICEHEADER")
 	}
 
 	if !t.IsSlice() {
-		base.Fatalf("invalid type %v for OSLICEHEADER", n.Type())
+		fatalf(targetForFunc(curfunc), "invalid type %v for OSLICEHEADER", n.Type())
 	}
 
 	if n.Ptr == nil || n.Ptr.Type() == nil || !n.Ptr.Type().IsUnsafePtr() {
-		base.Fatalf("need unsafe.Pointer for OSLICEHEADER")
+		fatalf(targetForFunc(curfunc), "need unsafe.Pointer for OSLICEHEADER")
 	}
 
 	n.Ptr = Expr(curfunc, n.Ptr)
@@ -841,15 +841,15 @@ func tcSliceHeader(curfunc *ir.Func, n *ir.SliceHeaderExpr) ir.Node {
 func tcStringHeader(curfunc *ir.Func, n *ir.StringHeaderExpr) ir.Node {
 	t := n.Type()
 	if t == nil {
-		base.Fatalf("no type specified for OSTRINGHEADER")
+		fatalf(targetForFunc(curfunc), "no type specified for OSTRINGHEADER")
 	}
 
 	if !t.IsString() {
-		base.Fatalf("invalid type %v for OSTRINGHEADER", n.Type())
+		fatalf(targetForFunc(curfunc), "invalid type %v for OSTRINGHEADER", n.Type())
 	}
 
 	if n.Ptr == nil || n.Ptr.Type() == nil || !n.Ptr.Type().IsUnsafePtr() {
-		base.Fatalf("need unsafe.Pointer for OSTRINGHEADER")
+		fatalf(targetForFunc(curfunc), "need unsafe.Pointer for OSTRINGHEADER")
 	}
 
 	n.Ptr = Expr(curfunc, n.Ptr)
@@ -871,16 +871,16 @@ func tcStar(curfunc *ir.Func, n *ir.StarExpr, top int) ir.Node {
 	// TODO(mdempsky): Remove (along with ctxType above) once I'm
 	// confident this code path isn't needed any more.
 	if l.Op() == ir.OTYPE {
-		base.Fatalf("unexpected type in deref expression: %v", l)
+		fatalf(targetForFunc(curfunc), "unexpected type in deref expression: %v", l)
 	}
 
 	if !t.IsPtr() {
 		if top&(ctxExpr|ctxStmt) != 0 {
-			base.Errorf("invalid indirect of %L", n.X)
+			errorf(targetForFunc(curfunc), "invalid indirect of %L", n.X)
 			n.SetType(nil)
 			return n
 		}
-		base.Errorf("%v is not a type", l)
+		errorf(targetForFunc(curfunc), "%v is not a type", l)
 		return n
 	}
 
@@ -898,7 +898,7 @@ func tcUnaryArith(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 		return n
 	}
 	if !okfor[n.Op()][defaultType(targetForFunc(curfunc), t).Kind()] {
-		base.Errorf("invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(t))
+		errorf(targetForFunc(curfunc), "invalid operation: %v (operator %v not defined on %s)", n, n.Op(), typekind(t))
 		n.SetType(nil)
 		return n
 	}

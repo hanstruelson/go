@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/dwarfgen"
 	"cmd/compile/publicinternal/inline"
 	"cmd/compile/publicinternal/inline/interleaved"
@@ -323,7 +322,7 @@ func (pr *pkgReader) posBaseIdx(idx index) *src.PosBase {
 // inlining, this is just oldBase.
 func (r *reader) inlPosBase(oldBase *src.PosBase) *src.PosBase {
 	if index := oldBase.InliningIndex(); index >= 0 {
-		base.Fatalf("oldBase %v already has inlining index %v", oldBase, index)
+		r.ctx.Target.Diagnostics.Fatalf("oldBase %v already has inlining index %v", oldBase, index)
 	}
 
 	if r.inlCall == nil || r.suppressInlPos != 0 {
@@ -387,7 +386,7 @@ func (r *reader) doPkg() *types.Pkg {
 	if pkg.Name == "" {
 		pkg.Name = name
 	} else {
-		base.Assertf(pkg.Name == name, "package %q has name %q, but want %q", pkg.Path, pkg.Name, name)
+		r.ctx.Target.Diagnostics.Assertf(pkg.Name == name, "package %q has name %q, but want %q", pkg.Path, pkg.Name, name)
 	}
 
 	return pkg
@@ -445,7 +444,7 @@ func (pr *pkgReader) typIdx(info typeInfo, dict *readerDict, wrapped bool) *type
 
 	typ := r.doTyp()
 	if typ == nil {
-		base.Fatalf("doTyp returned nil for info=%v", info)
+		r.ctx.Target.Diagnostics.Fatalf("doTyp returned nil for info=%v", info)
 	}
 
 	// For recursive type declarations involving interfaces and aliases,
@@ -574,7 +573,7 @@ func (r *reader) unionType() *types.Type {
 			}
 		}
 		if !pure {
-			base.Fatalf("impure type set used in value type")
+			r.ctx.Target.Diagnostics.Fatalf("impure type set used in value type")
 		}
 	}
 
@@ -685,7 +684,7 @@ func (pr *pkgReader) objInstIdx(info objInfo, dict *readerDict, shaped bool) ir.
 func (pr *pkgReader) objIdx(idx index, implicits, explicits []*types.Type, shaped bool) ir.Node {
 	n, err := pr.objIdxMayFail(idx, implicits, explicits, shaped)
 	if err != nil {
-		base.Fatalf("%v", err)
+		pr.ctx.Target.Diagnostics.Fatalf("%v", err)
 	}
 	return n
 }
@@ -713,7 +712,7 @@ func (pr *pkgReader) objIdxMayFail(idx index, implicits, explicits []*types.Type
 		if sym.Pkg.Path == "runtime" {
 			return typecheck.LookupRuntime(pr.ctx.Target, sym.Name), nil
 		}
-		base.Fatalf("unresolved stub: %v", sym)
+		pr.ctx.Target.Diagnostics.Fatalf("unresolved stub: %v", sym)
 	}
 
 	dict, err := pr.objDictIdx(sym, idx, implicits, explicits, shaped)
@@ -743,7 +742,7 @@ func (pr *pkgReader) objIdxMayFail(idx index, implicits, explicits []*types.Type
 		name.Class = ir.PEXTERN // may be overridden later
 		if !sym.IsBlank() {
 			if sym.Def != nil {
-				base.FatalfAt(name.Pos(), "already have a definition for %v", name)
+				r.ctx.Target.Diagnostics.FatalfAt(name.Pos(), "already have a definition for %v", name)
 			}
 			assert(sym.Def == nil)
 			sym.Def = name
@@ -787,7 +786,7 @@ func (pr *pkgReader) objIdxMayFail(idx index, implicits, explicits []*types.Type
 	case pkgbits.ObjConst:
 		name := do(ir.OLITERAL, false)
 		typ := r.typ()
-		val := FixValue(typ, r.Value())
+		val := FixValueFor(r.ctx.Target, typ, r.Value())
 		setType(name, typ)
 		setValue(name, val)
 		return name, nil
@@ -822,7 +821,7 @@ func (pr *pkgReader) objIdxMayFail(idx index, implicits, explicits []*types.Type
 		name := fn.Nname
 		if !sym.IsBlank() {
 			if sym.Def != nil {
-				base.FatalfAt(name.Pos(), "already have a definition for %v", name)
+				r.ctx.Target.Diagnostics.FatalfAt(name.Pos(), "already have a definition for %v", name)
 			}
 			assert(sym.Def == nil)
 			sym.Def = name
@@ -971,13 +970,13 @@ func Shapify(target *ir.Package, targ *types.Type, basic bool) *types.Type {
 			// shapify won't work. The worst case is we end up not reusing code
 			// optimally in some tricky cases.
 			if target.Debug.Shapify != 0 {
-				base.Warn("skipping shaping of recursive type %v", targ)
+				target.Diagnostics.WarnfAt(target.Pos, "skipping shaping of recursive type %v", targ)
 			}
 			if targ.HasShape() {
 				return targ
 			}
 		} else {
-			base.Fatalf("%v is missing its underlying type", targ)
+			target.Diagnostics.Fatalf("%v is missing its underlying type", targ)
 		}
 	}
 	// For fully instantiated shape interface type, use it as-is. Otherwise, the instantiation
@@ -1243,7 +1242,7 @@ func (r *reader) funcExt(name *ir.Name, method *types.Sym) {
 		}
 		if exportname != "" {
 			if method != nil {
-				base.ErrorfAt(fn.Pos(), 0, "cannot use //go:wasmexport on a method")
+				r.ctx.Target.Diagnostics.ErrorfAt(fn.Pos(), 0, "cannot use //go:wasmexport on a method")
 			}
 			fn.WasmExport = &ir.WasmExport{Name: exportname}
 		}
@@ -1350,7 +1349,7 @@ func (r *reader) pragmaFlag() ir.PragmaFlag {
 func (c *Context) bodyReaderFor(fn *ir.Func) (pri pkgReaderIndex, ok bool) {
 	if fn.Nname.Defn != nil {
 		pri, ok = c.bodyReader[fn]
-		base.AssertfAt(ok, c.Target.Pos, "must have bodyReader for %v", fn) // must always be available
+		c.Target.Diagnostics.AssertfAt(ok, c.Target.Pos, "must have bodyReader for %v", fn) // must always be available
 	} else {
 		pri, ok = c.importBody[fn.Sym()]
 	}
@@ -1458,7 +1457,7 @@ func (r *reader) callShaped(pos src.XPos) {
 	} else {
 		// Instantiating a generic type's method; shapedObj is the shaped method itself
 		// if the method is generic — else, it is the shaped type declaring the method.
-		shapedFn = shapedMethodExpr(pos, shapedObj, r.methodSym)
+		shapedFn = shapedMethodExpr(r.ctx.Target, pos, shapedObj, r.methodSym)
 	}
 
 	params := r.syntheticArgs()
@@ -1513,7 +1512,7 @@ func (pr *pkgReader) dictNameOf(dict *readerDict) *ir.Name {
 	pos := pr.ctx.Target.AutoPos
 
 	// Check that we only instantiate runtime dictionaries with real types.
-	base.AssertfAt(!dict.shaped, pos, "runtime dictionary of shaped object %v", dict.baseSym)
+	pr.ctx.Target.Diagnostics.AssertfAt(!dict.shaped, pos, "runtime dictionary of shaped object %v", dict.baseSym)
 
 	sym := dict.baseSym.Pkg.Lookup(objabi.GlobalDictPrefix + "." + dict.baseSym.Name)
 	if sym.Def != nil {
@@ -1528,7 +1527,7 @@ func (pr *pkgReader) dictNameOf(dict *readerDict) *ir.Name {
 	ot := 0
 
 	assertOffset := func(section string, offset int) {
-		base.AssertfAt(ot == offset*pr.ctx.Target.PtrSize, pos, "writing section %v at offset %v, but it should be at %v*%v", section, ot, offset, pr.ctx.Target.PtrSize)
+		pr.ctx.Target.Diagnostics.AssertfAt(ot == offset*pr.ctx.Target.PtrSize, pos, "writing section %v at offset %v, but it should be at %v*%v", section, ot, offset, pr.ctx.Target.PtrSize)
 	}
 
 	assertOffset("type param method exprs", dict.typeParamMethodExprsOffset())
@@ -1643,7 +1642,7 @@ func (r *reader) addLocal(name *ir.Name) {
 		if r.p.SyncMarkers() {
 			want := r.Int()
 			if have := len(r.locals); have != want {
-				base.FatalfAt(name.Pos(), "locals table has desynced")
+				r.ctx.Target.Diagnostics.FatalfAt(name.Pos(), "locals table has desynced")
 			}
 		}
 		r.varDictIndex(name)
@@ -1666,7 +1665,7 @@ func (r *reader) openScope() {
 
 	if r.ctx.Target.Flags.Dwarf {
 		r.scopeVars = append(r.scopeVars, len(r.curfn.Dcl))
-		r.marker.Push(r.ctx.Target.Ctxt, pos)
+		r.marker.Push(r.ctx.Target, pos)
 	}
 }
 
@@ -1725,9 +1724,9 @@ func (r *reader) closeAnotherScope() {
 
 		if retract {
 			// no variables were declared in this scope, so we can retract it.
-			r.marker.Unpush()
+			r.marker.Unpush(r.ctx.Target)
 		} else {
-			r.marker.Pop(r.ctx.Target.Ctxt, r.lastCloseScopePos)
+			r.marker.Pop(r.ctx.Target, r.lastCloseScopePos)
 		}
 	}
 }
@@ -2031,10 +2030,10 @@ func (r *reader) selectStmt(label *types.Sym) ir.Node {
 		// RTTI, we rewrite this as "case tmp := <-c: i = tmp; ...".
 		if as, ok := comm.(*ir.AssignStmt); ok && as.Op() == ir.OAS && !as.Def {
 			if conv, ok := as.Y.(*ir.ConvExpr); ok && conv.Op() == ir.OCONVIFACE {
-				base.AssertfAt(conv.Implicit(), conv.Pos(), "expected implicit conversion: %v", conv)
+				r.ctx.Target.Diagnostics.AssertfAt(conv.Implicit(), conv.Pos(), "expected implicit conversion: %v", conv)
 
 				recv := conv.X
-				base.AssertfAt(recv.Op() == ir.ORECV, recv.Pos(), "expected receive expression: %v", recv)
+				r.ctx.Target.Diagnostics.AssertfAt(recv.Op() == ir.ORECV, recv.Pos(), "expected receive expression: %v", recv)
 
 				tmp := r.temp(pos, recv.Type())
 
@@ -2056,7 +2055,7 @@ func (r *reader) selectStmt(label *types.Sym) ir.Node {
 		// shuffle things around to fit that pattern.
 		if as2, ok := comm.(*ir.AssignListStmt); ok && as2.Op() == ir.OAS2 {
 			init := ir.TakeInit(as2.Rhs[0])
-			base.AssertfAt(len(init) == 1 && init[0].Op() == ir.OAS2RECV, as2.Pos(), "unexpected assignment: %+v", as2)
+			r.ctx.Target.Diagnostics.AssertfAt(len(init) == 1 && init[0].Op() == ir.OAS2RECV, as2.Pos(), "unexpected assignment: %+v", as2)
 
 			comm = init[0]
 			body = append([]ir.Node{as2}, body...)
@@ -2203,7 +2202,7 @@ func (r *reader) initDefn(defn ir.InitNode, names []*ir.Name) bool {
 func (r *reader) expr() (res ir.Node) {
 	defer func() {
 		if res != nil && res.Typecheck() == 0 {
-			base.FatalfAt(res.Pos(), "%v missed typecheck", res)
+			r.ctx.Target.Diagnostics.FatalfAt(res.Pos(), "%v missed typecheck", res)
 		}
 	}()
 
@@ -2230,7 +2229,7 @@ func (r *reader) expr() (res ir.Node) {
 	case exprConst:
 		pos := r.pos()
 		typ := r.typ()
-		val := FixValue(typ, r.Value())
+		val := FixValueFor(r.ctx.Target, typ, r.Value())
 		return ir.NewBasicLit(pos, typ, val)
 
 	case exprZero:
@@ -2279,7 +2278,7 @@ func (r *reader) expr() (res ir.Node) {
 			if recv.Type().HasShape() {
 				typ := wrapperFn.Type().Param(0).Type
 				if !types.Identical(typ, recv.Type()) {
-					base.FatalfAt(wrapperFn.Pos(), "receiver %L does not match %L", recv, wrapperFn)
+					r.ctx.Target.Diagnostics.FatalfAt(wrapperFn.Pos(), "receiver %L does not match %L", recv, wrapperFn)
 				}
 				recv = typecheck.Expr(r.curfn, ir.NewConvExpr(recv.Pos(), ir.OCONVNOP, typ, recv))
 			}
@@ -2340,7 +2339,7 @@ func (r *reader) expr() (res ir.Node) {
 		// by tricky promoted methods (e.g., typeparam/mdempsky/21.go).
 		if wrapperFn != nil && len(implicits) == 0 && !deref && !addr {
 			if !types.Identical(recv, wrapperFn.Type().Param(0).Type) {
-				base.FatalfAt(pos, "want receiver type %v, but have method %L", recv, wrapperFn)
+				r.ctx.Target.Diagnostics.FatalfAt(pos, "want receiver type %v, but have method %L", recv, wrapperFn)
 			}
 			return wrapperFn
 		}
@@ -2463,7 +2462,7 @@ func (r *reader) expr() (res ir.Node) {
 					// N.B., this happens currently for typeparam/issue51521.go
 					// and typeparam/typeswitch3.go.
 					if r.ctx.Target.Flags.LowerM != 0 {
-						base.WarnfAt(method.Pos(), "imprecise interface call")
+						r.ctx.Target.Diagnostics.WarnfAt(method.Pos(), "imprecise interface call")
 					}
 				}
 
@@ -2567,8 +2566,8 @@ func (r *reader) expr() (res ir.Node) {
 			return x
 		}
 
-		base.AssertfAt(x.Type().HasShape() || typ.HasShape(), x.Pos(), "%L and %v are not shape types", x, typ)
-		base.AssertfAt(types.Identical(x.Type(), typ), x.Pos(), "%L is not shape-identical to %v", x, typ)
+		r.ctx.Target.Diagnostics.AssertfAt(x.Type().HasShape() || typ.HasShape(), x.Pos(), "%L and %v are not shape types", x, typ)
+		r.ctx.Target.Diagnostics.AssertfAt(types.Identical(x.Type(), typ), x.Pos(), "%L is not shape-identical to %v", x, typ)
 
 		// We use ir.HasUniquePos here as a check that x only appears once
 		// in the AST, so it's okay for us to call SetType without
@@ -2576,10 +2575,10 @@ func (r *reader) expr() (res ir.Node) {
 		//
 		// Notably, any ONAMEs should already have the exactly right shape
 		// type and been caught by types.IdenticalStrict above.
-		base.AssertfAt(ir.HasUniquePos(x), x.Pos(), "cannot call SetType(%v) on %L", typ, x)
+		r.ctx.Target.Diagnostics.AssertfAt(ir.HasUniquePosFor(r.ctx.Target, x), x.Pos(), "cannot call SetType(%v) on %L", typ, x)
 
 		if r.ctx.Target.Debug.Reshape != 0 {
-			base.WarnfAt(x.Pos(), "reshaping %L to %v", x, typ)
+			r.ctx.Target.Diagnostics.WarnfAt(x.Pos(), "reshaping %L to %v", x, typ)
 		}
 
 		x.SetType(typ)
@@ -2603,7 +2602,7 @@ func (r *reader) expr() (res ir.Node) {
 		// into a non-constant value of the type parameter."
 		if dstTypeParam && ir.IsConstNode(x) {
 			// ConvertVal only handles conversions to constant types.
-			if v := typecheck.ConvertVal(x.Val(), typ, false); v.Kind() != constant.Unknown {
+			if v := typecheck.ConvertValFor(r.ctx.Target, x.Val(), typ, false); v.Kind() != constant.Unknown {
 				x = ir.NewBasicLit(x.Pos(), typ, v)
 				// Wrap in an OCONVNOP node to ensure result is non-constant.
 				n := Implicit(ir.NewConvExpr(pos, ir.OCONVNOP, typ, x))
@@ -2721,12 +2720,12 @@ func (pr *pkgReader) objDictName(idx index, implicits, explicits []*types.Type) 
 		if pri, ok := pr.ctx.objReader[sym]; ok {
 			return pri.pr.objDictName(pri.idx, nil, explicits)
 		}
-		base.Fatalf("unresolved stub: %v", sym)
+		pr.ctx.Target.Diagnostics.Fatalf("unresolved stub: %v", sym)
 	}
 
 	dict, err := pr.objDictIdx(sym, idx, implicits, explicits, false)
 	if err != nil {
-		base.Fatalf("%v", err)
+		pr.ctx.Target.Diagnostics.Fatalf("%v", err)
 	}
 
 	return pr.dictNameOf(dict)
@@ -2982,7 +2981,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 		explicits := r.p.typListIdx(info.explicits, r.dict)
 
 		shapedObj := r.p.objIdx(info.idx, nil, explicits, true).(*ir.Name)
-		shapedFn := shapedMethodExpr(pos, shapedObj, sym)
+		shapedFn := shapedMethodExpr(r.ctx.Target, pos, shapedObj, sym)
 
 		// TODO(mdempsky): Is there a more robust way to get the
 		// dictionary pointer type here?
@@ -2997,22 +2996,22 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 		explicits := r.p.typListIdx(info.explicits, r.dict)
 
 		shapedObj := r.p.objIdx(info.idx, nil, explicits, true).(*ir.Name)
-		shapedFn := shapedMethodExpr(pos, shapedObj, sym)
+		shapedFn := shapedMethodExpr(r.ctx.Target, pos, shapedObj, sym)
 
 		dict := r.p.objDictName(info.idx, nil, explicits)
 		dictPtr := typecheck.Expr(r.curfn, ir.NewAddrExpr(pos, dict))
 
 		// Check that dictPtr matches shapedFn's dictionary parameter.
 		if !types.Identical(dictPtr.Type(), shapedFn.Type().Param(1).Type) {
-			base.FatalfAt(pos, "dict %L, but shaped method %L", dict, shapedFn)
+			r.ctx.Target.Diagnostics.FatalfAt(pos, "dict %L, but shaped method %L", dict, shapedFn)
 		}
 
 		if !generic {
 			// For statically known instantiations, we can take advantage of
 			// the stenciled wrapper.
-			base.AssertfAt(!recv.HasShape(), pos, "shaped receiver %v", recv)
+			r.ctx.Target.Diagnostics.AssertfAt(!recv.HasShape(), pos, "shaped receiver %v", recv)
 			wrapperFn := typecheck.NewMethodExpr(pos, recv, sym)
-			base.AssertfAt(types.Identical(sig, wrapperFn.Type()), pos, "wrapper %L does not have type %v", wrapperFn, sig)
+			r.ctx.Target.Diagnostics.AssertfAt(types.Identical(sig, wrapperFn.Type()), pos, "wrapper %L does not have type %v", wrapperFn, sig)
 			return wrapperFn, shapedFn, dictPtr
 		} else {
 			// Also statically known, but there is a good amount of existing
@@ -3024,7 +3023,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 	}
 
 	// Simple method expression; no dictionary needed.
-	base.AssertfAt(!recv.HasShape() || recv.IsInterface(), pos, "shaped receiver %v", recv)
+	r.ctx.Target.Diagnostics.AssertfAt(!recv.HasShape() || recv.IsInterface(), pos, "shaped receiver %v", recv)
 	fn := typecheck.NewMethodExpr(pos, recv, sym)
 	return fn, fn, nil
 }
@@ -3051,7 +3050,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 // Note that we could have pushed dictionaries down to methods in every case,
 // but since non-generic methods will always share the same "type environment"
 // as their defining type, we can optimize by reusing the type's dictionary.
-func shapedMethodExpr(pos src.XPos, obj *ir.Name, sym *types.Sym) ir.Node {
+func shapedMethodExpr(target *ir.Package, pos src.XPos, obj *ir.Name, sym *types.Sym) ir.Node {
 	if obj.Op() == ir.OTYPE {
 		// non-generic method on generic type
 		typ := obj.Type()
@@ -3064,7 +3063,7 @@ func shapedMethodExpr(pos src.XPos, obj *ir.Name, sym *types.Sym) ir.Node {
 				}
 			}
 
-			base.FatalfAt(pos, "failed to find method %v in shaped type %v", sym, typ)
+			target.Diagnostics.FatalfAt(pos, "failed to find method %v in shaped type %v", sym, typ)
 			panic("unreachable")
 		}()
 
@@ -3188,7 +3187,7 @@ func (r *reader) compLit() ir.Node {
 		typ = typ.Elem()
 	}
 	if typ.Kind() == types.TFORW {
-		base.FatalfAt(pos, "unresolved composite literal type: %v", typ)
+		r.ctx.Target.Diagnostics.FatalfAt(pos, "unresolved composite literal type: %v", typ)
 	}
 	var rtype ir.Node
 	if typ.IsMap() {
@@ -3201,7 +3200,7 @@ func (r *reader) compLit() ir.Node {
 		elems = make([]ir.Node, max(n, -n) /* abs(n) */)
 		switch typ.Kind() {
 		default:
-			base.FatalfAt(pos, "unexpected composite literal type: %v", typ)
+			r.ctx.Target.Diagnostics.FatalfAt(pos, "unexpected composite literal type: %v", typ)
 		case types.TARRAY:
 			r.arrayElems(n >= 0, elems)
 		case types.TMAP:
@@ -3384,7 +3383,7 @@ func (r *reader) exprs() []ir.Node {
 // dictWord returns an expression to return the specified
 // uintptr-typed word from the dictionary parameter.
 func (r *reader) dictWord(pos src.XPos, idx int) ir.Node {
-	base.AssertfAt(r.dictParam != nil, pos, "expected dictParam in %v", r.curfn)
+	r.ctx.Target.Diagnostics.AssertfAt(r.dictParam != nil, pos, "expected dictParam in %v", r.curfn)
 	return typecheck.Expr(r.curfn, ir.NewIndexExpr(pos, r.dictParam, ir.NewInt(pos, int64(idx))))
 }
 
@@ -3422,7 +3421,7 @@ func (r *reader) varDictIndex(name *ir.Name) {
 	if r.Bool() {
 		idx := 1 + r.dict.rtypesOffset() + r.Len()
 		if int(uint16(idx)) != idx {
-			base.FatalfAt(name.Pos(), "DictIndex overflow for %v: %v", name, idx)
+			r.ctx.Target.Diagnostics.FatalfAt(name.Pos(), "DictIndex overflow for %v: %v", name, idx)
 		}
 		name.DictIndex = uint16(idx)
 	}
@@ -3449,8 +3448,8 @@ func (r *reader) itab(pos src.XPos) (typ *types.Type, typRType ir.Node, iface *t
 		if idx >= 0 {
 			itab = r.rttiWord(pos, r.dict.itabsOffset()+idx)
 		} else {
-			base.AssertfAt(!typ.HasShape(), pos, "%v is a shape type", typ)
-			base.AssertfAt(!iface.HasShape(), pos, "%v is a shape type", iface)
+			r.ctx.Target.Diagnostics.AssertfAt(!typ.HasShape(), pos, "%v is a shape type", typ)
+			r.ctx.Target.Diagnostics.AssertfAt(!iface.HasShape(), pos, "%v is a shape type", iface)
 
 			lsym := reflectdata.ITabLsym(r.ctx.Target, typ, iface)
 			itab = typecheck.LinksymAddr(r.curfn, pos, lsym, r.ctx.Target.Type(types.TUINT8))
@@ -3689,7 +3688,7 @@ func (r *reader) pkgObjs(target *ir.Package) []*ir.Name {
 
 		switch name.Class {
 		default:
-			base.FatalfAt(name.Pos(), "unexpected class: %v", name.Class)
+			r.ctx.Target.Diagnostics.FatalfAt(name.Pos(), "unexpected class: %v", name.Class)
 
 		case ir.PEXTERN:
 			target.Externs = append(target.Externs, name)
@@ -3726,7 +3725,7 @@ func (r *reader) pkgObjs(target *ir.Package) []*ir.Name {
 func (c *Context) unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int, profile *pgoir.Profile) *ir.InlinedCallExpr {
 	pri, ok := c.bodyReaderFor(fn)
 	if !ok {
-		base.FatalfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
+		c.Target.Diagnostics.FatalfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
 	}
 
 	if !fn.Inl.HaveDcl {
@@ -3751,7 +3750,7 @@ func (c *Context) unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir
 		// TODO(mdempsky): It should be possible to support this case, but
 		// for now we rely on the inliner avoiding it.
 		if cv.Outer.Curfn != callerfn {
-			base.FatalfAt(call.Pos(), "inlining closure call across frames")
+			r.ctx.Target.Diagnostics.FatalfAt(call.Pos(), "inlining closure call across frames")
 		}
 		r.closureVars[i] = cv.Outer
 	}
@@ -3782,12 +3781,12 @@ func (c *Context) unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir
 	// may contain side effects. Make sure to preserve these,
 	// if necessary (#42703).
 	if call.Op() == ir.OCALLFUNC {
-		inline.CalleeEffects(&init, call.Fun)
+		inline.CalleeEffects(callerfn.Target, &init, call.Fun)
 	}
 
 	var args ir.Nodes
 	if call.Op() == ir.OCALLMETH {
-		base.FatalfAt(call.Pos(), "OCALLMETH missed by typecheck")
+		r.ctx.Target.Diagnostics.FatalfAt(call.Pos(), "OCALLMETH missed by typecheck")
 	}
 	args.Append(call.Args...)
 
@@ -4076,7 +4075,7 @@ func wrapType(typ *types.Type, target *ir.Package, seen map[string]*types.Type, 
 	key := typ.LinkString()
 	if prev := seen[key]; prev != nil {
 		if !types.Identical(typ, prev) {
-			base.Fatalf("collision: types %v and %v have link string %q", typ, prev, key)
+			target.Diagnostics.Fatalf("collision: types %v and %v have link string %q", typ, prev, key)
 		}
 		// Wrapper generation is shared by structurally identical types.
 		// Share the cached TFlag too, without computing duplicate method sets.
@@ -4098,7 +4097,7 @@ func wrapType(typ *types.Type, target *ir.Package, seen map[string]*types.Type, 
 	}
 	for _, meth := range typ.AllMethods() {
 		if meth.Sym.IsBlank() || !meth.IsMethod() {
-			base.FatalfAt(meth.Pos, "invalid method: %v", meth)
+			target.Diagnostics.FatalfAt(meth.Pos, "invalid method: %v", meth)
 		}
 
 		methodWrapper(0, typ, meth, target, inliner, inlineCall)
@@ -4133,7 +4132,7 @@ func methodWrapper(derefs int, tbase *types.Type, method *types.Field, target *i
 		if sharedPromoted {
 			return
 		}
-		base.Fatalf("already generated wrapper %v", sym)
+		target.Diagnostics.Fatalf("already generated wrapper %v", sym)
 	}
 	sym.SetSiggen(true)
 
@@ -4269,7 +4268,7 @@ func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
 		// TODO: do we need the ppc64le/dynlink restriction for interface tail calls?
 		!((fn.Target.Ctxt.Arch.Name == "ppc64le" || fn.Target.Ctxt.Arch.Name == "ppc64") && fn.Target.Ctxt.Flag_dynlink) {
 		if fn.Target.Debug.TailCall != 0 {
-			base.WarnfAt(fn.Nname.Type().Recv().Type.Elem().Pos(), "tail call emitted for the method %v wrapper", method.Nname)
+			fn.Target.Diagnostics.WarnfAt(fn.Nname.Type().Recv().Type.Elem().Pos(), "tail call emitted for the method %v wrapper", method.Nname)
 		}
 		// Prefer OTAILCALL to reduce code size (except the case when the called method can be inlined).
 		fn.Body.Append(ir.NewTailCallStmt(pos, call))
@@ -4289,10 +4288,8 @@ func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
 }
 
 func setBasePos(target *ir.Package, pos src.XPos) {
-	// Keep the package position explicit and update the process-global adapter
-	// for helpers that still read it.
+	// Keep the source position on the current package context.
 	target.Pos = pos
-	base.Pos = pos
 }
 
 // dictParamName is the name of the synthetic dictionary parameter

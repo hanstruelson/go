@@ -57,11 +57,34 @@ func FDumpAny(w io.Writer, root any, filter string, depth int) {
 		filter = ".*" // default
 	}
 
+	var target *Package
+	var diagnostics *base.Diagnostics
+	switch root := root.(type) {
+	case Node:
+		target = nodeTarget(root)
+		if target != nil {
+			diagnostics = target.Diagnostics
+		} else if typ := root.Type(); typ != nil {
+			diagnostics = typ.Context().Diagnostics
+		}
+	case *Func:
+		target = root.Target
+		if target != nil {
+			diagnostics = target.Diagnostics
+		}
+	case *Package:
+		target = root
+		diagnostics = root.Diagnostics
+	case *types.Type:
+		diagnostics = root.Context().Diagnostics
+	}
 	p := dumper{
-		output:  w,
-		fieldrx: regexp.MustCompile(filter),
-		ptrmap:  make(map[uintptr]int),
-		last:    '\n', // force printing of line number on first line
+		output:      w,
+		target:      target,
+		diagnostics: diagnostics,
+		fieldrx:     regexp.MustCompile(filter),
+		ptrmap:      make(map[uintptr]int),
+		last:        '\n', // force printing of line number on first line
 	}
 
 	p.dump(reflect.ValueOf(root), depth)
@@ -178,7 +201,7 @@ func EscapedFileName(fn, suffix string) string {
 func withLockAndFile(fn *Func, dump func(io.Writer)) (err error) {
 	target := fn.Target
 	if target == nil {
-		base.Fatalf("AST dump for function without compilation target: %v", fn)
+		panic(fmt.Sprintf("AST dump for function without compilation target: %v", fn))
 	}
 	name := escapedFileName(fn, ".ast")
 
@@ -211,7 +234,7 @@ func withLockAndFile(fn *Func, dump func(io.Writer)) (err error) {
 func DumpNodeHTML(fn *Func, why string, n Node) {
 	target := fn.Target
 	if target == nil {
-		base.Fatalf("HTML dump for function without compilation target: %v", fn)
+		panic(fmt.Sprintf("HTML dump for function without compilation target: %v", fn))
 	}
 	target.dumpMu.Lock()
 	defer target.dumpMu.Unlock()
@@ -249,10 +272,12 @@ func CloseHTMLWriters(target *Package) {
 }
 
 type dumper struct {
-	output  io.Writer
-	fieldrx *regexp.Regexp  // field name filter
-	ptrmap  map[uintptr]int // ptr -> dump line number
-	lastadr string          // last address string printed (for shortening)
+	output      io.Writer
+	target      *Package
+	diagnostics *base.Diagnostics
+	fieldrx     *regexp.Regexp  // field name filter
+	ptrmap      map[uintptr]int // ptr -> dump line number
+	lastadr     string          // last address string printed (for shortening)
 
 	// output
 	indent int  // current indentation level
@@ -326,7 +351,11 @@ func (p *dumper) dump(x reflect.Value, depth int) {
 	}
 
 	if pos, ok := x.Interface().(src.XPos); ok {
-		p.printf("%s", base.FmtPos(pos))
+		if p.diagnostics != nil {
+			p.printf("%s", p.diagnostics.FmtPos(pos))
+		} else {
+			p.printf("%s", base.FmtPos(pos))
+		}
 		return
 	}
 

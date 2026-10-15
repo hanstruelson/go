@@ -14,9 +14,9 @@ import (
 	"go/doc"
 	"go/parser"
 	"go/token"
-	"publicinternal/lazytemplate"
 	"maps"
 	"path/filepath"
+	"publicinternal/lazytemplate"
 	"runtime"
 	"slices"
 	"sort"
@@ -25,7 +25,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"cmd/go/publicinternal/cfg"
 	"cmd/go/publicinternal/fsys"
 	"cmd/go/publicinternal/modload"
 	"cmd/go/publicinternal/str"
@@ -350,23 +349,6 @@ func TestPackagesAndErrors(ld *modload.Loader, ctx context.Context, done func(),
 	}
 	for _, d := range ldDeps {
 		deps = append(deps, d)
-	}
-	if cfg.BuildJIT {
-		if err := prepareJITStandardLibraries(); err != nil && pmain.Error == nil {
-			pmain.Error = &PackageError{Err: err}
-			pmain.Incomplete = true
-		} else if err == nil {
-			have := make(map[string]bool, len(deps)+len(jitPackages))
-			for _, dep := range deps {
-				have[dep] = true
-			}
-			for _, dep := range jitPackages {
-				if !have[dep] {
-					deps = append(deps, dep)
-					have[dep] = true
-				}
-			}
-		}
 	}
 	for _, dep := range deps {
 		if dep == ptest.ImportPath {

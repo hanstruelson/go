@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/types"
@@ -28,10 +27,10 @@ import (
 // It's the caller responsibility to make sure lsym is from ONAME/PEXTERN node.
 func InitAddrOffset(target *ir.Package, n *ir.Name, noff int64, lsym *obj.LSym, off int64) {
 	if n.Op() != ir.ONAME {
-		base.Fatalf("InitAddr n op %v", n.Op())
+		target.Diagnostics.Fatalf("InitAddr n op %v", n.Op())
 	}
 	if n.Sym() == nil {
-		base.Fatalf("InitAddr nil n sym")
+		target.Diagnostics.Fatalf("InitAddr nil n sym")
 	}
 	s := n.Linksym()
 	s.WriteAddr(target.Ctxt, noff, target.PtrSize, lsym, off)
@@ -53,7 +52,7 @@ func InitSlice(target *ir.Package, n *ir.Name, noff int64, lsym *obj.LSym, lenca
 
 func InitSliceBytes(target *ir.Package, nam *ir.Name, off int64, s string) {
 	if nam.Op() != ir.ONAME {
-		base.Fatalf("InitSliceBytes %v", nam)
+		target.Diagnostics.Fatalf("InitSliceBytes %v", nam)
 	}
 	InitSlice(target, nam, off, slicedata(target, nam.Sym().Pkg, nam.Pos(), s), int64(len(s)))
 }
@@ -220,7 +219,7 @@ func dstringdata(target *ir.Package, s *obj.LSym, off int, t string, pos src.XPo
 	// causing a cryptic error message by the linker. Check for oversize objects here
 	// and provide a useful error message instead.
 	if int64(len(t)) > 2e9 {
-		base.ErrorfAt(pos, 0, "%v with length %v is too big", what, len(t))
+		target.Diagnostics.ErrorfAt(pos, 0, "%v with length %v is too big", what, len(t))
 		return 0
 	}
 
@@ -231,7 +230,7 @@ func dstringdata(target *ir.Package, s *obj.LSym, off int, t string, pos src.XPo
 // FuncLinksym returns n·f, the function value symbol for n.
 func FuncLinksym(target *ir.Package, n *ir.Name) *obj.LSym {
 	if n.Op() != ir.ONAME || n.Class != ir.PFUNC {
-		base.Fatalf("expected func name: %v", n)
+		target.Diagnostics.Fatalf("expected func name: %v", n)
 	}
 	s := n.Sym()
 
@@ -254,7 +253,7 @@ func FuncLinksym(target *ir.Package, n *ir.Name) *obj.LSym {
 
 func GlobalLinksym(n *ir.Name) *obj.LSym {
 	if n.Op() != ir.ONAME || n.Class != ir.PEXTERN {
-		base.Fatalf("expected global variable: %v", n)
+		panic(fmt.Sprintf("expected global variable: %v", n))
 	}
 	return n.Linksym()
 }
@@ -278,7 +277,7 @@ func WriteFuncSyms(target *ir.Package) {
 		// entry points.
 		targetLSym := s.Linksym()
 		if targetLSym.ABI() != obj.ABIInternal {
-			base.Fatalf("expected ABIInternal: %v has %v", targetLSym, targetLSym.ABI())
+			target.Diagnostics.Fatalf("expected ABIInternal: %v has %v", targetLSym, targetLSym.ABI())
 		}
 		// A function value of reflect.Value.Method or MethodByName may be
 		// called with a method name the compiler cannot see; see usemethod.
@@ -294,16 +293,16 @@ func WriteFuncSyms(target *ir.Package) {
 // Neither n nor c is modified.
 func InitConst(target *ir.Package, n *ir.Name, noff int64, c ir.Node, wid int) {
 	if n.Op() != ir.ONAME {
-		base.Fatalf("InitConst n op %v", n.Op())
+		target.Diagnostics.Fatalf("InitConst n op %v", n.Op())
 	}
 	if n.Sym() == nil {
-		base.Fatalf("InitConst nil n sym")
+		target.Diagnostics.Fatalf("InitConst nil n sym")
 	}
 	if c.Op() == ir.ONIL {
 		return
 	}
 	if c.Op() != ir.OLITERAL {
-		base.Fatalf("InitConst c op %v", c.Op())
+		target.Diagnostics.Fatalf("InitConst c op %v", c.Op())
 	}
 	s := n.Linksym()
 	switch u := c.Val(); u.Kind() {
@@ -342,6 +341,6 @@ func InitConst(target *ir.Package, n *ir.Name, noff int64, c ir.Node, wid int) {
 		s.WriteInt(target.Ctxt, noff+int64(target.PtrSize), target.PtrSize, int64(len(i)))
 
 	default:
-		base.Fatalf("InitConst unhandled OLITERAL %v", c)
+		target.Diagnostics.Fatalf("InitConst unhandled OLITERAL %v", c)
 	}
 }

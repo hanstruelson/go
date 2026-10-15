@@ -8,14 +8,13 @@
 package typecheck
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/types"
 )
 
 func SetBaseTypeIndex(target *ir.Package, t *types.Type, i, pi int64) {
 	if t.Obj() == nil {
-		base.Fatalf("SetBaseTypeIndex on non-defined type %v", t)
+		fatalf(target, "SetBaseTypeIndex on non-defined type %v", t)
 	}
 	if i != -1 && pi != -1 {
 		if target.TypeSymIdx == nil {

@@ -26,7 +26,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -39,7 +38,6 @@ import (
 	"cmd/go/publicinternal/fsys"
 	"cmd/go/publicinternal/gover"
 	"cmd/go/publicinternal/imports"
-	"cmd/go/publicinternal/jitbundle"
 	"cmd/go/publicinternal/modfetch"
 	"cmd/go/publicinternal/modindex"
 	"cmd/go/publicinternal/modinfo"
@@ -1760,13 +1758,6 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 		p.Incomplete = true
 		p.setLoadPackageDataError(err, path, stk, importPos)
 	}
-	if p.Error == nil && cfg.BuildJIT && p.Name == "main" && p.Internal.CmdlinePkg {
-		if err := prepareJITStandardLibraries(); err != nil {
-			setError(err)
-			return
-		}
-	}
-
 	useBindir := p.Name == "main"
 	if !p.Standard {
 		switch cfg.BuildBuildmode {
@@ -1854,12 +1845,6 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 			p.Internal.CompiledImports = append(p.Internal.CompiledImports, path)
 		}
 	}
-	if cfg.BuildJIT && p.Name == "main" && p.Internal.CmdlinePkg {
-		for _, path := range jitPackages {
-			addImport(path, false)
-		}
-	}
-
 	if hasSimd := hasSimd(p.Imports); hasSimd {
 		addImport(SimdBridgePkg, true)
 	}
@@ -2047,34 +2032,6 @@ func (p *Package) load(ld *modload.Loader, ctx context.Context, opts PackageOpts
 		setError(fmt.Errorf("Fortran source files not allowed when not using cgo or SWIG: %s", strings.Join(p.FFiles, " ")))
 		return
 	}
-}
-
-var jitBundleOnce sync.Once
-var jitBundleErr error
-var jitPackages []string
-
-func prepareJITStandardLibraries() error {
-	jitBundleOnce.Do(func() {
-		jitPackages, jitBundleErr = jitbundle.ToolchainPackages(cfg.BuildContext, cfg.GOROOT)
-		if jitBundleErr != nil || cfg.BuildN {
-			return
-		}
-		var artifact jitbundle.Artifact
-		artifact, jitBundleErr = jitbundle.PrepareGOROOT(cfg.GOROOT, cfg.Goos, cfg.Goarch)
-		if jitBundleErr != nil {
-			return
-		}
-		cfg.BuildJITBundlePath = artifact.Path
-		cfg.BuildJITBundleID = artifact.ID
-		cfg.BuildJITBundleGoos = artifact.GOOS
-		cfg.BuildJITBundleGoarch = artifact.GOARCH
-		cfg.BuildJITBundleVersion = artifact.Version
-		base.AtExit(func() { _ = os.Remove(artifact.Path) })
-	})
-	if jitBundleErr != nil {
-		return jitBundleErr
-	}
-	return nil
 }
 
 // An EmbedError indicates a problem with a go:embed directive.
@@ -2394,9 +2351,6 @@ func (p *Package) setBuildInfo(ctx context.Context, f *modfetch.Fetcher, autoVCS
 	}
 	if BuildAsmflags.present {
 		appendSetting("-asmflags", BuildAsmflags.String())
-	}
-	if cfg.BuildJIT {
-		appendSetting("-JIT", "true")
 	}
 	buildmode := cfg.BuildBuildmode
 	if buildmode == "default" {

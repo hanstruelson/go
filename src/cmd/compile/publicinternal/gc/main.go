@@ -37,8 +37,8 @@ import (
 	"cmd/publicinternal/telemetry/counter"
 	"flag"
 	"fmt"
-	"publicinternal/buildcfg"
 	"os"
+	"publicinternal/buildcfg"
 	"runtime"
 )
 
@@ -58,7 +58,10 @@ func handlePanic(target *ir.Package) {
 			// information will have already been printed.
 			panic(err)
 		}
-		base.Fatalf("panic: %v", err)
+		if target != nil && target.Diagnostics != nil {
+			target.Diagnostics.Fatalf("panic: %v", err)
+		}
+		base.Fatalf("panic: %v", err) // no target exists before compiler context initialization
 	}
 }
 
@@ -66,10 +69,10 @@ func handlePanic(target *ir.Package) {
 // arguments, type-checks the parsed Go package, compiles functions to machine
 // code, and finally writes the compiled package definition to disk.
 func Main(archInit func(*ssagen.ArchInfo)) {
-	mainWithSources(archInit, nil)
+	mainWithSources(archInit, nil, false, nil)
 }
 
-func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile) {
+func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, onTarget func(*ir.Package)) {
 	var compilequeue []*ir.Func
 	var target *ir.Package
 	timer := &base.Timings{}
@@ -86,14 +89,21 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	archInit(arch)
 
 	target = new(ir.Package)
+	target.LogOpt = logopt.NewContext()
+	target.Diagnostics = base.NewDiagnostics(os.Stdout)
+	target.Diagnostics.PanicOnExit = reusable
 	target.ArchInfo = arch
 	target.Ctxt = obj.Linknew(arch.LinkArch)
 	target.TypeContext = types.NewContext(arch.LinkArch.PtrSize, arch.LinkArch.RegSize, arch.MAXWIDTH)
 	target.TypeContext.Link = target.Ctxt
+	target.TypeContext.Diagnostics = target.Diagnostics
 	base.Ctxt = target.Ctxt
-	target.Ctxt.DiagFunc = base.Diagf
-	target.Ctxt.DiagFlush = base.FlushErrors
+	target.Ctxt.DiagFunc = target.Diagnostics.Diagf
+	target.Ctxt.DiagFlush = target.Diagnostics.FlushErrors
 	target.Ctxt.Bso = bufio.NewWriter(os.Stdout)
+	if onTarget != nil {
+		onTarget(target)
+	}
 
 	// UseBASEntries is preferred because it shaves about 2% off build time, but LLDB, dsymutil, and dwarfdump
 	// on Darwin don't support it properly, especially since macOS 10.14 (Mojave).  This is exposed as a flag
@@ -101,11 +111,12 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	// See bugs 31188 and 21945 (CLs 170638, 98075, 72371).
 	target.Ctxt.UseBASEntries = target.Ctxt.Headtype != objabi.Hdarwin
 
-	base.DebugSSA = ssacompile.PhaseOption
-	base.ParseFlags()
+	ssaOptions := ssacompile.NewOptions()
+	base.ParseFlagsWithDebugSSA(ssaOptions.PhaseOption)
 	target.Flags = base.Flag
 	target.Debug = base.Debug
-	ssaCompiler := ssacompile.ConfigureTarget(target)
+	target.Diagnostics.Configure(target.Ctxt, target.Flags, target.Debug, os.Stdout)
+	ssaCompiler := ssacompile.ConfigureTarget(target, ssaOptions)
 	target.PGOHash = base.PGOHash
 	target.LoopVarHash = base.LoopVarHash
 	target.GossaHash = base.NewHashDebug("gossahash", target.Debug.Gossahash, nil)
@@ -156,7 +167,7 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	dwarfgen.RecordFlags(target, "B", "N", "l", "msan", "race", "asan", "shared", "dynlink", "dwarf", "dwarflocationlists", "dwarfbasentries", "smallframes", "spectre")
 
 	if !base.EnableTrace && target.Flags.LowerT {
-		base.CommandErrorf("compiler not built with support for -t")
+		target.Diagnostics.Fatalf("compiler not built with support for -t")
 	}
 
 	// Enable inlining (after RecordFlags, to avoid recording the rewritten -l).  For now:
@@ -184,12 +195,12 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 		target.Ctxt.Flag_locationlists = false
 	}
 	if target.Ctxt.Flag_locationlists && len(target.Ctxt.Arch.DWARFRegisters) == 0 {
-		base.CommandErrorf("location lists requested but register mapping not available on %v", target.Ctxt.Arch.Name)
+		target.Diagnostics.Fatalf("location lists requested but register mapping not available on %v", target.Ctxt.Arch.Name)
 	}
 
 	langVersion, err := types.ParseLangFlag(target.Flags.Lang)
 	if err != nil {
-		base.CommandErrorf("%v", err)
+		target.Diagnostics.Fatalf("%v", err)
 	}
 	target.LangVersion = langVersion
 
@@ -210,14 +221,14 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 		target.Flags.Cfg.Instrumenting = true
 	}
 	if target.Flags.Dwarf {
-		dwarf.EnableLogging(target.Debug.DwarfInl != 0)
+		target.Ctxt.LogDwarf = target.Debug.DwarfInl != 0
 	}
 	if target.Debug.SoftFloat != 0 {
 		arch.SoftFloat = true
 	}
 
 	if target.Flags.JSON != "" { // parse version,destination from json logging optimization.
-		logopt.LogJsonOption(target.Flags.JSON)
+		target.LogOpt.LogJsonOption(target.Flags.JSON)
 	}
 
 	target.EscFmt = escape.Fmt
@@ -274,7 +285,7 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 		var err error
 		profile, err = pgoir.New(target.Flags.PgoProfile, target, frontend.LookupFunc, frontend.PostLookupCleanup)
 		if err != nil {
-			base.CommandErrorf("%s: PGO error: %v", target.Flags.PgoProfile, err)
+			target.Diagnostics.Fatalf("%s: PGO error: %v", target.Flags.PgoProfile, err)
 		}
 	}
 
@@ -433,18 +444,18 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	backend.CheckLargeStacks()
 
 	if len(compilequeue) != 0 {
-		base.Fatalf("%d uncompiled functions", len(compilequeue))
+		target.Diagnostics.Fatalf("%d uncompiled functions", len(compilequeue))
 	}
 
-	logopt.FlushLoggedOpts(target.Ctxt, target.Ctxt.Pkgpath)
-	base.ExitIfErrors()
+	target.LogOpt.FlushLoggedOpts(target.Ctxt, target.Ctxt.Pkgpath)
+	target.Diagnostics.ExitIfErrors()
 
-	base.FlushErrors()
+	target.Diagnostics.FlushErrors()
 	timer.Stop()
 
 	if target.Flags.Bench != "" {
 		if err := writebench(timer, target.Ctxt.Pkgpath, target.Flags.Bench); err != nil {
-			base.CommandErrorf("cannot write benchmark data: %v", err)
+			target.Diagnostics.Fatalf("cannot write benchmark data: %v", err)
 		}
 	}
 }

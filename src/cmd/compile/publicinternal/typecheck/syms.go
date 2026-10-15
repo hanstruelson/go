@@ -17,7 +17,7 @@ import (
 func LookupRuntime(target *ir.Package, name string, types_ ...*types.Type) *ir.Name {
 	s := target.RuntimePkg.Lookup(name)
 	if s == nil || s.Def == nil {
-		base.Fatalf("LookupRuntime: can't find runtime.%s", name)
+		fatalf(target, "LookupRuntime: can't find runtime.%s", name)
 	}
 	n := s.Def.(*ir.Name)
 	if len(types_) != 0 {
@@ -37,7 +37,7 @@ func substArgTypes(old *ir.Name, types_ ...*types.Type) *ir.Name {
 	n.Class = old.Class
 	n.Func = old.Func
 	if len(types_) > 0 {
-		base.Fatalf("SubstArgTypes: too many argument types")
+		fatalf(ir.TargetOf(old), "SubstArgTypes: too many argument types")
 	}
 	return n
 }
@@ -50,11 +50,11 @@ func substArgTypes(old *ir.Name, types_ ...*types.Type) *ir.Name {
 // user labels.
 func AutoLabel(curfunc *ir.Func, prefix string) *types.Sym {
 	if prefix[0] != '.' {
-		base.Fatalf("autolabel prefix must start with '.', have %q", prefix)
+		fatalf(targetForFunc(curfunc), "autolabel prefix must start with '.', have %q", prefix)
 	}
 	fn := curfunc
 	if curfunc == nil {
-		base.Fatalf("autolabel outside function")
+		fatalf(targetForFunc(curfunc), "autolabel outside function")
 	}
 	n := fn.Label
 	fn.Label++
@@ -83,27 +83,27 @@ func InitRuntime(target *ir.Package, timer *base.Timings) {
 		case varTag:
 			importvar(sym, typ)
 		default:
-			base.Fatalf("unhandled declaration tag %v", d.tag)
+			fatalf(target, "unhandled declaration tag %v", d.tag)
 		}
 	}
 }
 
-// LookupRuntimeFunc looks up Go function name in package runtime. This function
-// must follow the internal calling convention.
-func LookupRuntimeFunc(name string) *obj.LSym {
-	return LookupRuntimeABI(name, obj.ABIInternal)
+// LookupRuntimeFuncFor resolves a runtime symbol in target's linker context.
+func LookupRuntimeFuncFor(target *ir.Package, name string) *obj.LSym {
+	return LookupRuntimeABIFor(target, name, obj.ABIInternal)
 }
 
-// LookupRuntimeVar looks up a variable (or assembly function) name in package
-// runtime. If this is a function, it may have a special calling
-// convention.
-func LookupRuntimeVar(name string) *obj.LSym {
-	return LookupRuntimeABI(name, obj.ABI0)
+// LookupRuntimeVarFor resolves a runtime variable in target's linker context.
+func LookupRuntimeVarFor(target *ir.Package, name string) *obj.LSym {
+	return LookupRuntimeABIFor(target, name, obj.ABI0)
 }
 
-// LookupRuntimeABI looks up a name in package runtime using the given ABI.
-func LookupRuntimeABI(name string, abi obj.ABI) *obj.LSym {
-	return base.PkgLinksym("runtime", name, abi)
+// LookupRuntimeABIFor resolves a runtime symbol using target's linker context.
+func LookupRuntimeABIFor(target *ir.Package, name string, abi obj.ABI) *obj.LSym {
+	if target == nil || target.TypeContext == nil {
+		panic("LookupRuntimeABIFor requires a target type context")
+	}
+	return target.TypeContext.LinkSym("runtime", name, abi)
 }
 
 // InitCoverage loads the definitions for routines called
@@ -119,7 +119,7 @@ func InitCoverage(target *ir.Package) {
 		case varTag:
 			importvar(sym, typ)
 		default:
-			base.Fatalf("unhandled declaration tag %v", d.tag)
+			fatalf(target, "unhandled declaration tag %v", d.tag)
 		}
 	}
 }
@@ -130,7 +130,7 @@ func InitCoverage(target *ir.Package) {
 func LookupCoverage(target *ir.Package, name string) *ir.Name {
 	sym := target.CoveragePkg.Lookup(name)
 	if sym == nil {
-		base.Fatalf("LookupCoverage: can't find runtime/coverage.%s", name)
+		fatalf(target, "LookupCoverage: can't find runtime/coverage.%s", name)
 	}
 	return sym.Def.(*ir.Name)
 }

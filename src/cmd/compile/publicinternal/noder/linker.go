@@ -5,11 +5,10 @@
 package noder
 
 import (
+	"io"
 	"publicinternal/buildcfg"
 	"publicinternal/pkgbits"
-	"io"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/types"
@@ -146,7 +145,7 @@ func (l *linker) relocObj(pr *pkgReader, idx index) index {
 	if tag == pkgbits.ObjStub && path != "builtin" && path != "unsafe" {
 		pri, ok := pr.ctx.objReader[sym]
 		if !ok {
-			base.Fatalf("missing reader for %q.%v", path, name)
+			l.ctx.Target.Diagnostics.Fatalf("missing reader for %q.%v", path, name)
 		}
 		assert(ok)
 
@@ -242,7 +241,7 @@ func (l *linker) exportBody(obj *ir.Name, local bool) {
 	sym := obj.Sym()
 	if _, ok := l.bodies[sym]; ok {
 		// Due to type aliases, we might visit methods multiple times.
-		base.AssertfAt(obj.Type().Recv() != nil, obj.Pos(), "expected method: %v", obj)
+		l.ctx.Target.Diagnostics.AssertfAt(obj.Type().Recv() != nil, obj.Pos(), "expected method: %v", obj)
 		return
 	}
 

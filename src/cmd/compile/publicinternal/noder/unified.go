@@ -210,14 +210,14 @@ func unified(ctx *Context, m posMap, noders []*noder) {
 	// Check that nothing snuck past typechecking.
 	for _, fn := range target.Funcs {
 		if fn.Typecheck() == 0 {
-			base.FatalfAt(fn.Pos(), "missed typecheck: %v", fn)
+			target.Diagnostics.FatalfAt(fn.Pos(), "missed typecheck: %v", fn)
 		}
 
 		// For functions, check that at least their first statement (if
 		// any) was typechecked too.
 		if len(fn.Body) != 0 {
 			if stmt := fn.Body[0]; stmt.Typecheck() == 0 {
-				base.FatalfAt(stmt.Pos(), "missed typecheck: %v", stmt)
+				target.Diagnostics.FatalfAt(stmt.Pos(), "missed typecheck: %v", stmt)
 			}
 		}
 	}
@@ -230,7 +230,7 @@ func unified(ctx *Context, m posMap, noders []*noder) {
 		}
 	}
 
-	base.ExitIfErrors() // just in case
+	target.Diagnostics.ExitIfErrors() // just in case
 }
 
 // readBodies iteratively expands all pending dictionaries and
@@ -398,7 +398,7 @@ func freePackage(target *ir.Package, pkg *types2.Package) {
 		}
 	}
 
-	base.Fatalf("package never finalized")
+	target.Diagnostics.Fatalf("package never finalized")
 }
 
 // readPackage reads package export data from pr to populate
@@ -414,8 +414,8 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 		pkg := r.pkg()
 		// This error can happen if "go tool compile" is called with wrong "-p" flag, see issue #54542.
 		if pkg != importpkg {
-			base.ErrorfAt(pr.ctx.Target.AutoPos, errors.BadImportPath, "mismatched import path, have %q (%p), want %q (%p)", pkg.Path, pkg, importpkg.Path, importpkg)
-			base.ErrorExit()
+			pr.ctx.Target.Diagnostics.ErrorfAt(pr.ctx.Target.AutoPos, errors.BadImportPath, "mismatched import path, have %q (%p), want %q (%p)", pkg.Path, pkg, importpkg.Path, importpkg)
+			pr.ctx.Target.Diagnostics.ErrorExit()
 		}
 
 		if r.Version().Has(pkgbits.HasInit) {

@@ -6,7 +6,6 @@ package ir
 
 import (
 	"bytes"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
@@ -79,7 +78,10 @@ type AddrExpr struct {
 
 func NewAddrExpr(pos src.XPos, x Node) *AddrExpr {
 	if x == nil || x.Typecheck() != 1 {
-		base.FatalfAt(pos, "missed typecheck: %L", x)
+		if x == nil {
+			panic("missed typecheck: nil address expression")
+		}
+		fatalfType(x.Type(), pos, "missed typecheck: %L", x)
 	}
 	n := &AddrExpr{X: x}
 	n.pos = pos
@@ -391,7 +393,7 @@ func NewInlinedCallExpr(pos src.XPos, body, retvars []Node) *InlinedCallExpr {
 
 func (n *InlinedCallExpr) SingleResult() Node {
 	if have := len(n.ReturnVars); have != 1 {
-		base.FatalfAt(n.Pos(), "inlined call has %v results, expected 1", have)
+		fatalfType(n.Type(), n.Pos(), "inlined call has %v results, expected 1", have)
 	}
 
 	// If the type of the call is not a shape, but the type of the return value
@@ -468,7 +470,7 @@ type NilExpr struct {
 
 func NewNilExpr(pos src.XPos, typ *types.Type) *NilExpr {
 	if typ == nil {
-		base.FatalfAt(pos, "missing type")
+		panic("missing type for nil expression")
 	}
 	n := &NilExpr{}
 	n.pos = pos
@@ -519,7 +521,7 @@ type LinksymOffsetExpr struct {
 
 func NewLinksymOffsetExpr(pos src.XPos, lsym *obj.LSym, offset int64, typ *types.Type) *LinksymOffsetExpr {
 	if typ == nil {
-		base.FatalfAt(pos, "nil type")
+		panic("nil type for linksym expression")
 	}
 	n := &LinksymOffsetExpr{Linksym: lsym, Offset_: offset}
 	n.typ = typ
@@ -537,7 +539,10 @@ func NewLinksymExpr(pos src.XPos, lsym *obj.LSym, typ *types.Type) *LinksymOffse
 // representing a global variable instead of an *obj.LSym directly.
 func NewNameOffsetExpr(pos src.XPos, name *Name, offset int64, typ *types.Type) *LinksymOffsetExpr {
 	if name == nil || IsBlank(name) || !(name.Op() == ONAME && name.Class == PEXTERN) {
-		base.FatalfAt(pos, "cannot take offset of nil, blank name or non-global variable: %v", name)
+		if name != nil {
+			fatalfType(name.Type(), pos, "cannot take offset of nil, blank name or non-global variable: %v", name)
+		}
+		panic("cannot take offset of nil, blank name or non-global variable")
 	}
 	return NewLinksymOffsetExpr(pos, name.Linksym(), offset, typ)
 }
@@ -627,7 +632,7 @@ func (o Op) IsSlice3() bool {
 	case OSLICE3, OSLICE3ARR:
 		return true
 	}
-	base.Fatalf("IsSlice3 op %v", o)
+	panic(fmt.Sprintf("IsSlice3 op %v", o))
 	return false
 }
 
@@ -931,7 +936,7 @@ FindRHS:
 				break FindRHS
 			}
 		}
-		base.FatalfAt(defn.Pos(), "%v missing from LHS of %v", n, defn)
+		fatalfType(n.Type(), defn.Pos(), "%v missing from LHS of %v", n, defn)
 	default:
 		return nil
 	}
@@ -939,7 +944,7 @@ FindRHS:
 		if n.AutoTemp() {
 			return nil
 		}
-		base.FatalfAt(defn.Pos(), "RHS is nil: %v", defn)
+		fatalfType(n.Type(), defn.Pos(), "RHS is nil: %v", defn)
 	}
 
 	if Reassigned(n) {
@@ -959,7 +964,7 @@ FindRHS:
 // code in the ReassignOracle.Init method.
 func Reassigned(name *Name) bool {
 	if name.Op() != ONAME {
-		base.Fatalf("reassigned %v", name)
+		fatalfType(name.Type(), name.Pos(), "reassigned %v", name)
 	}
 	// no way to reliably check for no-reassignment of globals, assume it can be
 	if name.Curfn == nil {
@@ -1006,7 +1011,7 @@ func Reassigned(name *Name) bool {
 		case OADDR:
 			n := n.(*AddrExpr)
 			if isName(n.X) {
-				base.FatalfAt(n.Pos(), "%v not marked addrtaken", name)
+				fatalfType(name.Type(), n.Pos(), "%v not marked addrtaken", name)
 			}
 		case ORANGE:
 			n := n.(*RangeStmt)
@@ -1198,7 +1203,7 @@ func ReceiverMethodSym(target *Package, recv *types.Type, msym *types.Sym) *type
 // that adjusts its pointer receiver by offset before calling msym on wrappee.
 func promotedWrapperSym(target *Package, wrapper, wrappee *types.Type, msym *types.Sym, offset int64) *types.Sym {
 	if msym.IsBlank() {
-		base.Fatalf("blank method name")
+		fatalfTarget(target, "blank method name")
 	}
 
 	// derefs == 0: T; not shared because its ABI depends on the concrete T.
@@ -1234,13 +1239,13 @@ func promotedWrapperSym(target *Package, wrapper, wrappee *types.Type, msym *typ
 // letter, number, or period.
 func ReceiverMethodSymSuffix(target *Package, recv *types.Type, msym *types.Sym, suffix string) *types.Sym {
 	if msym.IsBlank() {
-		base.Fatalf("blank method name")
+		fatalfTarget(target, "blank method name")
 	}
 
 	rsym := recv.Sym()
 	if recv.IsPtr() {
 		if rsym != nil {
-			base.Fatalf("declared pointer receiver type: %v", recv)
+			fatalfType(recv, recv.Pos(), "declared pointer receiver type: %v", recv)
 		}
 		rsym = recv.Elem().Sym()
 	}
@@ -1336,7 +1341,7 @@ func MethodExprFunc(n Node) *types.Field {
 	case ODOTMETH, OMETHEXPR, OMETHVALUE:
 		return n.(*SelectorExpr).Selection
 	}
-	base.Fatalf("unexpected node: %v (%v)", n, n.Op())
+	fatalfTarget(nodeTarget(n), "unexpected node: %v (%v)", n, n.Op())
 	panic("unreachable")
 }
 

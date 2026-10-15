@@ -61,19 +61,19 @@ func assign(curfunc *ir.Func, stmt ir.Node, lhs, rhs []ir.Node) {
 
 	checkLHS := func(i int, typ *types.Type) {
 		if n := lhs[i]; typ != nil && ir.DeclaredBy(n, stmt) && n.Type() == nil {
-			base.Assertf(typ.Kind() == types.TNIL, "unexpected untyped nil")
+			assertf(targetForFunc(curfunc), typ.Kind() == types.TNIL, "unexpected untyped nil")
 			n.SetType(defaultType(targetForFunc(curfunc), typ))
 		}
 		if lhs[i].Typecheck() == 0 {
 			lhs[i] = AssignExpr(curfunc, lhs[i])
 		}
-		checkassign(lhs[i])
+		checkassign(targetForFunc(curfunc), lhs[i])
 	}
 
 	assignType := func(i int, typ *types.Type) {
 		checkLHS(i, typ)
 		if typ != nil {
-			checkassignto(typ, lhs[i])
+			checkassignto(targetForFunc(curfunc), typ, lhs[i])
 		}
 	}
 
@@ -118,10 +118,10 @@ assignOK:
 	if len(lhs) != cr {
 		if r, ok := rhs[0].(*ir.CallExpr); ok && len(rhs) == 1 {
 			if r.Type() != nil {
-				base.ErrorfAt(stmt.Pos(), errors.WrongAssignCount, "assignment mismatch: %d variable%s but %v returns %d value%s", len(lhs), plural(len(lhs)), r.Fun, cr, plural(cr))
+				errorfAt(targetForFunc(curfunc), stmt.Pos(), errors.WrongAssignCount, "assignment mismatch: %d variable%s but %v returns %d value%s", len(lhs), plural(len(lhs)), r.Fun, cr, plural(cr))
 			}
 		} else {
-			base.ErrorfAt(stmt.Pos(), errors.WrongAssignCount, "assignment mismatch: %d variable%s but %v value%s", len(lhs), plural(len(lhs)), len(rhs), plural(len(rhs)))
+			errorfAt(targetForFunc(curfunc), stmt.Pos(), errors.WrongAssignCount, "assignment mismatch: %d variable%s but %v value%s", len(lhs), plural(len(lhs)), len(rhs), plural(len(rhs)))
 		}
 
 		for i := range lhs {
@@ -174,7 +174,7 @@ func plural(n int) string {
 func tcCheckNil(curfunc *ir.Func, n *ir.UnaryExpr) ir.Node {
 	n.X = Expr(curfunc, n.X)
 	if !n.X.Type().IsPtrShaped() {
-		base.FatalfAt(n.Pos(), "%L is not pointer shaped", n.X)
+		fatalfAt(targetForFunc(curfunc), n.Pos(), "%L is not pointer shaped", n.X)
 	}
 	return n
 }
@@ -187,7 +187,7 @@ func tcFor(curfunc *ir.Func, n *ir.ForStmt) ir.Node {
 	if n.Cond != nil {
 		t := n.Cond.Type()
 		if t != nil && !t.IsBoolean() {
-			base.Errorf("non-bool %L used as for condition", n.Cond)
+			errorf(targetForFunc(curfunc), "non-bool %L used as for condition", n.Cond)
 		}
 	}
 	n.Post = Stmt(curfunc, n.Post)
@@ -298,7 +298,7 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 
 	switch call.Op() {
 	default:
-		base.Fatalf("unexpected call op: %v", call.Op())
+		fatalf(targetForFunc(curfunc), "unexpected call op: %v", call.Op())
 
 	case ir.OCALLFUNC:
 		call := call.(*ir.CallExpr)
@@ -345,7 +345,7 @@ func normalizeGoDeferCall(curfunc *ir.Func, pos src.XPos, op ir.Op, call ir.Node
 			arg := *argp
 
 			pos := callPos
-			if ir.HasUniquePos(arg) {
+			if ir.HasUniquePosFor(targetForFunc(curfunc), arg) {
 				pos = arg.Pos()
 			}
 
@@ -385,7 +385,7 @@ func tcIf(curfunc *ir.Func, n *ir.IfStmt) ir.Node {
 	if n.Cond != nil {
 		t := n.Cond.Type()
 		if t != nil && !t.IsBoolean() {
-			base.Errorf("non-bool %L used as if condition", n.Cond)
+			errorf(targetForFunc(curfunc), "non-bool %L used as if condition", n.Cond)
 		}
 	}
 	Stmts(curfunc, n.Body)
@@ -402,13 +402,13 @@ func tcRange(curfunc *ir.Func, n *ir.RangeStmt) {
 		if !ir.DeclaredBy(n.Key, n) {
 			n.Key = AssignExpr(curfunc, n.Key)
 		}
-		checkassign(n.Key)
+		checkassign(targetForFunc(curfunc), n.Key)
 	}
 	if n.Value != nil {
 		if !ir.DeclaredBy(n.Value, n) {
 			n.Value = AssignExpr(curfunc, n.Value)
 		}
-		checkassign(n.Value)
+		checkassign(targetForFunc(curfunc), n.Value)
 	}
 
 	// second half of dance
@@ -426,7 +426,7 @@ func tcRange(curfunc *ir.Func, n *ir.RangeStmt) {
 // tcReturn typechecks an ORETURN node.
 func tcReturn(curfunc *ir.Func, n *ir.ReturnStmt) ir.Node {
 	if curfunc == nil {
-		base.FatalfAt(n.Pos(), "return outside function")
+		fatalfAt(targetForFunc(curfunc), n.Pos(), "return outside function")
 	}
 
 	typecheckargs(curfunc, n)
@@ -445,7 +445,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 		if ncase.Comm == nil {
 			// default
 			if def != nil {
-				base.ErrorfAt(ncase.Pos(), errors.DuplicateDefault, "multiple defaults in select (first at %v)", ir.Line(def))
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.DuplicateDefault, "multiple defaults in select (first at %v)", ir.LineFor(targetForFunc(curfunc), def))
 			} else {
 				def = ncase
 			}
@@ -469,7 +469,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 					// on the same line). This matches the approach before 1.10.
 					pos = ncase.Pos()
 				}
-				base.ErrorfAt(pos, errors.InvalidSelectCase, "select case must be receive, send or assign recv")
+				errorfAt(targetForFunc(curfunc), pos, errors.InvalidSelectCase, "select case must be receive, send or assign recv")
 
 			case ir.OAS:
 				// convert x = <-c into x, _ = <-c
@@ -483,7 +483,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 					}
 				}
 				if n.Y.Op() != ir.ORECV {
-					base.ErrorfAt(n.Pos(), errors.InvalidSelectCase, "select assignment must have receive on right hand side")
+					errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidSelectCase, "select assignment must have receive on right hand side")
 					break
 				}
 				oselrecv2(n.X, n.Y, n.Def)
@@ -491,7 +491,7 @@ func tcSelect(curfunc *ir.Func, sel *ir.SelectStmt) {
 			case ir.OAS2RECV:
 				n := n.(*ir.AssignListStmt)
 				if n.Rhs[0].Op() != ir.ORECV {
-					base.ErrorfAt(n.Pos(), errors.InvalidSelectCase, "select assignment must have receive on right hand side")
+					errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidSelectCase, "select assignment must have receive on right hand side")
 					break
 				}
 				n.SetOp(ir.OSELRECV2)
@@ -522,12 +522,12 @@ func tcSend(curfunc *ir.Func, n *ir.SendStmt) ir.Node {
 		return n
 	}
 	if !t.IsChan() {
-		base.Errorf("invalid operation: %v (send to non-chan type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (send to non-chan type %v)", n, t)
 		return n
 	}
 
 	if !t.ChanDir().CanSend() {
-		base.Errorf("invalid operation: %v (send to receive-only type %v)", n, t)
+		errorf(targetForFunc(curfunc), "invalid operation: %v (send to receive-only type %v)", n, t)
 		return n
 	}
 
@@ -568,9 +568,9 @@ func tcSwitchExpr(curfunc *ir.Func, n *ir.SwitchStmt) {
 
 		case !types.IsComparable(t):
 			if t.IsStruct() {
-				base.ErrorfAt(n.Pos(), errors.InvalidExprSwitch, "cannot switch on %L (struct containing %v cannot be compared)", n.Tag, types.IncomparableField(t).Type)
+				errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidExprSwitch, "cannot switch on %L (struct containing %v cannot be compared)", n.Tag, types.IncomparableField(t).Type)
 			} else {
-				base.ErrorfAt(n.Pos(), errors.InvalidExprSwitch, "cannot switch on %L", n.Tag)
+				errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidExprSwitch, "cannot switch on %L", n.Tag)
 			}
 			t = nil
 		}
@@ -581,7 +581,7 @@ func tcSwitchExpr(curfunc *ir.Func, n *ir.SwitchStmt) {
 		ls := ncase.List
 		if len(ls) == 0 { // default:
 			if defCase != nil {
-				base.ErrorfAt(ncase.Pos(), errors.DuplicateDefault, "multiple defaults in switch (first at %v)", ir.Line(defCase))
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.DuplicateDefault, "multiple defaults in switch (first at %v)", ir.LineFor(targetForFunc(curfunc), defCase))
 			} else {
 				defCase = ncase
 			}
@@ -597,17 +597,17 @@ func tcSwitchExpr(curfunc *ir.Func, n *ir.SwitchStmt) {
 			}
 
 			if nilonly != "" && !ir.IsNil(n1) {
-				base.ErrorfAt(ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch (can only compare %s %v to nil)", n1, nilonly, n.Tag)
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch (can only compare %s %v to nil)", n1, nilonly, n.Tag)
 			} else if t.IsInterface() && !n1.Type().IsInterface() && !types.IsComparable(n1.Type()) {
-				base.ErrorfAt(ncase.Pos(), errors.UndefinedOp, "invalid case %L in switch (incomparable type)", n1)
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.UndefinedOp, "invalid case %L in switch (incomparable type)", n1)
 			} else {
 				op1, _ := assignOp(n1.Type(), t)
 				op2, _ := assignOp(t, n1.Type())
 				if op1 == ir.OXXX && op2 == ir.OXXX {
 					if n.Tag != nil {
-						base.ErrorfAt(ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch on %v (mismatched types %v and %v)", n1, n.Tag, n1.Type(), t)
+						errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch on %v (mismatched types %v and %v)", n1, n.Tag, n1.Type(), t)
 					} else {
-						base.ErrorfAt(ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch (mismatched types %v and bool)", n1, n1.Type())
+						errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.MismatchedTypes, "invalid case %v in switch (mismatched types %v and bool)", n1, n1.Type())
 					}
 				}
 			}
@@ -622,7 +622,7 @@ func tcSwitchType(curfunc *ir.Func, n *ir.SwitchStmt) {
 	guard.X = Expr(curfunc, guard.X)
 	t := guard.X.Type()
 	if t != nil && !t.IsInterface() {
-		base.ErrorfAt(n.Pos(), errors.InvalidTypeSwitch, "cannot type switch on non-interface value %L", guard.X)
+		errorfAt(targetForFunc(curfunc), n.Pos(), errors.InvalidTypeSwitch, "cannot type switch on non-interface value %L", guard.X)
 		t = nil
 	}
 
@@ -630,16 +630,16 @@ func tcSwitchType(curfunc *ir.Func, n *ir.SwitchStmt) {
 	// declaration itself. So if there are no cases, we won't
 	// notice that it went unused.
 	if v := guard.Tag; v != nil && !ir.IsBlank(v) && len(n.Cases) == 0 {
-		base.ErrorfAt(v.Pos(), errors.UnusedVar, "%v declared but not used", v.Sym())
+		errorfAt(targetForFunc(curfunc), v.Pos(), errors.UnusedVar, "%v declared but not used", v.Sym())
 	}
 
 	var defCase, nilCase ir.Node
-	var ts typeSet
+	ts := typeSet{target: targetForFunc(curfunc)}
 	for _, ncase := range n.Cases {
 		ls := ncase.List
 		if len(ls) == 0 { // default:
 			if defCase != nil {
-				base.ErrorfAt(ncase.Pos(), errors.DuplicateDefault, "multiple defaults in switch (first at %v)", ir.Line(defCase))
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.DuplicateDefault, "multiple defaults in switch (first at %v)", ir.LineFor(targetForFunc(curfunc), defCase))
 			} else {
 				defCase = ncase
 			}
@@ -654,7 +654,7 @@ func tcSwitchType(curfunc *ir.Func, n *ir.SwitchStmt) {
 
 			if ir.IsNil(n1) { // case nil:
 				if nilCase != nil {
-					base.ErrorfAt(ncase.Pos(), errors.DuplicateCase, "multiple nil cases in type switch (first at %v)", ir.Line(nilCase))
+					errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.DuplicateCase, "multiple nil cases in type switch (first at %v)", ir.LineFor(targetForFunc(curfunc), nilCase))
 				} else {
 					nilCase = ncase
 				}
@@ -664,13 +664,13 @@ func tcSwitchType(curfunc *ir.Func, n *ir.SwitchStmt) {
 				continue
 			}
 			if n1.Op() != ir.OTYPE {
-				base.ErrorfAt(ncase.Pos(), errors.NotAType, "%L is not a type", n1)
+				errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.NotAType, "%L is not a type", n1)
 				continue
 			}
 			if !n1.Type().IsInterface() {
 				why := ImplementsExplain(n1.Type(), t)
 				if why != "" {
-					base.ErrorfAt(ncase.Pos(), errors.ImpossibleAssert, "impossible type switch case: %L cannot have dynamic type %v (%s)", guard.X, n1.Type(), why)
+					errorfAt(targetForFunc(curfunc), ncase.Pos(), errors.ImpossibleAssert, "impossible type switch case: %L cannot have dynamic type %v (%s)", guard.X, n1.Type(), why)
 				}
 				continue
 			}
@@ -707,7 +707,8 @@ func tcSwitchType(curfunc *ir.Func, n *ir.SwitchStmt) {
 }
 
 type typeSet struct {
-	m map[string]src.XPos
+	target *ir.Package
+	m      map[string]src.XPos
 }
 
 func (s *typeSet) add(pos src.XPos, typ *types.Type) {
@@ -717,7 +718,7 @@ func (s *typeSet) add(pos src.XPos, typ *types.Type) {
 
 	ls := typ.LinkString()
 	if prev, ok := s.m[ls]; ok {
-		base.ErrorfAt(pos, errors.DuplicateCase, "duplicate case %v in type switch\n\tprevious case at %s", typ, base.FmtPos(prev))
+		errorfAt(s.target, pos, errors.DuplicateCase, "duplicate case %v in type switch\n\tprevious case at %s", typ, fmtPosFor(s.target, prev))
 		return
 	}
 	s.m[ls] = pos

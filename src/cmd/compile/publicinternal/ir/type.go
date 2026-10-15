@@ -5,7 +5,6 @@
 package ir
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 )
@@ -33,7 +32,7 @@ func (n *typeNode) Sym() *types.Sym   { return n.typ.Sym() }
 func TypeNode(t *types.Type) Node {
 	if n := t.Obj(); n != nil {
 		if n.Type() != t {
-			base.Fatalf("type skew: %v has type %v, but expected %v", n, n.Type(), t)
+			fatalfType(t, t.Pos(), "type skew: %v has type %v, but expected %v", n, n.Type(), t)
 		}
 		return n.(*Name)
 	}
@@ -75,7 +74,7 @@ func NewDynamicType(pos src.XPos, rtype Node) *DynamicType {
 // ToStatic returns static type of dt if it is actually static.
 func (dt *DynamicType) ToStatic() Node {
 	if dt.Typecheck() == 0 {
-		base.Fatalf("missing typecheck: %v", dt)
+		fatalfType(dt.Type(), dt.Pos(), "missing typecheck: %v", dt)
 	}
 	if dt.RType != nil && dt.RType.Op() == OADDR {
 		addr := dt.RType.(*AddrExpr)

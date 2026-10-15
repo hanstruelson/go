@@ -6,6 +6,7 @@ package ir
 
 import (
 	"cmd/compile/publicinternal/base"
+	"cmd/compile/publicinternal/logopt"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/src"
@@ -20,7 +21,7 @@ type Package struct {
 	LangVersion types.LangVersion
 
 	// Pos and AutoPos are the current and generated source positions for this
-	// compilation. Pos is kept in sync with base.Pos while legacy helpers remain.
+	// compilation. Pos is independent of the legacy base.Pos compatibility path.
 	Pos     src.XPos
 	AutoPos src.XPos
 
@@ -36,6 +37,10 @@ type Package struct {
 
 	// Ctxt is the linker context for this compilation.
 	Ctxt *obj.Link
+	// LogOpt owns optimizer diagnostics for this compilation.
+	LogOpt *logopt.Context
+	// Diagnostics owns parse, type-check, and backend messages for this compilation.
+	Diagnostics *base.Diagnostics
 	// ArchInfo is the backend's architecture-specific code generation context.
 	// It is stored opaquely here to avoid an ir <-> ssagen import cycle.
 	ArchInfo any

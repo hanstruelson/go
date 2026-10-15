@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/liveness"
 	"cmd/compile/publicinternal/objw"
@@ -28,7 +27,6 @@ import (
 	"cmd/compile/publicinternal/rttype"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
-	"cmd/compile/publicinternal/ssa/ssaconfig"
 	"cmd/compile/publicinternal/ssa/ssadebug"
 	"cmd/compile/publicinternal/ssa/ssahtml"
 	"cmd/compile/publicinternal/ssa/ssaop"
@@ -84,7 +82,7 @@ func InitConfig(backend *Context, config *ssa.Config, target *ir.Package) {
 	backend.target = target
 
 	if ArchInfoFor(target).SoftFloat {
-		softfloatInit()
+		softfloatInit(backend, target)
 	}
 
 	// Generate a few pointer types that are uncommon in the frontend but common
@@ -105,113 +103,113 @@ func InitConfig(backend *Context, config *ssa.Config, target *ir.Package) {
 	backend.ssaCaches = make([]ssa.Cache, target.Flags.LowerC)
 
 	// Set up some runtime functions we'll need to call.
-	target.Symbols.AssertE2I = typecheck.LookupRuntimeFunc("assertE2I")
-	target.Symbols.AssertE2I2 = typecheck.LookupRuntimeFunc("assertE2I2")
-	target.Symbols.CgoCheckMemmove = typecheck.LookupRuntimeFunc("cgoCheckMemmove")
-	target.Symbols.CgoCheckPtrWrite = typecheck.LookupRuntimeFunc("cgoCheckPtrWrite")
-	target.Symbols.CheckPtrAlignment = typecheck.LookupRuntimeFunc("checkptrAlignment")
-	target.Symbols.Deferproc = typecheck.LookupRuntimeFunc("deferproc")
-	target.Symbols.Deferprocat = typecheck.LookupRuntimeFunc("deferprocat")
-	target.Symbols.DeferprocStack = typecheck.LookupRuntimeFunc("deferprocStack")
-	target.Symbols.Deferreturn = typecheck.LookupRuntimeFunc("deferreturn")
-	target.Symbols.Duffcopy = typecheck.LookupRuntimeFunc("duffcopy")
-	target.Symbols.Duffzero = typecheck.LookupRuntimeFunc("duffzero")
-	target.Symbols.GCWriteBarrier[0] = typecheck.LookupRuntimeFunc("gcWriteBarrier1")
-	target.Symbols.GCWriteBarrier[1] = typecheck.LookupRuntimeFunc("gcWriteBarrier2")
-	target.Symbols.GCWriteBarrier[2] = typecheck.LookupRuntimeFunc("gcWriteBarrier3")
-	target.Symbols.GCWriteBarrier[3] = typecheck.LookupRuntimeFunc("gcWriteBarrier4")
-	target.Symbols.GCWriteBarrier[4] = typecheck.LookupRuntimeFunc("gcWriteBarrier5")
-	target.Symbols.GCWriteBarrier[5] = typecheck.LookupRuntimeFunc("gcWriteBarrier6")
-	target.Symbols.GCWriteBarrier[6] = typecheck.LookupRuntimeFunc("gcWriteBarrier7")
-	target.Symbols.GCWriteBarrier[7] = typecheck.LookupRuntimeFunc("gcWriteBarrier8")
-	target.Symbols.Goschedguarded = typecheck.LookupRuntimeFunc("goschedguarded")
-	target.Symbols.Growslice = typecheck.LookupRuntimeFunc("growslice")
-	target.Symbols.GrowsliceBuf = typecheck.LookupRuntimeFunc("growsliceBuf")
-	target.Symbols.GrowsliceBufNoAlias = typecheck.LookupRuntimeFunc("growsliceBufNoAlias")
-	target.Symbols.GrowsliceNoAlias = typecheck.LookupRuntimeFunc("growsliceNoAlias")
-	target.Symbols.MoveSlice = typecheck.LookupRuntimeFunc("moveSlice")
-	target.Symbols.MoveSliceNoScan = typecheck.LookupRuntimeFunc("moveSliceNoScan")
-	target.Symbols.MoveSliceNoCap = typecheck.LookupRuntimeFunc("moveSliceNoCap")
-	target.Symbols.MoveSliceNoCapNoScan = typecheck.LookupRuntimeFunc("moveSliceNoCapNoScan")
-	target.Symbols.InterfaceSwitch = typecheck.LookupRuntimeFunc("interfaceSwitch")
+	target.Symbols.AssertE2I = typecheck.LookupRuntimeFuncFor(target, "assertE2I")
+	target.Symbols.AssertE2I2 = typecheck.LookupRuntimeFuncFor(target, "assertE2I2")
+	target.Symbols.CgoCheckMemmove = typecheck.LookupRuntimeFuncFor(target, "cgoCheckMemmove")
+	target.Symbols.CgoCheckPtrWrite = typecheck.LookupRuntimeFuncFor(target, "cgoCheckPtrWrite")
+	target.Symbols.CheckPtrAlignment = typecheck.LookupRuntimeFuncFor(target, "checkptrAlignment")
+	target.Symbols.Deferproc = typecheck.LookupRuntimeFuncFor(target, "deferproc")
+	target.Symbols.Deferprocat = typecheck.LookupRuntimeFuncFor(target, "deferprocat")
+	target.Symbols.DeferprocStack = typecheck.LookupRuntimeFuncFor(target, "deferprocStack")
+	target.Symbols.Deferreturn = typecheck.LookupRuntimeFuncFor(target, "deferreturn")
+	target.Symbols.Duffcopy = typecheck.LookupRuntimeFuncFor(target, "duffcopy")
+	target.Symbols.Duffzero = typecheck.LookupRuntimeFuncFor(target, "duffzero")
+	target.Symbols.GCWriteBarrier[0] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier1")
+	target.Symbols.GCWriteBarrier[1] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier2")
+	target.Symbols.GCWriteBarrier[2] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier3")
+	target.Symbols.GCWriteBarrier[3] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier4")
+	target.Symbols.GCWriteBarrier[4] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier5")
+	target.Symbols.GCWriteBarrier[5] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier6")
+	target.Symbols.GCWriteBarrier[6] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier7")
+	target.Symbols.GCWriteBarrier[7] = typecheck.LookupRuntimeFuncFor(target, "gcWriteBarrier8")
+	target.Symbols.Goschedguarded = typecheck.LookupRuntimeFuncFor(target, "goschedguarded")
+	target.Symbols.Growslice = typecheck.LookupRuntimeFuncFor(target, "growslice")
+	target.Symbols.GrowsliceBuf = typecheck.LookupRuntimeFuncFor(target, "growsliceBuf")
+	target.Symbols.GrowsliceBufNoAlias = typecheck.LookupRuntimeFuncFor(target, "growsliceBufNoAlias")
+	target.Symbols.GrowsliceNoAlias = typecheck.LookupRuntimeFuncFor(target, "growsliceNoAlias")
+	target.Symbols.MoveSlice = typecheck.LookupRuntimeFuncFor(target, "moveSlice")
+	target.Symbols.MoveSliceNoScan = typecheck.LookupRuntimeFuncFor(target, "moveSliceNoScan")
+	target.Symbols.MoveSliceNoCap = typecheck.LookupRuntimeFuncFor(target, "moveSliceNoCap")
+	target.Symbols.MoveSliceNoCapNoScan = typecheck.LookupRuntimeFuncFor(target, "moveSliceNoCapNoScan")
+	target.Symbols.InterfaceSwitch = typecheck.LookupRuntimeFuncFor(target, "interfaceSwitch")
 	for i := 1; i < len(target.Symbols.MallocGCSmallNoScan); i++ {
-		target.Symbols.MallocGCSmallNoScan[i] = typecheck.LookupRuntimeFunc(fmt.Sprintf("mallocgcSmallNoScanSC%d", i))
+		target.Symbols.MallocGCSmallNoScan[i] = typecheck.LookupRuntimeFuncFor(target, fmt.Sprintf("mallocgcSmallNoScanSC%d", i))
 	}
 	for i := 1; i < len(target.Symbols.MallocGCSmallScanNoHeader); i++ {
-		target.Symbols.MallocGCSmallScanNoHeader[i] = typecheck.LookupRuntimeFunc(fmt.Sprintf("mallocgcSmallScanNoHeaderSC%d", i))
+		target.Symbols.MallocGCSmallScanNoHeader[i] = typecheck.LookupRuntimeFuncFor(target, fmt.Sprintf("mallocgcSmallScanNoHeaderSC%d", i))
 	}
-	target.Symbols.MallocGCTiny = typecheck.LookupRuntimeFunc("mallocgcTinySC2")
-	target.Symbols.MallocGC = typecheck.LookupRuntimeFunc("mallocgc")
-	target.Symbols.Memmove = typecheck.LookupRuntimeFunc("memmove")
-	target.Symbols.Memequal = typecheck.LookupRuntimeFunc("memequal")
-	target.Symbols.Msanread = typecheck.LookupRuntimeFunc("msanread")
-	target.Symbols.Msanwrite = typecheck.LookupRuntimeFunc("msanwrite")
-	target.Symbols.Msanmove = typecheck.LookupRuntimeFunc("msanmove")
-	target.Symbols.Asanread = typecheck.LookupRuntimeFunc("asanread")
-	target.Symbols.Asanwrite = typecheck.LookupRuntimeFunc("asanwrite")
-	target.Symbols.Newobject = typecheck.LookupRuntimeFunc("newobject")
-	target.Symbols.Newproc = typecheck.LookupRuntimeFunc("newproc")
-	target.Symbols.PanicBounds = typecheck.LookupRuntimeFunc("panicBounds")
-	target.Symbols.PanicExtend = typecheck.LookupRuntimeFunc("panicExtend")
-	target.Symbols.Panicdivide = typecheck.LookupRuntimeFunc("panicdivide")
-	target.Symbols.PanicdottypeE = typecheck.LookupRuntimeFunc("panicdottypeE")
-	target.Symbols.PanicdottypeI = typecheck.LookupRuntimeFunc("panicdottypeI")
-	target.Symbols.Panicnildottype = typecheck.LookupRuntimeFunc("panicnildottype")
-	target.Symbols.Panicoverflow = typecheck.LookupRuntimeFunc("panicoverflow")
-	target.Symbols.Panicshift = typecheck.LookupRuntimeFunc("panicshift")
-	target.Symbols.PanicSimdImm = typecheck.LookupRuntimeFunc("panicSimdImm")
-	target.Symbols.Racefuncenter = typecheck.LookupRuntimeFunc("racefuncenter")
-	target.Symbols.Racefuncexit = typecheck.LookupRuntimeFunc("racefuncexit")
-	target.Symbols.Raceread = typecheck.LookupRuntimeFunc("raceread")
-	target.Symbols.Racereadrange = typecheck.LookupRuntimeFunc("racereadrange")
-	target.Symbols.Racewrite = typecheck.LookupRuntimeFunc("racewrite")
-	target.Symbols.Racewriterange = typecheck.LookupRuntimeFunc("racewriterange")
-	target.Symbols.TypeAssert = typecheck.LookupRuntimeFunc("typeAssert")
-	target.Symbols.WBZero = typecheck.LookupRuntimeFunc("wbZero")
-	target.Symbols.WBMove = typecheck.LookupRuntimeFunc("wbMove")
-	target.Symbols.X86HasAVX = typecheck.LookupRuntimeVar("x86HasAVX")                       // bool
-	target.Symbols.X86HasFMA = typecheck.LookupRuntimeVar("x86HasFMA")                       // bool
-	target.Symbols.X86HasPOPCNT = typecheck.LookupRuntimeVar("x86HasPOPCNT")                 // bool
-	target.Symbols.X86HasSSE41 = typecheck.LookupRuntimeVar("x86HasSSE41")                   // bool
-	target.Symbols.ARMHasVFPv4 = typecheck.LookupRuntimeVar("armHasVFPv4")                   // bool
-	target.Symbols.ARM64HasATOMICS = typecheck.LookupRuntimeVar("arm64HasATOMICS")           // bool
-	target.Symbols.Loong64HasLAMCAS = typecheck.LookupRuntimeVar("loong64HasLAMCAS")         // bool
-	target.Symbols.Loong64HasLAM_BH = typecheck.LookupRuntimeVar("loong64HasLAM_BH")         // bool
-	target.Symbols.Loong64HasDBAR_HINTS = typecheck.LookupRuntimeVar("loong64HasDBAR_HINTS") // bool
-	target.Symbols.Loong64HasLSX = typecheck.LookupRuntimeVar("loong64HasLSX")               // bool
-	target.Symbols.RISCV64HasZbb = typecheck.LookupRuntimeVar("riscv64HasZbb")               // bool
-	target.Symbols.Staticuint64s = typecheck.LookupRuntimeVar("staticuint64s")
-	target.Symbols.Typedmemmove = typecheck.LookupRuntimeFunc("typedmemmove")
-	target.Symbols.Udiv = typecheck.LookupRuntimeVar("udiv")                 // asm func with special ABI
-	target.Symbols.WriteBarrier = typecheck.LookupRuntimeVar("writeBarrier") // struct { bool; ... }
-	target.Symbols.Zerobase = typecheck.LookupRuntimeVar("zerobase")
-	target.Symbols.ZeroVal = typecheck.LookupRuntimeVar("zeroVal")
+	target.Symbols.MallocGCTiny = typecheck.LookupRuntimeFuncFor(target, "mallocgcTinySC2")
+	target.Symbols.MallocGC = typecheck.LookupRuntimeFuncFor(target, "mallocgc")
+	target.Symbols.Memmove = typecheck.LookupRuntimeFuncFor(target, "memmove")
+	target.Symbols.Memequal = typecheck.LookupRuntimeFuncFor(target, "memequal")
+	target.Symbols.Msanread = typecheck.LookupRuntimeFuncFor(target, "msanread")
+	target.Symbols.Msanwrite = typecheck.LookupRuntimeFuncFor(target, "msanwrite")
+	target.Symbols.Msanmove = typecheck.LookupRuntimeFuncFor(target, "msanmove")
+	target.Symbols.Asanread = typecheck.LookupRuntimeFuncFor(target, "asanread")
+	target.Symbols.Asanwrite = typecheck.LookupRuntimeFuncFor(target, "asanwrite")
+	target.Symbols.Newobject = typecheck.LookupRuntimeFuncFor(target, "newobject")
+	target.Symbols.Newproc = typecheck.LookupRuntimeFuncFor(target, "newproc")
+	target.Symbols.PanicBounds = typecheck.LookupRuntimeFuncFor(target, "panicBounds")
+	target.Symbols.PanicExtend = typecheck.LookupRuntimeFuncFor(target, "panicExtend")
+	target.Symbols.Panicdivide = typecheck.LookupRuntimeFuncFor(target, "panicdivide")
+	target.Symbols.PanicdottypeE = typecheck.LookupRuntimeFuncFor(target, "panicdottypeE")
+	target.Symbols.PanicdottypeI = typecheck.LookupRuntimeFuncFor(target, "panicdottypeI")
+	target.Symbols.Panicnildottype = typecheck.LookupRuntimeFuncFor(target, "panicnildottype")
+	target.Symbols.Panicoverflow = typecheck.LookupRuntimeFuncFor(target, "panicoverflow")
+	target.Symbols.Panicshift = typecheck.LookupRuntimeFuncFor(target, "panicshift")
+	target.Symbols.PanicSimdImm = typecheck.LookupRuntimeFuncFor(target, "panicSimdImm")
+	target.Symbols.Racefuncenter = typecheck.LookupRuntimeFuncFor(target, "racefuncenter")
+	target.Symbols.Racefuncexit = typecheck.LookupRuntimeFuncFor(target, "racefuncexit")
+	target.Symbols.Raceread = typecheck.LookupRuntimeFuncFor(target, "raceread")
+	target.Symbols.Racereadrange = typecheck.LookupRuntimeFuncFor(target, "racereadrange")
+	target.Symbols.Racewrite = typecheck.LookupRuntimeFuncFor(target, "racewrite")
+	target.Symbols.Racewriterange = typecheck.LookupRuntimeFuncFor(target, "racewriterange")
+	target.Symbols.TypeAssert = typecheck.LookupRuntimeFuncFor(target, "typeAssert")
+	target.Symbols.WBZero = typecheck.LookupRuntimeFuncFor(target, "wbZero")
+	target.Symbols.WBMove = typecheck.LookupRuntimeFuncFor(target, "wbMove")
+	target.Symbols.X86HasAVX = typecheck.LookupRuntimeVarFor(target, "x86HasAVX")                       // bool
+	target.Symbols.X86HasFMA = typecheck.LookupRuntimeVarFor(target, "x86HasFMA")                       // bool
+	target.Symbols.X86HasPOPCNT = typecheck.LookupRuntimeVarFor(target, "x86HasPOPCNT")                 // bool
+	target.Symbols.X86HasSSE41 = typecheck.LookupRuntimeVarFor(target, "x86HasSSE41")                   // bool
+	target.Symbols.ARMHasVFPv4 = typecheck.LookupRuntimeVarFor(target, "armHasVFPv4")                   // bool
+	target.Symbols.ARM64HasATOMICS = typecheck.LookupRuntimeVarFor(target, "arm64HasATOMICS")           // bool
+	target.Symbols.Loong64HasLAMCAS = typecheck.LookupRuntimeVarFor(target, "loong64HasLAMCAS")         // bool
+	target.Symbols.Loong64HasLAM_BH = typecheck.LookupRuntimeVarFor(target, "loong64HasLAM_BH")         // bool
+	target.Symbols.Loong64HasDBAR_HINTS = typecheck.LookupRuntimeVarFor(target, "loong64HasDBAR_HINTS") // bool
+	target.Symbols.Loong64HasLSX = typecheck.LookupRuntimeVarFor(target, "loong64HasLSX")               // bool
+	target.Symbols.RISCV64HasZbb = typecheck.LookupRuntimeVarFor(target, "riscv64HasZbb")               // bool
+	target.Symbols.Staticuint64s = typecheck.LookupRuntimeVarFor(target, "staticuint64s")
+	target.Symbols.Typedmemmove = typecheck.LookupRuntimeFuncFor(target, "typedmemmove")
+	target.Symbols.Udiv = typecheck.LookupRuntimeVarFor(target, "udiv")                 // asm func with special ABI
+	target.Symbols.WriteBarrier = typecheck.LookupRuntimeVarFor(target, "writeBarrier") // struct { bool; ... }
+	target.Symbols.Zerobase = typecheck.LookupRuntimeVarFor(target, "zerobase")
+	target.Symbols.ZeroVal = typecheck.LookupRuntimeVarFor(target, "zeroVal")
 
 	if ArchInfoFor(target).LinkArch.Family == sys.Wasm {
-		backend.boundsCheckFunc[ssa.BoundsIndex] = typecheck.LookupRuntimeFunc("goPanicIndex")
-		backend.boundsCheckFunc[ssa.BoundsIndexU] = typecheck.LookupRuntimeFunc("goPanicIndexU")
-		backend.boundsCheckFunc[ssa.BoundsSliceAlen] = typecheck.LookupRuntimeFunc("goPanicSliceAlen")
-		backend.boundsCheckFunc[ssa.BoundsSliceAlenU] = typecheck.LookupRuntimeFunc("goPanicSliceAlenU")
-		backend.boundsCheckFunc[ssa.BoundsSliceAcap] = typecheck.LookupRuntimeFunc("goPanicSliceAcap")
-		backend.boundsCheckFunc[ssa.BoundsSliceAcapU] = typecheck.LookupRuntimeFunc("goPanicSliceAcapU")
-		backend.boundsCheckFunc[ssa.BoundsSliceB] = typecheck.LookupRuntimeFunc("goPanicSliceB")
-		backend.boundsCheckFunc[ssa.BoundsSliceBU] = typecheck.LookupRuntimeFunc("goPanicSliceBU")
-		backend.boundsCheckFunc[ssa.BoundsSlice3Alen] = typecheck.LookupRuntimeFunc("goPanicSlice3Alen")
-		backend.boundsCheckFunc[ssa.BoundsSlice3AlenU] = typecheck.LookupRuntimeFunc("goPanicSlice3AlenU")
-		backend.boundsCheckFunc[ssa.BoundsSlice3Acap] = typecheck.LookupRuntimeFunc("goPanicSlice3Acap")
-		backend.boundsCheckFunc[ssa.BoundsSlice3AcapU] = typecheck.LookupRuntimeFunc("goPanicSlice3AcapU")
-		backend.boundsCheckFunc[ssa.BoundsSlice3B] = typecheck.LookupRuntimeFunc("goPanicSlice3B")
-		backend.boundsCheckFunc[ssa.BoundsSlice3BU] = typecheck.LookupRuntimeFunc("goPanicSlice3BU")
-		backend.boundsCheckFunc[ssa.BoundsSlice3C] = typecheck.LookupRuntimeFunc("goPanicSlice3C")
-		backend.boundsCheckFunc[ssa.BoundsSlice3CU] = typecheck.LookupRuntimeFunc("goPanicSlice3CU")
-		backend.boundsCheckFunc[ssa.BoundsConvert] = typecheck.LookupRuntimeFunc("goPanicSliceConvert")
+		backend.boundsCheckFunc[ssa.BoundsIndex] = typecheck.LookupRuntimeFuncFor(target, "goPanicIndex")
+		backend.boundsCheckFunc[ssa.BoundsIndexU] = typecheck.LookupRuntimeFuncFor(target, "goPanicIndexU")
+		backend.boundsCheckFunc[ssa.BoundsSliceAlen] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceAlen")
+		backend.boundsCheckFunc[ssa.BoundsSliceAlenU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceAlenU")
+		backend.boundsCheckFunc[ssa.BoundsSliceAcap] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceAcap")
+		backend.boundsCheckFunc[ssa.BoundsSliceAcapU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceAcapU")
+		backend.boundsCheckFunc[ssa.BoundsSliceB] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceB")
+		backend.boundsCheckFunc[ssa.BoundsSliceBU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceBU")
+		backend.boundsCheckFunc[ssa.BoundsSlice3Alen] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3Alen")
+		backend.boundsCheckFunc[ssa.BoundsSlice3AlenU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3AlenU")
+		backend.boundsCheckFunc[ssa.BoundsSlice3Acap] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3Acap")
+		backend.boundsCheckFunc[ssa.BoundsSlice3AcapU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3AcapU")
+		backend.boundsCheckFunc[ssa.BoundsSlice3B] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3B")
+		backend.boundsCheckFunc[ssa.BoundsSlice3BU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3BU")
+		backend.boundsCheckFunc[ssa.BoundsSlice3C] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3C")
+		backend.boundsCheckFunc[ssa.BoundsSlice3CU] = typecheck.LookupRuntimeFuncFor(target, "goPanicSlice3CU")
+		backend.boundsCheckFunc[ssa.BoundsConvert] = typecheck.LookupRuntimeFuncFor(target, "goPanicSliceConvert")
 	}
 
 	// Wasm (all asm funcs with special ABIs)
-	target.Symbols.WasmDiv = typecheck.LookupRuntimeVar("wasmDiv")
-	target.Symbols.WasmTruncS = typecheck.LookupRuntimeVar("wasmTruncS")
-	target.Symbols.WasmTruncU = typecheck.LookupRuntimeVar("wasmTruncU")
-	target.Symbols.SigPanic = typecheck.LookupRuntimeFunc("sigpanic")
+	target.Symbols.WasmDiv = typecheck.LookupRuntimeVarFor(target, "wasmDiv")
+	target.Symbols.WasmTruncS = typecheck.LookupRuntimeVarFor(target, "wasmTruncS")
+	target.Symbols.WasmTruncU = typecheck.LookupRuntimeVarFor(target, "wasmTruncU")
+	target.Symbols.SigPanic = typecheck.LookupRuntimeFuncFor(target, "sigpanic")
 }
 
 func InitTables(target *ir.Package) {
@@ -244,7 +242,7 @@ func abiForFunc(fn *ir.Func, abi0, abi1 *abi.ABIConfig) *abi.ABIConfig {
 			// It's not clear that "abi1" is ABIInternal.
 			return abi1
 		}
-		base.Fatalf("function %v has unknown ABI %v", fn, fn.ABI)
+		fn.Target.Diagnostics.Fatalf("function %v has unknown ABI %v", fn, fn.ABI)
 		panic("not reachable")
 	}
 
@@ -276,7 +274,7 @@ func (s *state) emitOpenDeferInfo() {
 		have := r.closureNode.FrameOffset()
 		want := firstOffset + int64(i)*int64(s.curfn.Target.PtrSize)
 		if have != want {
-			base.FatalfAt(s.curfn.Pos(), "unexpected frame offset for open-coded defer slot #%v: have %v, want %v", i, have, want)
+			s.curfn.Target.Diagnostics.FatalfAt(s.curfn.Pos(), "unexpected frame offset for open-coded defer slot #%v: have %v, want %v", i, have, want)
 		}
 	}
 
@@ -848,7 +846,7 @@ func (s *state) sizeSpecializedMallocEnabled() bool {
 // and then sets it as n's heap address.
 func (s *state) setHeapaddr(pos src.XPos, n *ir.Name, ptr *ssa.Value) {
 	if !ptr.Type.IsPtr() || !types.Identical(n.Type(), ptr.Type.Elem()) {
-		base.FatalfAt(n.Pos(), "setHeapaddr %L with type %v", n, ptr.Type)
+		s.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "setHeapaddr %L with type %v", n, ptr.Type)
 	}
 
 	// Declare variable to hold address.
@@ -1235,7 +1233,7 @@ func (s *state) pushLine(line src.XPos) {
 		// use the parent line number in this case.
 		line = s.peekPos()
 		if s.curfn.Target.Flags.K != 0 {
-			base.Warn("buildssa: unknown position (line 0)")
+			s.curfn.Target.Diagnostics.WarnfAt(s.curfn.Pos(), "buildssa: unknown position (line 0)")
 		}
 	} else {
 		s.lastPos = line
@@ -1650,7 +1648,7 @@ func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverl
 		} else {
 			s.rtcall(s.curfn.Target.Symbols.Memmove, true, nil, dst, src, s.constInt(s.curfn.Target.Type(types.TUINTPTR), t.Size()))
 		}
-		ssa.LogLargeCopy(s.f.Name, s.peekPos(), t.Size())
+		ssa.LogLargeCopy(s.curfn.Target.LogOpt, s.f.Name, s.peekPos(), t.Size())
 		return
 	}
 	store := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), dst, src, s.mem())
@@ -1734,7 +1732,7 @@ func (s *state) stmt(n ir.Node) {
 			} else {
 				defertype = "heap-allocated"
 			}
-			base.WarnfAt(n.Pos(), "%s defer", defertype)
+			s.curfn.Target.Diagnostics.WarnfAt(n.Pos(), "%s defer", defertype)
 		}
 		if s.hasOpenDefers {
 			s.openDeferRecord(n.Call.(*ir.CallExpr))
@@ -1886,12 +1884,12 @@ func (s *state) stmt(n ir.Node) {
 				// so there's no need to attempt to prevent them.
 				if s.canSSA(n.X) {
 					if s.curfn.Target.Debug.Append > 0 { // replicating old diagnostic message
-						base.WarnfAt(n.Pos(), "append: len-only update (in local slice)")
+						s.curfn.Target.Diagnostics.WarnfAt(n.Pos(), "append: len-only update (in local slice)")
 					}
 					break
 				}
 				if s.curfn.Target.Debug.Append > 0 {
-					base.WarnfAt(n.Pos(), "append: len-only update")
+					s.curfn.Target.Diagnostics.WarnfAt(n.Pos(), "append: len-only update")
 				}
 				s.append(rhs, true)
 				return
@@ -2062,7 +2060,7 @@ func (s *state) stmt(n ir.Node) {
 		// OFOR: for Ninit; Left; Right { Nbody }
 		// cond (Left); body (Nbody); incr (Right)
 		n := n.(*ir.ForStmt)
-		base.Assert(!n.DistinctVars) // Should all be rewritten before escape analysis
+		s.curfn.Target.Diagnostics.Assertf(!n.DistinctVars, "loop variables must be rewritten before escape analysis")
 		bCond := s.f.NewBlock(block.BlockPlain)
 		bBody := s.f.NewBlock(block.BlockPlain)
 		bIncr := s.f.NewBlock(block.BlockPlain)
@@ -3063,7 +3061,7 @@ func (s *state) expr(n ir.Node) *ssa.Value {
 }
 
 func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
-	if ir.HasUniquePos(n) {
+	if ir.HasUniquePosFor(s.curfn.Target, n) {
 		// ONAMEs and named OLITERALs have the line number
 		// of the decl, not the use. See issue 14742.
 		s.pushLine(n.Pos())
@@ -4361,7 +4359,7 @@ func (s *state) minMax(n *ir.CallExpr) *ssa.Value {
 				name = "strmax"
 			}
 		}
-		fn := typecheck.LookupRuntimeFunc(name)
+		fn := typecheck.LookupRuntimeFuncFor(s.curfn.Target, name)
 
 		return fold(func(x, a *ssa.Value) *ssa.Value {
 			return s.rtcall(fn, true, []*types.Type{typ}, x, a)[0]
@@ -4715,43 +4713,41 @@ type sfRtCallDef struct {
 	rtype types.Kind
 }
 
-var softFloatOps map[ssaop.Op]sfRtCallDef
-
-func softfloatInit() {
+func softfloatInit(backend *Context, target *ir.Package) {
 	// Some of these operations get transformed by sfcall.
-	softFloatOps = map[ssaop.Op]sfRtCallDef{
-		ssaop.OpAdd32F: {typecheck.LookupRuntimeFunc("fadd32"), types.TFLOAT32},
-		ssaop.OpAdd64F: {typecheck.LookupRuntimeFunc("fadd64"), types.TFLOAT64},
-		ssaop.OpSub32F: {typecheck.LookupRuntimeFunc("fadd32"), types.TFLOAT32},
-		ssaop.OpSub64F: {typecheck.LookupRuntimeFunc("fadd64"), types.TFLOAT64},
-		ssaop.OpMul32F: {typecheck.LookupRuntimeFunc("fmul32"), types.TFLOAT32},
-		ssaop.OpMul64F: {typecheck.LookupRuntimeFunc("fmul64"), types.TFLOAT64},
-		ssaop.OpDiv32F: {typecheck.LookupRuntimeFunc("fdiv32"), types.TFLOAT32},
-		ssaop.OpDiv64F: {typecheck.LookupRuntimeFunc("fdiv64"), types.TFLOAT64},
+	backend.softFloatOps = map[ssaop.Op]sfRtCallDef{
+		ssaop.OpAdd32F: {typecheck.LookupRuntimeFuncFor(target, "fadd32"), types.TFLOAT32},
+		ssaop.OpAdd64F: {typecheck.LookupRuntimeFuncFor(target, "fadd64"), types.TFLOAT64},
+		ssaop.OpSub32F: {typecheck.LookupRuntimeFuncFor(target, "fadd32"), types.TFLOAT32},
+		ssaop.OpSub64F: {typecheck.LookupRuntimeFuncFor(target, "fadd64"), types.TFLOAT64},
+		ssaop.OpMul32F: {typecheck.LookupRuntimeFuncFor(target, "fmul32"), types.TFLOAT32},
+		ssaop.OpMul64F: {typecheck.LookupRuntimeFuncFor(target, "fmul64"), types.TFLOAT64},
+		ssaop.OpDiv32F: {typecheck.LookupRuntimeFuncFor(target, "fdiv32"), types.TFLOAT32},
+		ssaop.OpDiv64F: {typecheck.LookupRuntimeFuncFor(target, "fdiv64"), types.TFLOAT64},
 
-		ssaop.OpEq64F:   {typecheck.LookupRuntimeFunc("feq64"), types.TBOOL},
-		ssaop.OpEq32F:   {typecheck.LookupRuntimeFunc("feq32"), types.TBOOL},
-		ssaop.OpNeq64F:  {typecheck.LookupRuntimeFunc("feq64"), types.TBOOL},
-		ssaop.OpNeq32F:  {typecheck.LookupRuntimeFunc("feq32"), types.TBOOL},
-		ssaop.OpLess64F: {typecheck.LookupRuntimeFunc("fgt64"), types.TBOOL},
-		ssaop.OpLess32F: {typecheck.LookupRuntimeFunc("fgt32"), types.TBOOL},
-		ssaop.OpLeq64F:  {typecheck.LookupRuntimeFunc("fge64"), types.TBOOL},
-		ssaop.OpLeq32F:  {typecheck.LookupRuntimeFunc("fge32"), types.TBOOL},
+		ssaop.OpEq64F:   {typecheck.LookupRuntimeFuncFor(target, "feq64"), types.TBOOL},
+		ssaop.OpEq32F:   {typecheck.LookupRuntimeFuncFor(target, "feq32"), types.TBOOL},
+		ssaop.OpNeq64F:  {typecheck.LookupRuntimeFuncFor(target, "feq64"), types.TBOOL},
+		ssaop.OpNeq32F:  {typecheck.LookupRuntimeFuncFor(target, "feq32"), types.TBOOL},
+		ssaop.OpLess64F: {typecheck.LookupRuntimeFuncFor(target, "fgt64"), types.TBOOL},
+		ssaop.OpLess32F: {typecheck.LookupRuntimeFuncFor(target, "fgt32"), types.TBOOL},
+		ssaop.OpLeq64F:  {typecheck.LookupRuntimeFuncFor(target, "fge64"), types.TBOOL},
+		ssaop.OpLeq32F:  {typecheck.LookupRuntimeFuncFor(target, "fge32"), types.TBOOL},
 
-		ssaop.OpCvt32to32F:  {typecheck.LookupRuntimeFunc("fint32to32"), types.TFLOAT32},
-		ssaop.OpCvt32Fto32:  {typecheck.LookupRuntimeFunc("f32toint32"), types.TINT32},
-		ssaop.OpCvt64to32F:  {typecheck.LookupRuntimeFunc("fint64to32"), types.TFLOAT32},
-		ssaop.OpCvt32Fto64:  {typecheck.LookupRuntimeFunc("f32toint64"), types.TINT64},
-		ssaop.OpCvt64Uto32F: {typecheck.LookupRuntimeFunc("fuint64to32"), types.TFLOAT32},
-		ssaop.OpCvt32Fto64U: {typecheck.LookupRuntimeFunc("f32touint64"), types.TUINT64},
-		ssaop.OpCvt32to64F:  {typecheck.LookupRuntimeFunc("fint32to64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto32:  {typecheck.LookupRuntimeFunc("f64toint32"), types.TINT32},
-		ssaop.OpCvt64to64F:  {typecheck.LookupRuntimeFunc("fint64to64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto64:  {typecheck.LookupRuntimeFunc("f64toint64"), types.TINT64},
-		ssaop.OpCvt64Uto64F: {typecheck.LookupRuntimeFunc("fuint64to64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto64U: {typecheck.LookupRuntimeFunc("f64touint64"), types.TUINT64},
-		ssaop.OpCvt32Fto64F: {typecheck.LookupRuntimeFunc("f32to64"), types.TFLOAT64},
-		ssaop.OpCvt64Fto32F: {typecheck.LookupRuntimeFunc("f64to32"), types.TFLOAT32},
+		ssaop.OpCvt32to32F:  {typecheck.LookupRuntimeFuncFor(target, "fint32to32"), types.TFLOAT32},
+		ssaop.OpCvt32Fto32:  {typecheck.LookupRuntimeFuncFor(target, "f32toint32"), types.TINT32},
+		ssaop.OpCvt64to32F:  {typecheck.LookupRuntimeFuncFor(target, "fint64to32"), types.TFLOAT32},
+		ssaop.OpCvt32Fto64:  {typecheck.LookupRuntimeFuncFor(target, "f32toint64"), types.TINT64},
+		ssaop.OpCvt64Uto32F: {typecheck.LookupRuntimeFuncFor(target, "fuint64to32"), types.TFLOAT32},
+		ssaop.OpCvt32Fto64U: {typecheck.LookupRuntimeFuncFor(target, "f32touint64"), types.TUINT64},
+		ssaop.OpCvt32to64F:  {typecheck.LookupRuntimeFuncFor(target, "fint32to64"), types.TFLOAT64},
+		ssaop.OpCvt64Fto32:  {typecheck.LookupRuntimeFuncFor(target, "f64toint32"), types.TINT32},
+		ssaop.OpCvt64to64F:  {typecheck.LookupRuntimeFuncFor(target, "fint64to64"), types.TFLOAT64},
+		ssaop.OpCvt64Fto64:  {typecheck.LookupRuntimeFuncFor(target, "f64toint64"), types.TINT64},
+		ssaop.OpCvt64Uto64F: {typecheck.LookupRuntimeFuncFor(target, "fuint64to64"), types.TFLOAT64},
+		ssaop.OpCvt64Fto64U: {typecheck.LookupRuntimeFuncFor(target, "f64touint64"), types.TUINT64},
+		ssaop.OpCvt32Fto64F: {typecheck.LookupRuntimeFuncFor(target, "f32to64"), types.TFLOAT64},
+		ssaop.OpCvt64Fto32F: {typecheck.LookupRuntimeFuncFor(target, "f64to32"), types.TFLOAT32},
 	}
 }
 
@@ -4768,7 +4764,7 @@ func (s *state) sfcall(op ssaop.Op, args ...*ssa.Value) (*ssa.Value, bool) {
 		return t
 	}
 
-	if callDef, ok := softFloatOps[op]; ok {
+	if callDef, ok := s.backend.softFloatOps[op]; ok {
 		switch op {
 		case ssaop.OpLess32F,
 			ssaop.OpLess64F,
@@ -4819,7 +4815,7 @@ func (s *state) intrinsicCall(n *ir.CallExpr) *ssa.Value {
 		if x.Op == ssaop.OpSelect0 || x.Op == ssaop.OpSelect1 {
 			x = x.Args[0]
 		}
-		base.WarnfAt(n.Pos(), "intrinsic substitution for %v with %s", n.Fun.Sym().Name, x.LongString())
+		s.curfn.Target.Diagnostics.WarnfAt(n.Pos(), "intrinsic substitution for %v with %s", n.Fun.Sym().Name, x.LongString())
 	}
 	return v
 }
@@ -6299,12 +6295,12 @@ func (s *state) dottype(n *ir.TypeAssertExpr, commaok bool) (res, resok *ssa.Val
 
 	if n.UseNilPanic {
 		if commaok {
-			base.Fatalf("unexpected *ir.TypeAssertExpr with UseNilPanic == true && commaok == true")
+			s.curfn.Target.Diagnostics.Fatalf("unexpected *ir.TypeAssertExpr with UseNilPanic == true && commaok == true")
 		}
 		if n.Type().IsInterface() {
 			// Currently we do not expect the compiler to emit type assertions with UseNilPanic, that asserts to an interface type.
 			// If needed, this can be relaxed in the future, but for now we can't assert that.
-			base.Fatalf("unexpected *ir.TypeAssertExpr with UseNilPanic == true && Type().IsInterface() == true")
+			s.curfn.Target.Diagnostics.Fatalf("unexpected *ir.TypeAssertExpr with UseNilPanic == true && Type().IsInterface() == true")
 		}
 		typs := s.f.Config.Types
 		iface = s.newValue2(
@@ -6352,7 +6348,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 			// Converting to an empty interface.
 			// Input could be an empty or nonempty interface.
 			if s.curfn.Target.Debug.TypeAssert > 0 {
-				base.WarnfAt(pos, "type assertion inlined")
+				s.curfn.Target.Diagnostics.WarnfAt(pos, "type assertion inlined")
 			}
 
 			// Get itab/type field from input.
@@ -6419,7 +6415,7 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 		}
 		// converting to a nonempty interface needs a runtime call.
 		if s.curfn.Target.Debug.TypeAssert > 0 {
-			base.WarnfAt(pos, "type assertion not inlined")
+			s.curfn.Target.Diagnostics.WarnfAt(pos, "type assertion not inlined")
 		}
 
 		itab := s.newValue1(ssaop.OpITab, byteptr, iface)
@@ -6574,14 +6570,14 @@ func (s *state) dottype1(pos src.XPos, src, dst *types.Type, iface, source, targ
 	}
 
 	if s.curfn.Target.Debug.TypeAssert > 0 {
-		base.WarnfAt(pos, "type assertion inlined")
+		s.curfn.Target.Diagnostics.WarnfAt(pos, "type assertion inlined")
 	}
 
 	// Converting to a concrete type.
 	direct := types.IsDirectIface(dst)
 	itab := s.newValue1(ssaop.OpITab, byteptr, iface) // type word of interface
 	if s.curfn.Target.Debug.TypeAssert > 0 {
-		base.WarnfAt(pos, "type assertion inlined")
+		s.curfn.Target.Diagnostics.WarnfAt(pos, "type assertion inlined")
 	}
 	var wantedFirstWord *ssa.Value
 	if src.IsEmptyInterface() {
@@ -7007,7 +7003,7 @@ func EmitArgInfo(f *ir.Func, abiInfo *abi.ABIParamResultInfo) *obj.LSym {
 	}
 	writebyte(rtabi.TraceArgsEndSeq)
 	if wOff > rtabi.TraceArgsMaxLen {
-		base.Fatalf("ArgInfo too large")
+		f.Target.Diagnostics.Fatalf("ArgInfo too large")
 	}
 
 	return x
@@ -7052,8 +7048,6 @@ func genssa(backend *Context, htmlWriter ssa.HTMLWriter, f *ssa.Func, pp *objw.P
 	dumpGenssa := false
 	if f.Config.Target != nil {
 		dumpGenssa = f.Config.Target.SSAGenssaDump[f.Name]
-	} else {
-		dumpGenssa = ssaconfig.GenssaDump[f.Name]
 	}
 
 	gatherPrintInfo := f.PrintOrHtmlSSA || dumpGenssa
@@ -7904,7 +7898,7 @@ func CheckLoweredPhi(v *ssa.Value) {
 func CheckLoweredGetClosurePtr(v *ssa.Value) {
 	entry := v.Block.Func.Entry
 	if entry != v.Block {
-		base.Fatalf("in %s, badly placed LoweredGetClosurePtr: %v %v", v.Block.Func.Name, v.Block, v)
+		v.Block.Func.Fatalf("in %s, badly placed LoweredGetClosurePtr: %v %v", v.Block.Func.Name, v.Block, v)
 	}
 	for _, w := range entry.Values {
 		if w == v {
@@ -7914,7 +7908,7 @@ func CheckLoweredGetClosurePtr(v *ssa.Value) {
 		case ssaop.OpArgIntReg, ssaop.OpArgFloatReg:
 			// okay
 		default:
-			base.Fatalf("in %s, badly placed LoweredGetClosurePtr: %v %v", v.Block.Func.Name, v.Block, v)
+			v.Block.Func.Fatalf("in %s, badly placed LoweredGetClosurePtr: %v %v", v.Block.Func.Name, v.Block, v)
 		}
 	}
 }
@@ -7923,7 +7917,7 @@ func CheckLoweredGetClosurePtr(v *ssa.Value) {
 func CheckArgReg(v *ssa.Value) {
 	entry := v.Block.Func.Entry
 	if entry != v.Block {
-		base.Fatalf("in %s, badly placed ArgIReg or ArgFReg: %v %v", v.Block.Func.Name, v.Block, v)
+		v.Block.Func.Fatalf("in %s, badly placed ArgIReg or ArgFReg: %v %v", v.Block.Func.Name, v.Block, v)
 	}
 }
 
@@ -7964,7 +7958,7 @@ func (s *State) Call(v *ssa.Value) *obj.Prog {
 		case sys.ARM, sys.ARM64, sys.Loong64, sys.MIPS, sys.MIPS64:
 			p.To.Type = obj.TYPE_MEM
 		default:
-			base.Fatalf("unknown indirect call family")
+			s.pp.CurFunc.Target.Diagnostics.Fatalf("unknown indirect call family")
 		}
 		p.To.Reg = v.Args[0].Reg()
 	}
@@ -7987,7 +7981,7 @@ func (s *State) PrepareCall(v *ssa.Value) {
 	if !idx.StackMapValid() {
 		// See Liveness.hasStackMap.
 		if sym, ok := v.Aux.(*ssa.AuxCall); !ok || !(sym.Fn == s.pp.CurFunc.Target.Symbols.WBZero || sym.Fn == s.pp.CurFunc.Target.Symbols.WBMove) {
-			base.Fatalf("missing stack map index for %v", v.LongString())
+			s.pp.CurFunc.Target.Diagnostics.Fatalf("missing stack map index for %v", v.LongString())
 		}
 	}
 
@@ -8098,13 +8092,13 @@ func (e *ssafn) Log() bool {
 func (e *ssafn) Fatalf(pos src.XPos, msg string, args ...any) {
 	ir.SetPosValue(e.curfn.Target, pos)
 	nargs := append([]any{ir.FuncName(e.curfn)}, args...)
-	base.Fatalf("'%s': "+msg, nargs...)
+	e.curfn.Target.Diagnostics.FatalfAt(pos, "'%s': "+msg, nargs...)
 }
 
 // Warnl reports a "warning", which is usually flag-triggered
 // logging output for the benefit of tests.
 func (e *ssafn) Warnl(pos src.XPos, fmt_ string, args ...any) {
-	base.WarnfAt(pos, fmt_, args...)
+	e.curfn.Target.Diagnostics.WarnfAt(pos, fmt_, args...)
 }
 
 func (e *ssafn) Debug_checknil() bool {
@@ -8194,7 +8188,7 @@ func (c *Context) deferstruct() *types.Type {
 		makefield("head", c.target.Type(types.TUINTPTR)),
 	}
 	if name := fields[deferStructFnField].Sym.Name; name != "fn" {
-		base.Fatalf("deferStructFnField is %q, not fn", name)
+		c.target.Diagnostics.Fatalf("deferStructFnField is %q, not fn", name)
 	}
 
 	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, c.target.RuntimePkg.Lookup("_defer"))

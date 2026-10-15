@@ -5,7 +5,6 @@
 package objw
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/bitvec"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/obj"
@@ -50,7 +49,8 @@ func Bool(ctxt *obj.Link, s *obj.LSym, off int, v bool) int {
 // and returns the next unused offset.
 func UintN(ctxt *obj.Link, s *obj.LSym, off int, v uint64, wid int) int {
 	if off&(wid-1) != 0 {
-		base.Fatalf("duintxxLSym: misaligned: v=%d wid=%d off=%d", v, wid, off)
+		ctxt.Diag("duintxxLSym: misaligned: v=%d wid=%d off=%d", v, wid, off)
+		panic("duintxxLSym: misaligned")
 	}
 	s.WriteInt(ctxt, int64(off), wid, int64(v))
 	return off + wid

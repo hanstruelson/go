@@ -6,12 +6,11 @@ package ssagen
 
 import (
 	"fmt"
-	"publicinternal/buildcfg"
 	"os"
+	"publicinternal/buildcfg"
 	"strings"
 
 	"cmd/compile/publicinternal/abi"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/typecheck"
@@ -60,7 +59,7 @@ func (s *SymABIs) canonicalize(linksym string) string {
 func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 	data, err := os.ReadFile(file)
 	if err != nil {
-		base.CommandErrorf("-symabis: %v", err)
+		target.Diagnostics.Fatalf("-symabis: %v", err)
 	}
 
 	for lineNum, line := range strings.Split(string(data), "\n") {
@@ -75,12 +74,12 @@ func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 		case "def", "ref":
 			// Parse line.
 			if len(parts) != 3 {
-				base.CommandErrorf(`%s:%d: invalid symabi: syntax is "%s sym abi"`, file, lineNum, parts[0])
+				target.Diagnostics.Fatalf(`%s:%d: invalid symabi: syntax is "%s sym abi"`, file, lineNum, parts[0])
 			}
 			sym, abistr := parts[1], parts[2]
 			abi, valid := obj.ParseABI(abistr)
 			if !valid {
-				base.CommandErrorf(`%s:%d: invalid symabi: unknown abi "%s"`, file, lineNum, abistr)
+				target.Diagnostics.Fatalf(`%s:%d: invalid symabi: unknown abi "%s"`, file, lineNum, abistr)
 			}
 
 			sym = s.canonicalize(sym)
@@ -93,7 +92,7 @@ func (s *SymABIs) ReadSymABIs(target *ir.Package, file string) {
 				s.refs[sym] |= obj.ABISetOf(abi)
 			}
 		default:
-			base.CommandErrorf(`%s:%d: invalid symabi type "%s"`, file, lineNum, parts[0])
+			target.Diagnostics.Fatalf(`%s:%d: invalid symabi type "%s"`, file, lineNum, parts[0])
 		}
 	}
 }
@@ -152,7 +151,7 @@ func (s *SymABIs) GenABIWrappers(target *ir.Package) {
 		defABI, hasDefABI := s.defs[symName]
 		if hasDefABI {
 			if len(fn.Body) != 0 {
-				base.ErrorfAt(fn.Pos(), 0, "%v defined in both Go and assembly", fn)
+				target.Diagnostics.ErrorfAt(fn.Pos(), 0, "%v defined in both Go and assembly", fn)
 			}
 			fn.ABI = defABI
 		}
@@ -221,7 +220,7 @@ func (s *SymABIs) GenABIWrappers(target *ir.Package) {
 		// Double check that cgo-exported symbols don't get
 		// any wrappers.
 		if len(cgoExport) > 0 && fn.ABIRefs&^obj.ABISetOf(fn.ABI) != 0 {
-			base.Fatalf("cgo exported function %v cannot have ABI wrappers", fn)
+			target.Diagnostics.Fatalf("cgo exported function %v cannot have ABI wrappers", fn)
 		}
 
 		if !buildcfg.Experiment.RegabiWrappers {
@@ -265,7 +264,7 @@ func makeABIWrapper(target *ir.Package, f *ir.Func, wrapperABI obj.ABI) {
 	// below to handle the receiver. Panic if we see this scenario.
 	ft := f.Nname.Type()
 	if ft.NumRecvs() != 0 {
-		base.ErrorfAt(f.Pos(), 0, "makeABIWrapper support for wrapping methods not implemented")
+		target.Diagnostics.ErrorfAt(f.Pos(), 0, "makeABIWrapper support for wrapping methods not implemented")
 		return
 	}
 
@@ -360,7 +359,7 @@ func CreateWasmImportWrapper(backend *Context, fn *ir.Func) bool {
 		return false
 	}
 	if buildcfg.GOARCH != "wasm" {
-		base.FatalfAt(fn.Pos(), "CreateWasmImportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, fn)
+		fn.Target.Diagnostics.FatalfAt(fn.Pos(), "CreateWasmImportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, fn)
 	}
 
 	ir.InitLSym(fn, true)
@@ -383,7 +382,7 @@ func GenWasmExportWrapper(backend *Context, wrapped *ir.Func) {
 		return
 	}
 	if buildcfg.GOARCH != "wasm" {
-		base.FatalfAt(wrapped.Pos(), "GenWasmExportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, wrapped)
+		wrapped.Target.Diagnostics.FatalfAt(wrapped.Pos(), "GenWasmExportWrapper call not supported on %s: func was %v", buildcfg.GOARCH, wrapped)
 	}
 
 	pos := backend.target.AutoPos
@@ -403,7 +402,7 @@ func GenWasmExportWrapper(backend *Context, wrapped *ir.Func) {
 	// cmd/publicinternal/obj/wasm supports only 16 argument "registers"
 	// anyway.
 	if ft.ArgWidth() > rtabi.StackSmall {
-		base.ErrorfAt(wrapped.Pos(), 0, "wasmexport function argument too large")
+		wrapped.Target.Diagnostics.ErrorfAt(wrapped.Pos(), 0, "wasmexport function argument too large")
 	}
 	fn.Pragma |= ir.Nosplit
 
@@ -461,7 +460,7 @@ func paramsToWasmFields(f *ir.Func, pragma string, result *abi.ABIParamResultInf
 				}
 				fallthrough
 			default:
-				base.ErrorfAt(f.Pos(), 0, "%s: unsupported parameter type %s", pragma, t.String())
+				f.Target.Diagnostics.ErrorfAt(f.Pos(), 0, "%s: unsupported parameter type %s", pragma, t.String())
 			}
 		}
 		wfs = append(wfs, obj.WasmField{Type: wt, Offset: p.FrameOffset(result)})
@@ -471,7 +470,7 @@ func paramsToWasmFields(f *ir.Func, pragma string, result *abi.ABIParamResultInf
 
 func resultsToWasmFields(f *ir.Func, pragma string, result *abi.ABIParamResultInfo, abiParams []abi.ABIParamAssignment) []obj.WasmField {
 	if len(abiParams) > 1 {
-		base.ErrorfAt(f.Pos(), 0, "%s: too many return values", pragma)
+		f.Target.Diagnostics.ErrorfAt(f.Pos(), 0, "%s: too many return values", pragma)
 		return nil
 	}
 	wfs := make([]obj.WasmField, len(abiParams))
@@ -500,7 +499,7 @@ func resultsToWasmFields(f *ir.Func, pragma string, result *abi.ABIParamResultIn
 				}
 				fallthrough
 			default:
-				base.ErrorfAt(f.Pos(), 0, "%s: unsupported result type %s", pragma, t.String())
+				f.Target.Diagnostics.ErrorfAt(f.Pos(), 0, "%s: unsupported result type %s", pragma, t.String())
 			}
 		}
 		wfs[i].Offset = p.FrameOffset(result)

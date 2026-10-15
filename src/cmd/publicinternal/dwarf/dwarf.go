@@ -13,8 +13,8 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"publicinternal/buildcfg"
 	"os/exec"
+	"publicinternal/buildcfg"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,10 +34,6 @@ const CUInfoPrefix = "go:cuinfo."
 // Used to form the symbol name assigned to the DWARF "abstract subprogram"
 // info entry for a function
 const AbstractFuncSuffix = "$abstract"
-
-// Controls logging/debugging for selected aspects of DWARF subprogram
-// generation (functions, scopes).
-var logDwarf bool
 
 // Sym represents a symbol.
 type Sym any
@@ -97,17 +93,9 @@ type FnState struct {
 	Scopes        []Scope
 	InlCalls      InlCalls
 	UseBASEntries bool
+	Log           bool // log DWARF subprogram generation for this compilation
 
 	dictIndexToOffset []int64
-}
-
-func EnableLogging(doit bool) {
-	logDwarf = doit
-}
-
-// LoggingEnabled reports whether debug logging is enabled.
-func LoggingEnabled() bool {
-	return logDwarf
 }
 
 // MergeRanges creates a new range list by merging the ranges from
@@ -1222,7 +1210,7 @@ func putPrunedScopes(ctxt Context, s *FnState, fnabbrev int) error {
 // DIE (as a space-saving measure, so that name/type etc doesn't have
 // to be repeated for each inlined copy).
 func PutAbstractFunc(ctxt Context, s *FnState) error {
-	if logDwarf {
+	if s.Log {
 		ctxt.Logf("PutAbstractFunc(%v)\n", s.Absfn)
 	}
 
@@ -1272,7 +1260,7 @@ func PutAbstractFunc(ctxt Context, s *FnState) error {
 		if len(flattened) > 0 {
 			slices.SortFunc(flattened, byChildIndexCmp)
 
-			if logDwarf {
+			if s.Log {
 				ctxt.Logf("putAbstractScope(%v): vars:", s.Info)
 				for i, v := range flattened {
 					ctxt.Logf(" %d:%s", i, v.Name)
@@ -1319,7 +1307,7 @@ func putInlinedFunc(ctxt Context, s *FnState, callIdx int) error {
 	}
 	Uleb128put(ctxt, s.Info, int64(abbrev))
 
-	if logDwarf {
+	if s.Log {
 		ctxt.Logf("putInlinedFunc(callee=%v,abbrev=%d)\n", callee, abbrev)
 	}
 
@@ -1382,7 +1370,7 @@ func emitHiLoPc(ctxt Context, abbrev int, fns *FnState, st int64, en int64) {
 // as name, type), then the remainder of the attributes are specific
 // to this instance (location, frame base, etc).
 func PutConcreteFunc(ctxt Context, s *FnState, isWrapper bool, fncount int) error {
-	if logDwarf {
+	if s.Log {
 		ctxt.Logf("PutConcreteFunc(%v)\n", s.Info)
 	}
 	abbrev := DW_ABRV_FUNCTION_CONCRETE
@@ -1427,7 +1415,7 @@ func PutConcreteFunc(ctxt Context, s *FnState, isWrapper bool, fncount int) erro
 // emit an abstract version for it to use as a base for inlined
 // routine records).
 func PutDefaultFunc(ctxt Context, s *FnState, isWrapper bool) error {
-	if logDwarf {
+	if s.Log {
 		ctxt.Logf("PutDefaultFunc(%v)\n", s.Info)
 	}
 	abbrev := DW_ABRV_FUNCTION
@@ -1517,7 +1505,7 @@ func putparamtypes(ctxt Context, s *FnState, scopes []Scope, fnabbrev int) []int
 
 func putscope(ctxt Context, s *FnState, scopes []Scope, curscope int32, fnabbrev int, encbuf []byte) int32 {
 
-	if logDwarf {
+	if s.Log {
 		ctxt.Logf("putscope(%v,%d): vars:", s.Info, curscope)
 		for i, v := range scopes[curscope].Vars {
 			ctxt.Logf(" %d:%d:%s", i, v.ChildIndex, v.Name)

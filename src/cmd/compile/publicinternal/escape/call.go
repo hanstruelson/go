@@ -5,7 +5,6 @@
 package escape
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/typecheck"
 	"cmd/compile/publicinternal/types"
@@ -25,7 +24,7 @@ func (e *escape) call(ks []hole, call ir.Node) {
 	switch call.Op() {
 	default:
 		ir.Dump("esc", call)
-		base.Fatalf("unexpected call op: %v", call.Op())
+		e.curfn.Target.Diagnostics.Fatalf("unexpected call op: %v", call.Op())
 
 	case ir.OCALLFUNC, ir.OCALLINTER:
 		call := call.(*ir.CallExpr)
@@ -256,10 +255,10 @@ func (e *escape) goDeferStmt(n *ir.GoDeferStmt) {
 
 	call, ok := n.Call.(*ir.CallExpr)
 	if !ok || call.Op() != ir.OCALLFUNC {
-		base.FatalfAt(n.Pos(), "expected function call: %v", n.Call)
+		e.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "expected function call: %v", n.Call)
 	}
 	if sig := call.Fun.Type(); sig.NumParams()+sig.NumResults() != 0 {
-		base.FatalfAt(n.Pos(), "expected signature without parameters or results: %v", sig)
+		e.curfn.Target.Diagnostics.FatalfAt(n.Pos(), "expected signature without parameters or results: %v", sig)
 	}
 
 	if clo, ok := call.Fun.(*ir.ClosureExpr); ok && n.Op() == ir.OGO {
@@ -345,7 +344,7 @@ func (e *escape) rewriteArgument(arg ir.Node, call *ir.CallExpr, fns []*ir.Name)
 // appends statements to init to declare and initialize it to expr;
 // and escape analyzes the data flow.
 func (e *escape) copyExpr(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
-	if ir.HasUniquePos(expr) {
+	if ir.HasUniquePosFor(e.curfn.Target, expr) {
 		pos = expr.Pos()
 	}
 

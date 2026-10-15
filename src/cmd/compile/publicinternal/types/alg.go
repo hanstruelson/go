@@ -4,8 +4,6 @@
 
 package types
 
-import "cmd/compile/publicinternal/base"
-
 // AlgKind describes the kind of algorithms used for comparing and
 // hashing a Type.
 type AlgKind int8
@@ -41,12 +39,12 @@ var algPriority = [ASPECIAL + 1]int8{ASPECIAL: 1, ANOEQ: 2, ANOALG: 3, AMEM: -1}
 // priority to the current algorithm type.
 func (t *Type) setAlg(a AlgKind) {
 	if t.alg == AUNK {
-		base.Fatalf("setAlg(%v,%s) starting with unknown priority", t, a)
+		fatalfType(t, t.Pos(), "setAlg(%v,%s) starting with unknown priority", t, a)
 	}
 	if algPriority[a] > algPriority[t.alg] {
 		t.alg = a
 	} else if a != t.alg && algPriority[a] == algPriority[t.alg] {
-		base.Fatalf("ambiguous priority %s and %s", a, t.alg)
+		fatalfType(t, t.Pos(), "ambiguous priority %s and %s", a, t.alg)
 	}
 }
 
@@ -82,7 +80,7 @@ func IncomparableField(t *Type) *Field {
 // by padding.
 func IsPaddedField(t *Type, i int) bool {
 	if !t.IsStruct() {
-		base.Fatalf("IsPaddedField called non-struct %v", t)
+		fatalfType(t, t.Pos(), "IsPaddedField called non-struct %v", t)
 	}
 	end := t.width
 	if i+1 < t.NumFields() {

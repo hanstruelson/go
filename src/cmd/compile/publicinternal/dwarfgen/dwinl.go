@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/publicinternal/dwarf"
 	"cmd/publicinternal/obj"
@@ -162,14 +161,14 @@ func assembleInlines(target *ir.Package, ctxt *obj.Link, fnsym *obj.LSym, dwVars
 		}
 		// Close out the current range
 		if start != -1 {
-			addRange(inlcalls.Calls, start, p.Pc, curii, imap)
+			addRange(target, inlcalls.Calls, start, p.Pc, curii, imap)
 		}
 		// Begin new range
 		start = p.Pc
 		curii = ii
 	}
 	if start != -1 {
-		addRange(inlcalls.Calls, start, fnsym.Size, curii, imap)
+		addRange(target, inlcalls.Calls, start, fnsym.Size, curii, imap)
 	}
 
 	// Issue 33188: if II foo is a child of II bar, then ensure that
@@ -194,7 +193,7 @@ func assembleInlines(target *ir.Package, ctxt *obj.Link, fnsym *obj.LSym, dwVars
 	// within the ranges for A, or C within B.
 	for k, c := range inlcalls.Calls {
 		if c.Root {
-			checkInlCall(ctxt, fnsym.Name, inlcalls, fnsym.Size, k, -1)
+			checkInlCall(target, ctxt, fnsym.Name, inlcalls, fnsym.Size, k, -1)
 		}
 	}
 
@@ -299,7 +298,7 @@ func posInlIndex(ctxt *obj.Link, xpos src.XPos) int {
 	return -1
 }
 
-func addRange(calls []dwarf.InlCall, start, end int64, ii int, imap map[int]int) {
+func addRange(target *ir.Package, calls []dwarf.InlCall, start, end int64, ii int, imap map[int]int) {
 	if start == -1 {
 		panic("bad range start")
 	}
@@ -315,7 +314,7 @@ func addRange(calls []dwarf.InlCall, start, end int64, ii int, imap map[int]int)
 	// Append range to correct inlined call
 	callIdx, found := imap[ii]
 	if !found {
-		base.Fatalf("can't find inlIndex %d in imap for prog at %d\n", ii, start)
+		target.Diagnostics.Fatalf("can't find inlIndex %d in imap for prog at %d\n", ii, start)
 	}
 	call := &calls[callIdx]
 	call.Ranges = append(call.Ranges, dwarf.Range{Start: start, End: end})
@@ -397,7 +396,7 @@ func rangesContainsAll(parent, child []dwarf.Range) (bool, string) {
 // this is a root/toplevel inline, checks that the ranges fall within
 // the extent of the top level function). A panic is issued if a
 // malformed range is found.
-func checkInlCall(ctxt *obj.Link, funcName string, inlCalls dwarf.InlCalls, funcSize int64, idx, parentIdx int) {
+func checkInlCall(target *ir.Package, ctxt *obj.Link, funcName string, inlCalls dwarf.InlCalls, funcSize int64, idx, parentIdx int) {
 
 	// Callee
 	ic := inlCalls.Calls[idx]
@@ -416,12 +415,12 @@ func checkInlCall(ctxt *obj.Link, funcName string, inlCalls dwarf.InlCalls, func
 	// Callee ranges contained in caller ranges?
 	c, m := rangesContainsAll(parentRanges, calleeRanges)
 	if !c {
-		base.Fatalf("** malformed inlined routine range in %s: caller %s callee %s II=%d %s\n", funcName, caller, callee, idx, m)
+		target.Diagnostics.Fatalf("** malformed inlined routine range in %s: caller %s callee %s II=%d %s\n", funcName, caller, callee, idx, m)
 	}
 
 	// Now visit kids
 	for _, k := range ic.Children {
-		checkInlCall(ctxt, funcName, inlCalls, funcSize, k, idx)
+		checkInlCall(target, ctxt, funcName, inlCalls, funcSize, k, idx)
 	}
 }
 

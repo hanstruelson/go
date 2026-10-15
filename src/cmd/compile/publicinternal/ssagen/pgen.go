@@ -6,14 +6,13 @@ package ssagen
 
 import (
 	"fmt"
-	"publicinternal/buildcfg"
 	"os"
+	"publicinternal/buildcfg"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/inline"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/liveness"
@@ -105,7 +104,7 @@ func cmpstackvarlt(a, b *ir.Name, mls *liveness.MergeLocalsState) bool {
 // the callers frame.
 func needAlloc(n *ir.Name) bool {
 	if n.Op() != ir.ONAME {
-		base.FatalfAt(n.Pos(), "%v has unexpected Op %v", n, n.Op())
+		panic(fmt.Sprintf("%v has unexpected Op %v", n, n.Op()))
 	}
 
 	switch n.Class {
@@ -117,8 +116,7 @@ func needAlloc(n *ir.Name) bool {
 		return n.IsOutputParamInRegisters()
 
 	default:
-		base.FatalfAt(n.Pos(), "%v has unexpected Class %v", n, n.Class)
-		return false
+		panic(fmt.Sprintf("%v has unexpected Class %v", n, n.Class))
 	}
 }
 
@@ -237,7 +235,7 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 		types.CalcSize(n.Type())
 		w := n.Type().Size()
 		if w >= s.curfn.Target.MaxWidth || w < 0 {
-			base.Fatalf("bad width")
+			s.curfn.Target.Diagnostics.Fatalf("bad width")
 		}
 		if w == 0 && lastHasPtr {
 			// Pad between a pointer-containing object and a zero-sized object.
@@ -436,6 +434,7 @@ type Context struct {
 	largeStackFrames       []largeStack
 	nowritebarrierrecCheck *nowritebarrierrecChecker
 	ssaCaches              []ssa.Cache
+	softFloatOps           map[ssaop.Op]sfRtCallDef
 	deferType              *types.Type
 	target                 *ir.Package
 	boundsCheckFunc        [ssa.BoundsKindCount]*obj.LSym
@@ -456,9 +455,9 @@ func (c *Context) CheckLargeStacks() {
 	})
 	for _, large := range c.largeStackFrames {
 		if large.callee != 0 {
-			base.ErrorfAt(large.pos, 0, "stack frame too large (>1GB): %d MB locals + %d MB args + %d MB callee", large.locals>>20, large.args>>20, large.callee>>20)
+			c.target.Diagnostics.ErrorfAt(large.pos, 0, "stack frame too large (>1GB): %d MB locals + %d MB args + %d MB callee", large.locals>>20, large.args>>20, large.callee>>20)
 		} else {
-			base.ErrorfAt(large.pos, 0, "stack frame too large (>1GB): %d MB locals + %d MB args", large.locals>>20, large.args>>20)
+			c.target.Diagnostics.ErrorfAt(large.pos, 0, "stack frame too large (>1GB): %d MB locals + %d MB args", large.locals>>20, large.args>>20)
 		}
 	}
 }

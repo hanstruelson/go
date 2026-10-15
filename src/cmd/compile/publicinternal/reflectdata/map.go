@@ -5,7 +5,6 @@
 package reflectdata
 
 import (
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/rttype"
 	"cmd/compile/publicinternal/types"
@@ -89,20 +88,20 @@ func MapGroupType(target *ir.Package, t *types.Type) *types.Type {
 
 	// Check invariants that map code depends on.
 	if !types.IsComparable(t.Key()) {
-		base.Fatalf("unsupported map key type for %v", t)
+		target.Diagnostics.Fatalf("unsupported map key type for %v", t)
 	}
 	if group.Size() <= 8 {
 		// publicinternal/runtime/maps creates pointers to slots, even if
 		// both key and elem are size zero. In this case, each slot is
 		// size 0, but group should still reserve a word of padding at
 		// the end to ensure pointers are valid.
-		base.Fatalf("bad group size for %v", t)
+		target.Diagnostics.Fatalf("bad group size for %v", t)
 	}
 	if t.Key().Size() > abi.MapMaxKeyBytes && !keytype.IsPtr() {
-		base.Fatalf("key indirect incorrect for %v", t)
+		target.Diagnostics.Fatalf("key indirect incorrect for %v", t)
 	}
 	if t.Elem().Size() > abi.MapMaxElemBytes && !elemtype.IsPtr() {
-		base.Fatalf("elem indirect incorrect for %v", t)
+		target.Diagnostics.Fatalf("elem indirect incorrect for %v", t)
 	}
 
 	t.MapType().Group = group
@@ -152,7 +151,7 @@ func mapTableType(target *ir.Package) *types.Type {
 	// The size of table should be 32 bytes on 64 bit
 	// and 24 bytes on 32 bit platforms.
 	if size := int64(3*2 + 2*1 /* one extra for padding */ + 1*8 + 2*target.PtrSize); table.Size() != size {
-		base.Fatalf("publicinternal/runtime/maps.table size not correct: got %d, want %d", table.Size(), size)
+		target.Diagnostics.Fatalf("publicinternal/runtime/maps.table size not correct: got %d, want %d", table.Size(), size)
 	}
 
 	target.MapTableType = table
@@ -206,7 +205,7 @@ func MapType(target *ir.Package) *types.Type {
 	// The size of Map should be 48 bytes on 64 bit
 	// and 32 bytes on 32 bit platforms.
 	if size := int64(2*8 + 4*target.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
-		base.Fatalf("publicinternal/runtime/maps.Map size not correct: got %d, want %d", m.Size(), size)
+		target.Diagnostics.Fatalf("publicinternal/runtime/maps.Map size not correct: got %d, want %d", m.Size(), size)
 	}
 
 	target.MapType = m
@@ -270,7 +269,7 @@ func MapIterType(target *ir.Package) *types.Type {
 	// The size of Iter should be 96 bytes on 64 bit
 	// and 64 bytes on 32 bit platforms.
 	if size := 8*target.PtrSize /* one extra for globalDepth + padding */ + 4*8; iter.Size() != int64(size) {
-		base.Fatalf("publicinternal/runtime/maps.Iter size not correct: got %d, want %d", iter.Size(), size)
+		target.Diagnostics.Fatalf("publicinternal/runtime/maps.Iter size not correct: got %d, want %d", iter.Size(), size)
 	}
 
 	target.MapIterType = iter

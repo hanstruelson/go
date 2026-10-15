@@ -13,6 +13,7 @@ import (
 
 	"cmd/compile/publicinternal/rttype"
 	"cmd/compile/publicinternal/ssa"
+	"cmd/compile/publicinternal/types"
 )
 
 // We generate memmove for copy(x[1:], x[:]), however we may change it to OpMove,
@@ -337,8 +338,8 @@ func TestDisjointTypes(t *testing.T) {
 		{new([2]int), new(*byte), true},
 	}
 	for _, tst := range tests {
-		t1 := rttype.FromReflect(reflect.TypeOf(tst.v1))
-		t2 := rttype.FromReflect(reflect.TypeOf(tst.v2))
+		t1 := rttype.FromReflect(testTarget, reflect.TypeOf(tst.v1))
+		t2 := rttype.FromReflect(testTarget, reflect.TypeOf(tst.v2))
 		result := ssa.DisjointTypes(types.PtrSize, t1, t2)
 		if result != tst.expected {
 			t.Errorf("disjointTypes(%s, %s) got %t expected %t", t1.String(), t2.String(), result, tst.expected)

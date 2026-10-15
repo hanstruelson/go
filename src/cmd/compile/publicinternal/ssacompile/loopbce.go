@@ -7,7 +7,6 @@ package ssacompile
 import (
 	"fmt"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/ssa/block"
 	"cmd/compile/publicinternal/ssa/ssaop"
@@ -366,7 +365,7 @@ nextblock:
 // y must be positive.
 func subWillUnderflow(x, y int64, min int64) bool {
 	if y < 0 {
-		base.Fatalf("expecting positive value")
+		panic("expecting positive value")
 	}
 	return x < min+y
 }
@@ -375,7 +374,7 @@ func subWillUnderflow(x, y int64, min int64) bool {
 // y must be positive.
 func addWillOverflow(x, y int64, max int64) bool {
 	if y < 0 {
-		base.Fatalf("expecting positive value")
+		panic("expecting positive value")
 	}
 	return x > max-y
 }
@@ -383,7 +382,7 @@ func addWillOverflow(x, y int64, max int64) bool {
 // diff returns x-y as a uint64. Requires x>=y.
 func diff(x, y int64) uint64 {
 	if x < y {
-		base.Fatalf("diff %d - %d underflowed", x, y)
+		panic(fmt.Sprintf("diff %d - %d underflowed", x, y))
 	}
 	return uint64(x - y)
 }
@@ -392,7 +391,7 @@ func diff(x, y int64) uint64 {
 func addU(int64Type *types.Type, x int64, y uint64) int64 {
 	if y >= 1<<63 {
 		if x >= 0 {
-			base.Fatalf("addU overflowed %d + %d", x, y)
+			panic(fmt.Sprintf("addU overflowed %d + %d", x, y))
 		}
 		x += 1<<63 - 1
 		x += 1
@@ -400,7 +399,7 @@ func addU(int64Type *types.Type, x int64, y uint64) int64 {
 	}
 	// TODO(1.27): investigate passing a smaller-magnitude overflow limit in here.
 	if addWillOverflow(x, int64(y), maxSignedValue(int64Type)) {
-		base.Fatalf("addU overflowed %d + %d", x, y)
+		panic(fmt.Sprintf("addU overflowed %d + %d", x, y))
 	}
 	return x + int64(y)
 }
@@ -409,7 +408,7 @@ func addU(int64Type *types.Type, x int64, y uint64) int64 {
 func subU(int64Type *types.Type, x int64, y uint64) int64 {
 	if y >= 1<<63 {
 		if x < 0 {
-			base.Fatalf("subU underflowed %d - %d", x, y)
+			panic(fmt.Sprintf("subU underflowed %d - %d", x, y))
 		}
 		x -= 1<<63 - 1
 		x -= 1
@@ -417,7 +416,7 @@ func subU(int64Type *types.Type, x int64, y uint64) int64 {
 	}
 	// TODO(1.27): investigate passing a smaller-magnitude underflow limit in here.
 	if subWillUnderflow(x, int64(y), minSignedValue(int64Type)) {
-		base.Fatalf("subU underflowed %d - %d", x, y)
+		panic(fmt.Sprintf("subU underflowed %d - %d", x, y))
 	}
 	return x - int64(y)
 }

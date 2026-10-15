@@ -8,7 +8,6 @@ import (
 	"go/constant"
 	"publicinternal/abi"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/reflectdata"
 	"cmd/compile/publicinternal/typecheck"
@@ -37,7 +36,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 		left := left.(*ir.IndexExpr)
 		mapAppend = right.(*ir.CallExpr)
 		if !ir.SameSafeExpr(left, mapAppend.Args[0]) {
-			base.Fatalf("not same expressions: %v != %v", left, mapAppend.Args[0])
+			w.fatalf("not same expressions: %v != %v", left, mapAppend.Args[0])
 		}
 	}
 
@@ -86,7 +85,7 @@ func (w *walkState) walkAssign(init *ir.Nodes, n ir.Node) ir.Node {
 		// x = append(...)
 		call := as.Y.(*ir.CallExpr)
 		if call.Type().Elem().NotInHeap() {
-			base.Errorf("%v can't be allocated in Go; it is incomplete (or unallocatable)", call.Type().Elem())
+			w.curfunc.Target.Diagnostics.ErrorfAt(call.Pos(), 0, "%v can't be allocated in Go; it is incomplete (or unallocatable)", call.Type().Elem())
 		}
 		var r ir.Node
 		switch {
@@ -258,7 +257,7 @@ func (w *walkState) walkReturn(n *ir.ReturnStmt) ir.Node {
 //	expr-list = func()
 func ascompatet(target *ir.Package, nl ir.Nodes, nr *types.Type) []ir.Node {
 	if len(nl) != nr.NumFields() {
-		base.Fatalf("ascompatet: assignment count mismatch: %d = %d", len(nl), nr.NumFields())
+		target.Diagnostics.Fatalf("ascompatet: assignment count mismatch: %d = %d", len(nl), nr.NumFields())
 	}
 
 	var nn ir.Nodes
@@ -271,7 +270,7 @@ func ascompatet(target *ir.Package, nl ir.Nodes, nr *types.Type) []ir.Node {
 		// Order should have created autotemps of the appropriate type for
 		// us to store results into.
 		if tmp, ok := l.(*ir.Name); !ok || !tmp.AutoTemp() || !types.Identical(tmp.Type(), r.Type) {
-			base.FatalfAt(l.Pos(), "assigning %v to %+v", r.Type, l)
+			target.Diagnostics.FatalfAt(l.Pos(), "assigning %v to %+v", r.Type, l)
 		}
 
 		res := ir.NewResultExpr(target.Pos, nil, types.BADWIDTH)
@@ -291,7 +290,7 @@ func ascompatet(target *ir.Package, nl ir.Nodes, nr *types.Type) []ir.Node {
 func (w *walkState) ascompatee(op ir.Op, nl, nr []ir.Node) []ir.Node {
 	// cannot happen: should have been rejected during type checking
 	if len(nl) != len(nr) {
-		base.Fatalf("assignment operands mismatch: %+v / %+v", ir.Nodes(nl), ir.Nodes(nr))
+		w.fatalf("assignment operands mismatch: %+v / %+v", ir.Nodes(nl), ir.Nodes(nr))
 	}
 
 	var assigned ir.NameSet
@@ -365,7 +364,7 @@ func (w *walkState) ascompatee(op ir.Op, nl, nr []ir.Node) []ir.Node {
 		var name *ir.Name
 		switch l.Op() {
 		default:
-			base.Fatalf("unexpected lvalue %v", l.Op())
+			w.fatalf("unexpected lvalue %v", l.Op())
 		case ir.ONAME:
 			name = l.(*ir.Name)
 		case ir.OINDEX, ir.OINDEXMAP:
@@ -595,7 +594,7 @@ func isAppendOfMake(target *ir.Package, n ir.Node) bool {
 	}
 
 	if n.Typecheck() == 0 {
-		base.Fatalf("missing typecheck: %+v", n)
+		target.Diagnostics.Fatalf("missing typecheck: %+v", n)
 	}
 
 	if n.Op() != ir.OAPPEND {

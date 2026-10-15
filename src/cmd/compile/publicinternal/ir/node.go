@@ -64,7 +64,25 @@ type Node interface {
 // Line returns n's position as a string. If n has been inlined,
 // it uses the outermost position where n has been inlined.
 func Line(n Node) string {
+	if target := nodeTarget(n); target != nil && target.Diagnostics != nil {
+		return target.Diagnostics.FmtPos(n.Pos())
+	}
+	if n != nil && n.Type() != nil {
+		if diagnostics := n.Type().Context().Diagnostics; diagnostics != nil {
+			return diagnostics.FmtPos(n.Pos())
+		}
+	}
 	return base.FmtPos(n.Pos())
+}
+
+// LineFor formats n's source position using target's position table.
+// Callers that already own a compilation target should use this instead of
+// inferring ownership from n, since many IR nodes do not retain a parent link.
+func LineFor(target *Package, n Node) string {
+	if target != nil && target.Diagnostics != nil {
+		return target.Diagnostics.FmtPos(n.Pos())
+	}
+	return Line(n)
 }
 
 func IsSynthetic(n Node) bool {
@@ -487,6 +505,13 @@ func IsMethod(n Node) bool {
 // whose Pos will point back to their declaration position rather than
 // their usage position.
 func HasUniquePos(n Node) bool {
+	return HasUniquePosFor(nodeTarget(n), n)
+}
+
+// HasUniquePosFor is HasUniquePos scoped to target. Compiler phases should use
+// this form when they already have the owning package, since arbitrary IR
+// nodes do not retain a parent link from which to recover their target.
+func HasUniquePosFor(target *Package, n Node) bool {
 	switch n.Op() {
 	case ONAME:
 		return false
@@ -497,12 +522,17 @@ func HasUniquePos(n Node) bool {
 	}
 
 	if !n.Pos().IsKnown() {
-		verbose := base.Flag.K != 0
-		if target := nodeTarget(n); target != nil {
+		if target == nil {
+			target = nodeTarget(n)
+		}
+		var verbose bool
+		if target != nil {
 			verbose = target.Flags.K != 0
+		} else {
+			verbose = base.Flag.K != 0
 		}
 		if verbose {
-			base.Warn("setlineno: unknown position (line 0)")
+			warnfAtTarget(target, src.NoXPos, "setlineno: unknown position (line 0)")
 		}
 		return false
 	}
@@ -511,6 +541,9 @@ func HasUniquePos(n Node) bool {
 }
 
 func SetPos(n Node) src.XPos {
+	if target := nodeTarget(n); target != nil {
+		return SetPosFor(target, n)
+	}
 	lno := base.Pos
 	if n != nil && HasUniquePos(n) {
 		base.Pos = n.Pos()
@@ -518,21 +551,18 @@ func SetPos(n Node) src.XPos {
 	return lno
 }
 
-// SetPosFor is SetPos scoped to target. It also updates base.Pos for legacy
-// helpers that have not yet accepted a package context.
+// SetPosFor is SetPos scoped to target.
 func SetPosFor(target *Package, n Node) src.XPos {
 	old := target.Pos
-	if n != nil && HasUniquePos(n) {
+	if n != nil && HasUniquePosFor(target, n) {
 		target.Pos = n.Pos()
 	}
-	base.Pos = target.Pos
 	return old
 }
 
 // SetPosValue updates the current position for target and the legacy adapter.
 func SetPosValue(target *Package, pos src.XPos) {
 	target.Pos = pos
-	base.Pos = pos
 }
 
 // CurrentPos returns curfn's position when it has a target, and otherwise
@@ -548,6 +578,9 @@ func CurrentPos(curfn *Func) src.XPos {
 func SetPosIn(curfn *Func, n Node) src.XPos {
 	if curfn != nil && curfn.Target != nil {
 		return SetPosFor(curfn.Target, n)
+	}
+	if target := nodeTarget(n); target != nil {
+		return SetPosFor(target, n)
 	}
 	return SetPos(n)
 }
@@ -588,7 +621,7 @@ func OuterValue(n Node) Node {
 	for {
 		switch nn := n; nn.Op() {
 		case OXDOT:
-			base.FatalfAt(n.Pos(), "OXDOT in OuterValue: %v", n)
+			fatalfAtTarget(nodeTarget(n), n.Pos(), "OXDOT in OuterValue: %v", n)
 		case ODOT:
 			nn := nn.(*SelectorExpr)
 			n = nn.X
@@ -604,7 +637,7 @@ func OuterValue(n Node) Node {
 		case OINDEX:
 			nn := nn.(*IndexExpr)
 			if nn.X.Type() == nil {
-				base.Fatalf("OuterValue needs type for %v", nn.X)
+				fatalfAtTarget(nodeTarget(nn.X), nn.Pos(), "OuterValue needs type for %v", nn.X)
 			}
 			if nn.X.Type().IsArray() {
 				n = nn.X

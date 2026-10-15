@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
 	"cmd/compile/publicinternal/reflectdata"
@@ -93,7 +92,7 @@ func (w *walkState) walkSwitchExpr(sw *ir.SwitchStmt) {
 		// Process case dispatch.
 		if len(ncase.List) == 0 {
 			if defaultGoto != nil {
-				base.Fatalf("duplicate default case not detected during typechecking")
+				w.fatalf("duplicate default case not detected during typechecking")
 			}
 			defaultGoto = jmp
 		}
@@ -794,14 +793,14 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 		jmp := ir.NewBranchStmt(ncase.Pos(), ir.OGOTO, labels[i])
 		if len(ncase.List) == 0 { // default:
 			if defaultGoto != nil {
-				base.Fatalf("duplicate default case not detected during typechecking")
+				w.fatalf("duplicate default case not detected during typechecking")
 			}
 			defaultGoto = jmp
 		}
 		for _, n1 := range ncase.List {
 			if ir.IsNil(n1) { // case nil:
 				if nilGoto != nil {
-					base.Fatalf("duplicate nil case not detected during typechecking")
+					w.fatalf("duplicate nil case not detected during typechecking")
 				}
 				nilGoto = jmp
 				continue
@@ -871,7 +870,7 @@ func (w *walkState) walkSwitchType(sw *ir.SwitchStmt) {
 			w.curfunc.Target.InterfaceSwitchGen++
 			rt := rttype.For(w.curfunc.Target)
 			c := rttype.NewCursor(w.curfunc.Target.Ctxt, lsym, 0, rt.InterfaceSwitch)
-			c.Field("Cache").WritePtr(typecheck.LookupRuntimeVar("emptyInterfaceSwitchCache"))
+			c.Field("Cache").WritePtr(typecheck.LookupRuntimeVarFor(w.curfunc.Target, "emptyInterfaceSwitchCache"))
 			c.Field("NCases").WriteInt(int64(len(interfaceCases)))
 			array, sizeDelta := c.Field("Cases").ModifyArray(len(interfaceCases))
 			for i, c := range interfaceCases {
@@ -1001,7 +1000,7 @@ caseLoop:
 						}
 					} else {
 						// This case is a concrete type, just read its value out of the interface.
-						val = ifaceData(ncase.Pos(), s.srcName, t)
+						val = ifaceData(w.curfunc.Target, ncase.Pos(), s.srcName, t)
 					}
 				} else if ncase.List[0].Op() == ir.ODYNAMICTYPE { // single runtime known type
 					var found bool
@@ -1014,11 +1013,11 @@ caseLoop:
 					}
 					// the tmpVar must always be found
 					if !found {
-						base.Fatalf("an error occurred when processing type switch case %v", ncase.List[0])
+						w.fatalf("an error occurred when processing type switch case %v", ncase.List[0])
 					}
 				} else if ir.IsNil(ncase.List[0]) {
 				} else {
-					base.Fatalf("unhandled type switch case %v", ncase.List[0])
+					w.fatalf("unhandled type switch case %v", ncase.List[0])
 				}
 				val.SetType(caseVar.Type())
 				val.SetTypecheck(1)
@@ -1044,7 +1043,7 @@ caseLoop:
 // *runtime.itab pointer).
 func typeHashFieldOf(target *ir.Package, pos src.XPos, itab *ir.UnaryExpr) *ir.SelectorExpr {
 	if itab.Op() != ir.OITAB {
-		base.Fatalf("expected OITAB, got %v", itab.Op())
+		target.Diagnostics.Fatalf("expected OITAB, got %v", itab.Op())
 	}
 	var hashField *types.Field
 	if itab.X.Type().IsEmptyInterface() {
@@ -1286,7 +1285,7 @@ func stringSearch(curfunc *ir.Func, expr ir.Node, cc []exprClause, out *ir.Nodes
 	// have to be different somewhere.
 	// TODO: what if the best split is still pretty bad?
 	if bestScore == 0 {
-		base.Fatalf("unable to split string set")
+		curfunc.Target.Diagnostics.Fatalf("unable to split string set")
 	}
 
 	// Convert expr to a []int8

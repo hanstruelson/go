@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/bitvec"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/objw"
@@ -73,13 +72,13 @@ func methods(target *ir.Package, t *types.Type) []*typeSig {
 	var ms []*typeSig
 	for _, f := range mt.AllMethods() {
 		if f.Sym == nil {
-			base.Fatalf("method with no sym on %v", mt)
+			target.Diagnostics.Fatalf("method with no sym on %v", mt)
 		}
 		if !f.IsMethod() {
-			base.Fatalf("non-method on %v method %v %v", mt, f.Sym, f)
+			target.Diagnostics.Fatalf("non-method on %v method %v %v", mt, f.Sym, f)
 		}
 		if f.Type.Recv() == nil {
-			base.Fatalf("receiver with no type on %v method %v %v", mt, f.Sym, f)
+			target.Diagnostics.Fatalf("receiver with no type on %v method %v %v", mt, f.Sym, f)
 		}
 		if f.Nointerface() && !t.IsFullyInstantiated() {
 			// Skip creating method wrappers if f is nointerface. But, if
@@ -123,12 +122,12 @@ func imethods(target *ir.Package, t *types.Type) []*typeSig {
 			continue
 		}
 		if f.Sym.IsBlank() {
-			base.Fatalf("unexpected blank symbol in interface method set")
+			target.Diagnostics.Fatalf("unexpected blank symbol in interface method set")
 		}
 		if n := len(methods); n > 0 {
 			last := methods[n-1]
 			if types.CompareSyms(last.name, f.Sym) >= 0 {
-				base.Fatalf("sigcmp vs sortinter %v %v", last.name, f.Sym)
+				target.Diagnostics.Fatalf("sigcmp vs sortinter %v %v", last.name, f.Sym)
 			}
 		}
 
@@ -198,7 +197,7 @@ func dgopkgpathOff(target *ir.Package, c rttype.Cursor, pkg *types.Pkg) {
 // dnameField dumps a reflect.name for a struct field.
 func dnameField(target *ir.Package, c rttype.Cursor, spkg *types.Pkg, ft *types.Field) {
 	if !types.IsExported(ft.Sym.Name) && ft.Sym.Pkg != spkg {
-		base.Fatalf("package mismatch for %v", ft.Sym)
+		target.Diagnostics.Fatalf("package mismatch for %v", ft.Sym)
 	}
 	nsym := dname(target, ft.Sym.Name, ft.Note, nil, types.IsExported(ft.Sym.Name), ft.Embedded != 0)
 	c.Field("Bytes").WritePtr(nsym)
@@ -207,10 +206,10 @@ func dnameField(target *ir.Package, c rttype.Cursor, spkg *types.Pkg, ft *types.
 // dnameData writes the contents of a reflect.name into s at offset ot.
 func dnameData(target *ir.Package, s *obj.LSym, ot int, name, tag string, pkg *types.Pkg, exported, embedded bool) int {
 	if len(name) >= 1<<29 {
-		base.Fatalf("name too long: %d %s...", len(name), name[:1024])
+		target.Diagnostics.Fatalf("name too long: %d %s...", len(name), name[:1024])
 	}
 	if len(tag) >= 1<<29 {
-		base.Fatalf("tag too long: %d %s...", len(tag), tag[:1024])
+		target.Diagnostics.Fatalf("tag too long: %d %s...", len(tag), tag[:1024])
 	}
 	var nameLen [binary.MaxVarintLen64]byte
 	nameLenLen := binary.PutUvarint(nameLen[:], uint64(len(name)))
@@ -302,11 +301,11 @@ func dname(target *ir.Package, name, tag string, pkg *types.Pkg, exported, embed
 func dextratype(target *ir.Package, lsym *obj.LSym, off int64, t *types.Type, dataAdd int) {
 	m := methods(target, t)
 	if t.Sym() == nil && len(m) == 0 {
-		base.Fatalf("extra requested of type with no extra info %v", t)
+		target.Diagnostics.Fatalf("extra requested of type with no extra info %v", t)
 	}
 	noff := types.RoundUp(off, int64(target.PtrSize))
 	if noff != off {
-		base.Fatalf("unexpected alignment in dextratype for %v", t)
+		target.Diagnostics.Fatalf("unexpected alignment in dextratype for %v", t)
 	}
 
 	for _, a := range m {
@@ -319,11 +318,11 @@ func dextratype(target *ir.Package, lsym *obj.LSym, off int64, t *types.Type, da
 	dataAdd += uncommonSize(target, t)
 	mcount := len(m)
 	if mcount != int(uint16(mcount)) {
-		base.Fatalf("too many methods on %v: %d", t, mcount)
+		target.Diagnostics.Fatalf("too many methods on %v: %d", t, mcount)
 	}
 	xcount := sort.Search(mcount, func(i int) bool { return !types.IsExported(m[i].name.Name) })
 	if dataAdd != int(uint32(dataAdd)) {
-		base.Fatalf("methods are too far away on %v: %d", t, dataAdd)
+		target.Diagnostics.Fatalf("methods are too far away on %v: %d", t, dataAdd)
 	}
 
 	c.Field("Mcount").WriteUint16(uint16(mcount))
@@ -471,7 +470,7 @@ func dcommontype(target *ir.Package, c rttype.Cursor, t *types.Type) {
 		i = 1
 	}
 	if i&(i-1) != 0 {
-		base.Fatalf("invalid alignment %d for %v", uint8(t.Alignment()), t)
+		target.Diagnostics.Fatalf("invalid alignment %d for %v", uint8(t.Alignment()), t)
 	}
 	c.Field("Align_").WriteUint8(uint8(t.Alignment()))
 	c.Field("FieldAlign_").WriteUint8(uint8(t.Alignment()))
@@ -507,10 +506,10 @@ func TypeSymPrefix(target *ir.Package, prefix string, t *types.Type) *types.Sym 
 
 func TypeSym(target *ir.Package, t *types.Type) *types.Sym {
 	if t == nil || (t.IsPtr() && t.Elem() == nil) || t.IsUntyped() {
-		base.Fatalf("TypeSym %v", t)
+		target.Diagnostics.Fatalf("TypeSym %v", t)
 	}
 	if t.Kind() == types.TFUNC && t.Recv() != nil {
-		base.Fatalf("misuse of method type: %v", t)
+		target.Diagnostics.Fatalf("misuse of method type: %v", t)
 	}
 	s := typeSymLookup(target, types.TypeSymName(t))
 	NeedRuntimeType(target, t)
@@ -615,7 +614,7 @@ func needkeyupdate(t *types.Type) bool {
 		return false
 
 	default:
-		base.Fatalf("bad type for map key: %v", t)
+		t.Context().Diagnostics.Fatalf("bad type for map key: %v", t)
 		return true
 	}
 }
@@ -656,7 +655,7 @@ func formalType(target *ir.Package, t *types.Type) *types.Type {
 func writeType(target *ir.Package, t *types.Type) *obj.LSym {
 	t = formalType(target, t)
 	if t.IsUntyped() {
-		base.Fatalf("writeType %v", t)
+		target.Diagnostics.Fatalf("writeType %v", t)
 	}
 
 	s := TypeSym(target, t)
@@ -670,7 +669,7 @@ func writeType(target *ir.Package, t *types.Type) *obj.LSym {
 		tbase = t.Elem()
 	}
 	if tbase.Kind() == types.TFORW {
-		base.Fatalf("unresolved defined type: %v", tbase)
+		target.Diagnostics.Fatalf("unresolved defined type: %v", tbase)
 	}
 
 	// This is a fake type we generated for our builtin pseudo-runtime
@@ -875,7 +874,7 @@ func writeType(target *ir.Package, t *types.Type) *obj.LSym {
 	case types.TPTR:
 		// publicinternal/abi.PtrType
 		if t.Elem().Kind() == types.TANY {
-			base.Fatalf("bad pointer base type")
+			target.Diagnostics.Fatalf("bad pointer base type")
 		}
 
 		s1 := writeType(target, t.Elem())
@@ -1057,7 +1056,7 @@ func writeITab(target *ir.Package, lsym *obj.LSym, typ, iface *types.Type, allow
 	defer ir.SetPosValue(target, oldpos)
 
 	if typ == nil || (typ.IsPtr() && typ.Elem() == nil) || typ.IsUntyped() || iface == nil || !iface.IsInterface() || iface.IsEmptyInterface() {
-		base.Fatalf("writeITab(%v, %v)", typ, iface)
+		target.Diagnostics.Fatalf("writeITab(%v, %v)", typ, iface)
 	}
 
 	sigs := iface.AllMethods()
@@ -1079,7 +1078,7 @@ func writeITab(target *ir.Package, lsym *obj.LSym, typ, iface *types.Type, allow
 	}
 	completeItab := len(sigs) == 0
 	if !allowNonImplement && !completeItab {
-		base.Fatalf("incomplete itab")
+		target.Diagnostics.Fatalf("incomplete itab")
 	}
 
 	// dump empty itab symbol into i.sym
@@ -1359,7 +1358,7 @@ func dgcptrmaskOnDemand(target *ir.Package, t *types.Type, write bool) *obj.LSym
 // size bytes of zeros.
 func ZeroAddr(curfunc *ir.Func, size int64) ir.Node {
 	if size >= 1<<31 {
-		base.Fatalf("map elem too big %d", size)
+		curfunc.Target.Diagnostics.Fatalf("map elem too big %d", size)
 	}
 	if curfunc.Target.ZeroSize < size {
 		curfunc.Target.ZeroSize = size
@@ -1469,7 +1468,7 @@ func methodWrapper(target *ir.Package, rcvr *types.Type, method *types.Field, fo
 func MarkTypeUsedInInterface(target *ir.Package, t *types.Type, from *obj.LSym) {
 	if t.HasShape() {
 		// Shape types shouldn't be put in interfaces, so we shouldn't ever get here.
-		base.Fatalf("shape types have no methods %+v", t)
+		target.Diagnostics.Fatalf("shape types have no methods %+v", t)
 	}
 	MarkTypeSymUsedInInterface(target, TypeLinksym(target, t), from)
 }

@@ -16,7 +16,6 @@ import (
 
 	"unicode/utf8"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/types"
 	"cmd/publicinternal/src"
 )
@@ -572,11 +571,8 @@ func exprFmt(n Node, s fmt.State, prec int) {
 		val := n.Val()
 
 		// Special case for rune constants.
-		target := nodeTarget(n)
-		runeType := types.RuneType
-		if target != nil {
-			runeType = target.RuneType
-		}
+		context := typ.Context()
+		runeType := context.RuneType
 		if typ == runeType || typ == types.UntypedRune {
 			if x, ok := constant.Uint64Val(val); ok && x <= utf8.MaxRune {
 				fmt.Fprintf(s, "%q", rune(x))
@@ -586,7 +582,7 @@ func exprFmt(n Node, s fmt.State, prec int) {
 
 		// Only include typ if it's neither the default nor untyped type
 		// for the constant value.
-		if k := val.Kind(); typ == basicTypeForNode(target, types.DefaultKinds[k]) || typ == types.UntypedTypes[k] {
+		if k := val.Kind(); typ == context.Types[types.DefaultKinds[k]] || typ == types.UntypedTypes[k] {
 			fmt.Fprint(s, val)
 		} else {
 			fmt.Fprintf(s, "%v(%v)", typ, val)
@@ -859,13 +855,6 @@ func exprFmt(n Node, s fmt.State, prec int) {
 	}
 }
 
-func basicTypeForNode(target *Package, kind types.Kind) *types.Type {
-	if target != nil {
-		return target.Type(kind)
-	}
-	return types.Types[kind]
-}
-
 func ellipsisIf(b bool) string {
 	if b {
 		return "..."
@@ -947,7 +936,7 @@ func indent(w io.Writer, depth int) {
 // dumpNodeHeader prints the debug-format node header line to w.
 func dumpNodeHeader(w io.Writer, n Node) {
 	target := nodeTarget(n)
-	dumpPtrs := base.Debug.DumpPtrs
+	var dumpPtrs int
 	if target != nil {
 		dumpPtrs = target.Debug.DumpPtrs
 	}
@@ -1089,6 +1078,10 @@ func nodeTarget(n Node) *Package {
 	}
 	return nil
 }
+
+// TargetOf reports the compilation target associated with n, if n is owned by
+// a function or a function-scoped name.
+func TargetOf(n Node) *Package { return nodeTarget(n) }
 
 func dumpNode(w io.Writer, n Node, depth int) {
 	indent(w, depth)
