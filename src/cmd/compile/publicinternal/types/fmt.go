@@ -242,7 +242,6 @@ func tconv2(b *bytes.Buffer, t *Type, verb rune, mode fmtMode, visited map[*Type
 		b.WriteString("<T>")
 		return
 	}
-	context := contextForType(t)
 	if t.Kind() == TSSA {
 		b.WriteString(t.extra.(string))
 		return
@@ -264,6 +263,28 @@ func tconv2(b *bytes.Buffer, t *Type, verb rune, mode fmtMode, visited map[*Type
 		}
 		return
 	}
+	switch t {
+	case UntypedBool:
+		b.WriteString("untyped bool")
+		return
+	case UntypedString:
+		b.WriteString("untyped string")
+		return
+	case UntypedInt:
+		b.WriteString("untyped int")
+		return
+	case UntypedRune:
+		b.WriteString("untyped rune")
+		return
+	case UntypedFloat:
+		b.WriteString("untyped float")
+		return
+	case UntypedComplex:
+		b.WriteString("untyped complex")
+		return
+	}
+
+	context := contextForType(t)
 
 	if t == context.AnyType || t == context.ByteType || t == context.RuneType {
 		// in %-T mode collapse predeclared aliases with their originals.

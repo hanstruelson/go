@@ -8,15 +8,14 @@ package inlheur
 
 import (
 	"cmd/compile/publicinternal/ir"
-	"os"
 	"strconv"
 )
 
 func enableDebugTraceIfEnv(target *ir.Package) {
-	if target == nil || !target.LegacyEnvironment {
+	if target == nil {
 		return
 	}
-	v := os.Getenv("DEBUG_TRACE_INLHEUR")
+	v := target.Getenv("DEBUG_TRACE_INLHEUR")
 	if v == "" {
 		target.InlineHeuristicsDebugTrace = 0
 		return

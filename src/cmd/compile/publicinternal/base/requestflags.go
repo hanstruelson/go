@@ -30,6 +30,9 @@ import (
 type CompileConfig struct {
 	Flags CmdFlags
 	Debug DebugFlags
+	// Environment contains this compilation's inherited environment and -env
+	// overrides. It is never applied to the process environment.
+	Environment map[string]string
 
 	GossaHash        *HashDebug
 	ConvertHash      *HashDebug
@@ -86,19 +89,21 @@ func parseCompileConfig(goos string, ctxt *obj.Link, args []string, debugSSA fun
 			cfg.err = err
 		}
 	}
-	flags.Env = func(s string) {
-		if !commandLine {
-			cfg.err = fmt.Errorf("-env is unavailable for reusable compilation")
-			return
+	cfg.Environment = make(map[string]string)
+	if commandLine {
+		for _, entry := range os.Environ() {
+			if key, value, ok := strings.Cut(entry, "="); ok {
+				cfg.Environment[key] = value
+			}
 		}
-		i := strings.Index(s, "=")
-		if i < 0 {
+	}
+	flags.Env = func(s string) {
+		key, value, ok := strings.Cut(s, "=")
+		if !ok || key == "" || strings.ContainsRune(key, '\x00') || strings.ContainsRune(value, '\x00') {
 			cfg.err = fmt.Errorf("-env argument must be of the form key=value")
 			return
 		}
-		if err := os.Setenv(s[:i], s[i+1:]); err != nil {
-			cfg.err = fmt.Errorf("-env: %w", err)
-		}
+		cfg.Environment[key] = value
 	}
 	flags.GenDwarfInl = 2
 	flags.ImportCfg = func(file string) {
@@ -155,13 +160,13 @@ func parseCompileConfig(goos string, ctxt *obj.Link, args []string, debugSSA fun
 	if !commandLine && fs.NArg() != 0 {
 		return nil, nil, fmt.Errorf("compiler request options must not include source filenames")
 	}
+	if gcd := cfg.Environment["GOCOMPILEDEBUG"]; gcd != "" {
+		if err := flags.LowerD.Set(gcd); err != nil {
+			return nil, nil, err
+		}
+	}
 	if commandLine {
 		counter.CountFlags("compile/flag:", *fs)
-		if gcd := os.Getenv("GOCOMPILEDEBUG"); gcd != "" {
-			if err := flags.LowerD.Set(gcd); err != nil {
-				return nil, nil, err
-			}
-		}
 	}
 	if err := finalizeCompileConfig(goos, cfg, ctxt, out); err != nil {
 		return nil, nil, err

@@ -5,8 +5,6 @@
 package noder
 
 import (
-	"sync"
-
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types2"
@@ -37,14 +35,10 @@ func escapedFileName(pkgPath string, fn *syntax.FuncDecl, suffix string) string 
 	return ir.EscapedFileName(pkgPath+"."+fn.Name.Value, suffix)
 }
 
-var dumpFileMu sync.Mutex
-
 // DumpNodeHTML dumps the node n to the HTML writer for fn.
 func DumpNodeHTML(ctx *Context, pkg *types2.Package, file *syntax.File, info *types2.Info, fn *syntax.FuncDecl, why string, n syntax.Node) {
 	ctx.dumpMu.Lock()
 	defer ctx.dumpMu.Unlock()
-	dumpFileMu.Lock()
-	defer dumpFileMu.Unlock()
 	if ctx.htmlDumpWriters == nil {
 		ctx.htmlDumpWriters = make(map[*syntax.FuncDecl]*HTMLWriter)
 	}
@@ -69,8 +63,6 @@ func CloseHTMLWriters(target *ir.Package) {
 	}
 	ctx.dumpMu.Lock()
 	defer ctx.dumpMu.Unlock()
-	dumpFileMu.Lock()
-	defer dumpFileMu.Unlock()
 	for _, fn := range ctx.htmlDumpFuncs {
 		if w, ok := ctx.htmlDumpWriters[fn]; ok {
 			w.Close("Writing html syntax output for %s to %s\n", w.pkgFuncName(), w.Path())

@@ -7,11 +7,8 @@ package ssa
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"math"
 	"math/bits"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"cmd/compile/publicinternal/ir"
@@ -1140,27 +1137,6 @@ func LogLargeCopyValue(v *Value, s int64) bool {
 	return true
 }
 
-// LogRule logs the use of the rule s. This will only be enabled if
-// rewrite rules were generated with the -log option, see _gen/rulegen.go.
-func LogRule(s string) {
-	if ruleFile == nil {
-		// Open a log file to write log to. We open in append
-		// mode because all.bash runs the compiler lots of times,
-		// and we want the concatenation of all of those logs.
-		// This means, of course, that users need to rm the old log
-		// to get fresh data.
-		// TODO: all.bash runs compilers in parallel. Need to synchronize logging somehow?
-		w, err := os.OpenFile(filepath.Join(os.Getenv("GOROOT"), "src", "rulelog"),
-			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			panic(err)
-		}
-		ruleFile = w
-	}
-	// Ignore errors in case of multiple processes fighting over the file.
-	fmt.Fprintln(ruleFile, s)
-}
-
 func MakeJumpTableSym(b *Block) *obj.LSym {
 	s := b.Func.Fe.Func().Target.Ctxt.Lookup(fmt.Sprintf("%s.jump%d", b.Func.Fe.Func().LSym.Name, b.ID))
 	// The jump table symbol is accessed only from the function symbol.
@@ -1463,8 +1439,6 @@ func Uint8ToAuxInt(i uint8) int64 {
 func ValAndOffToAuxInt(v ValAndOff) int64 {
 	return int64(v)
 }
-
-var ruleFile io.Writer
 
 func (fcs FlagConstantBuilder) Encode() FlagConstant {
 	var fc FlagConstant

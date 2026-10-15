@@ -4008,7 +4008,7 @@ type methodValueWrapper struct {
 // needWrapper records that wrapper methods may be needed at link
 // time.
 func (r *reader) needWrapper(typ *types.Type) {
-	if typ.IsPtr() || typ.IsKind(types.TFORW) {
+	if typ.IsUntyped() || typ.IsPtr() || typ.IsKind(types.TFORW) {
 		return
 	}
 
@@ -4073,6 +4073,9 @@ func (c *Context) MakeWrappers(target *ir.Package) {
 }
 
 func wrapType(typ *types.Type, target *ir.Package, seen map[string]*types.Type, needed bool, inliner *inline.Context, inlineCall inline.InlineCallFunc) {
+	if typ.IsUntyped() {
+		return
+	}
 	key := typ.LinkString()
 	if prev := seen[key]; prev != nil {
 		if !types.Identical(typ, prev) {

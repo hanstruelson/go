@@ -245,10 +245,14 @@ type Context struct {
 	format     logFormat
 	dest       string
 	loggedOpts []*LoggedOpt
+	goos       string
+	goarch     string
 }
 
-// NewContext returns an optimizer-logging context with logging disabled.
-func NewContext() *Context { return new(Context) }
+// NewContext returns an optimizer-logging context for one compiler target.
+func NewContext(goos, goarch string) *Context {
+	return &Context{goos: goos, goarch: goarch}
+}
 
 // LogJsonOption parses and validates the version,directory value attached to
 // the -json compiler flag.
@@ -489,7 +493,7 @@ func (c *Context) FlushLoggedOpts(ctxt *obj.Link, slashPkgPath string) error {
 					return err
 				}
 				encoder = json.NewEncoder(w)
-				if err := encoder.Encode(VersionHeader{Version: 0, Package: slashPkgPath, Goos: buildcfg.GOOS, Goarch: buildcfg.GOARCH, GcVersion: buildcfg.Version, File: currentFile}); err != nil {
+				if err := encoder.Encode(VersionHeader{Version: 0, Package: slashPkgPath, Goos: c.goos, Goarch: c.goarch, GcVersion: buildcfg.Version, File: currentFile}); err != nil {
 					return err
 				}
 			}

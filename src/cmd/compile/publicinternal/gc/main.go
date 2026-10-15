@@ -184,7 +184,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	}
 	target.GOARCH = selectedArch
 	target.ArchFeatures = arch.TargetFeatures
-	target.LogOpt = logopt.NewContext()
+	target.LogOpt = logopt.NewContext(target.GOOS, target.GOARCH)
 	target.Diagnostics = base.NewDiagnostics(output)
 	target.Diagnostics.PanicOnExit = reusable
 	target.ArchInfo = arch
@@ -222,9 +222,9 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		commandFiles = files
 		target.Flags = options.Flags
 		target.Debug = options.Debug
-		target.LegacyEnvironment = true
-		target.ClobberDeadHash = os.Getenv("GOCLOBBERDEADHASH")
-		target.SSADumpDir = os.Getenv("GOSSADIR")
+		target.Environment = options.Environment
+		target.ClobberDeadHash = target.Getenv("GOCLOBBERDEADHASH")
+		target.SSADumpDir = target.Getenv("GOSSADIR")
 		target.GossaHash = options.GossaHash
 		target.PGOHash = options.PGOHash
 		target.LoopVarHash = options.LoopVarHash
@@ -241,6 +241,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		target.Flags = options.Flags
 		target.Flags.LowerO = outputPath
 		target.Debug = options.Debug
+		target.Environment = options.Environment
 		target.GossaHash = options.GossaHash
 		target.PGOHash = options.PGOHash
 		target.LoopVarHash = options.LoopVarHash
@@ -255,7 +256,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 
 	if !reusable {
 		if flagGCStart := target.Debug.GCStart; flagGCStart > 0 || // explicit flags overrides environment variable disable of GC boost
-			os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" && target.Flags.LowerC != 1 { // explicit GC knobs or no concurrency implies default heap
+			target.Getenv("GOGC") == "" && target.Getenv("GOMEMLIMIT") == "" && target.Flags.LowerC != 1 { // explicit GC knobs or no concurrency implies default heap
 			startHeapMB := int64(128)
 			if flagGCStart > 0 {
 				startHeapMB = int64(flagGCStart)
@@ -365,7 +366,7 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	target.EscFmt = escape.Fmt
 	target.IntrinsicCall = func(call *ir.CallExpr) bool { return ssagen.IsIntrinsicCall(target, call) }
 	target.IntrinsicSym = func(sym *types.Sym) bool { return ssagen.IsIntrinsicSym(target, sym) }
-	ssagen.InitEnv(backend, target, !reusable)
+	ssagen.InitEnv(backend, target)
 	target.SoftFloat = arch.SoftFloat
 
 	target.PtrSize = arch.LinkArch.PtrSize

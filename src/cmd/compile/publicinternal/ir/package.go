@@ -23,12 +23,12 @@ type Package struct {
 	ArchFeatures ArchFeatures
 
 	// Flags and Debug are the parsed options for this compilation.
-	Flags       base.CmdFlags
-	Debug       base.DebugFlags
+	Flags base.CmdFlags
+	Debug base.DebugFlags
+	// Environment is the environment snapshot and per-request overlay used by
+	// this compilation. Compiler phases read it instead of mutating process env.
+	Environment map[string]string
 	LangVersion types.LangVersion
-	// LegacyEnvironment permits the command-line compiler adapter to read
-	// process environment settings. Reusable requests leave it false.
-	LegacyEnvironment bool
 	// ClobberDeadHash selects functions for -clobberdead from the legacy
 	// command-line environment. Reusable compile requests leave it empty.
 	ClobberDeadHash string
@@ -226,6 +226,14 @@ type Package struct {
 	htmlDumpFuncs   []*Func
 }
 
+// Getenv reads this compilation's environment snapshot.
+func (p *Package) Getenv(key string) string {
+	if p == nil || p.Environment == nil {
+		return ""
+	}
+	return p.Environment[key]
+}
+
 // AddCleanup registers a callback to run when the package compilation ends.
 func (p *Package) AddCleanup(f func()) {
 	p.Cleanup = append(p.Cleanup, f)
@@ -274,12 +282,10 @@ func (target *Package) Pkg(path, name string) *types.Pkg {
 		}
 		return pkg
 	}
-	var pkg *types.Pkg
-	if target.TypeContext != nil {
-		pkg = types.NewPkgInstanceFor(target.TypeContext, path, name)
-	} else {
-		pkg = types.NewPkgInstance(path, name)
+	if target.TypeContext == nil {
+		panic("package creation requires a target type context")
 	}
+	pkg := types.NewPkgInstanceFor(target.TypeContext, path, name)
 	target.Pkgs[path] = pkg
 	return pkg
 }

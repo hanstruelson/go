@@ -8,7 +8,6 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"strconv"
-	"sync"
 )
 
 type Pkg struct {
@@ -26,14 +25,11 @@ type Pkg struct {
 	SlicedataGen int // next generated mutable string or embed data symbol suffix
 }
 
-// NewPkgInstance returns a fresh package object. Package identity belongs to
-// the compilation context, which keeps its own package registry.
-func NewPkgInstance(path, name string) *Pkg {
-	return newPkg(path, name)
-}
-
 // NewPkgInstanceFor returns a fresh package object owned by context.
 func NewPkgInstanceFor(context *Context, path, name string) *Pkg {
+	if context == nil {
+		panic("package instance requires a compilation context")
+	}
 	p := newPkg(path, name)
 	p.Context = context
 	return p
@@ -56,10 +52,6 @@ func newPkg(path, name string) *Pkg {
 	return p
 }
 
-var nopkg = &Pkg{
-	Syms: make(map[string]*Sym),
-}
-
 func (pkg *Pkg) Lookup(name string) *Sym {
 	s, _ := pkg.LookupOK(name)
 	return s
@@ -67,9 +59,8 @@ func (pkg *Pkg) Lookup(name string) *Sym {
 
 // LookupOK looks up name in pkg and reports whether it previously existed.
 func (pkg *Pkg) LookupOK(name string) (s *Sym, existed bool) {
-	// TODO(gri) remove this check in favor of specialized lookup
 	if pkg == nil {
-		pkg = nopkg
+		return &Sym{Name: name}, false
 	}
 	if s := pkg.Syms[name]; s != nil {
 		return s, true
@@ -84,15 +75,13 @@ func (pkg *Pkg) LookupOK(name string) (s *Sym, existed bool) {
 }
 
 func (pkg *Pkg) LookupBytes(name []byte) *Sym {
-	// TODO(gri) remove this check in favor of specialized lookup
 	if pkg == nil {
-		pkg = nopkg
+		return &Sym{Name: string(name)}
 	}
 	if s := pkg.Syms[string(name)]; s != nil {
 		return s
 	}
-	str := InternString(name)
-	return pkg.Lookup(str)
+	return pkg.Lookup(string(name))
 }
 
 // LookupNum looks up the symbol starting with prefix and ending with
@@ -112,18 +101,6 @@ func (pkg *Pkg) Selector(localPkg *Pkg, name string) *Sym {
 	return pkg.Lookup(name)
 }
 
-var (
-	internedStringsmu sync.Mutex // protects internedStrings
-	internedStrings   = map[string]string{}
-)
-
 func InternString(b []byte) string {
-	internedStringsmu.Lock()
-	s, ok := internedStrings[string(b)] // string(b) here doesn't allocate
-	if !ok {
-		s = string(b)
-		internedStrings[s] = s
-	}
-	internedStringsmu.Unlock()
-	return s
+	return string(b)
 }

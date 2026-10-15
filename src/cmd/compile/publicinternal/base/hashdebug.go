@@ -322,17 +322,7 @@ func (d *HashDebug) log(varname string, hash uint64, text string) {
 
 	file := d.logfile
 	if file == nil {
-		if tmpfile := os.Getenv("GSHS_LOGFILE"); tmpfile != "" {
-			var err error
-			file, err = os.OpenFile(tmpfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not open hash-testing logfile %s: %v\n", tmpfile, err)
-				file = os.Stdout
-			}
-		}
-		if file == nil {
-			file = os.Stdout
-		}
+		file = os.Stdout
 		d.logfile = file
 	}
 

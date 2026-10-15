@@ -56,12 +56,10 @@ func (c *Context) DumpInline(fn *ir.Func) {
 	}
 }
 
-func InitEnv(c *Context, target *ir.Package, allowEnvironment bool) {
+func InitEnv(c *Context, target *ir.Package) {
 	c.target = target
 	c.ssaDir = target.SSADumpDir
-	if allowEnvironment {
-		c.ssaDump = os.Getenv("GOSSAFUNC")
-	}
+	c.ssaDump = target.Getenv("GOSSAFUNC")
 	if c.ssaDump == "" {
 		c.ssaDump = target.Debug.Html
 	}
