@@ -94,9 +94,9 @@ package ssacompile
 import (
 	"cmp"
 	"fmt"
-	"publicinternal/buildcfg"
 	"math"
 	"math/bits"
+	"publicinternal/buildcfg"
 	"slices"
 	"unsafe"
 
@@ -929,10 +929,10 @@ func (s *regAllocState) isGReg(r ssaop.Register) bool {
 	return s.f.Config.HasGReg && s.GReg == r
 }
 
-// Dummy value used to represent the value being held in a temporary register.
-var tmpVal ssa.Value
-
 func (s *regAllocState) regalloc(f *ssa.Func) {
+	// Dummy value used to represent the value being held in a temporary register.
+	var tmpVal ssa.Value
+
 	regValLiveSet := f.NewSparseSet(f.NumValues()) // set of values that may be live in register
 	defer f.RetSparseSet(regValLiveSet)
 	var oldSched []*ssa.Value

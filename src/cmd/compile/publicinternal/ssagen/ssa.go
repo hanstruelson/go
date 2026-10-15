@@ -8171,7 +8171,7 @@ func (c *Context) deferstruct() *types.Type {
 	}
 
 	makefield := func(name string, t *types.Type) *types.Field {
-		sym := (*types.Pkg)(nil).Lookup(name)
+		sym := c.target.RuntimePkg.Lookup(name)
 		return types.NewField(src.NoXPos, sym, t)
 	}
 

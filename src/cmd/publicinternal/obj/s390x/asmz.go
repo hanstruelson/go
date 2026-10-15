@@ -36,6 +36,7 @@ import (
 	"log"
 	"math"
 	"slices"
+	"sync"
 )
 
 // ctxtz holds state while assembling a single function.
@@ -464,6 +465,8 @@ var optab = []Optab{
 	{i: 129, as: AVSTRL, a1: C_VREG, a3: C_SCON, a6: C_SAUTO},
 }
 
+// buildopMu protects the one-time construction of the shared opcode tables.
+var buildopMu sync.Mutex
 var oprange [ALAST & obj.AMask][]Optab
 
 var xcmp [C_NCLASS][C_NCLASS]bool
@@ -889,6 +892,9 @@ func opset(a, b obj.As) {
 }
 
 func buildop(ctxt *obj.Link) {
+	buildopMu.Lock()
+	defer buildopMu.Unlock()
+
 	if oprange[AORW&obj.AMask] != nil {
 		// Already initialized; stop now.
 		// This happens in the cmd/asm tests,

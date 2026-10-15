@@ -148,13 +148,28 @@ func compileFunctions(target *ir.Package, queue *[]*ir.Func, backend *ssagen.Con
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	var workerPanic any
 	mu.Lock()
 
 	for workerId := range target.Flags.LowerC {
 		wg.Go(func() {
+			defer func() {
+				if p := recover(); p != nil {
+					mu.Lock()
+					if workerPanic == nil {
+						workerPanic = p
+					}
+					mu.Unlock()
+				}
+			}()
+
 			var closures []*ir.Func
 			for {
 				mu.Lock()
+				if workerPanic != nil {
+					mu.Unlock()
+					return
+				}
 				*queue = append(*queue, closures...)
 				remaining := len(*queue)
 				if remaining == 0 {
@@ -185,6 +200,12 @@ func compileFunctions(target *ir.Package, queue *[]*ir.Func, backend *ssagen.Con
 
 	mu.Unlock()
 	wg.Wait()
+	mu.Lock()
+	p := workerPanic
+	mu.Unlock()
+	if p != nil {
+		panic(p)
+	}
 	*queue = nil
 
 	target.Ctxt.InParallel = false

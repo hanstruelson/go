@@ -11,9 +11,9 @@ import (
 	"cmd/publicinternal/sys"
 	"encoding/binary"
 	"fmt"
-	"publicinternal/abi"
 	"io"
 	"math"
+	"publicinternal/abi"
 )
 
 var Register = map[string]int16{
@@ -141,14 +141,6 @@ var Linkwasm = obj.LinkArch{
 	UnaryDst:   unaryDst,
 }
 
-var (
-	morestack             *obj.LSym
-	morestackNoCtxt       *obj.LSym
-	sigpanic              *obj.LSym
-	wasm_pc_f_loop_export *obj.LSym
-	runtimeNotInitialized *obj.LSym
-)
-
 const (
 	/* mark flags */
 	WasmImport = 1 << 0
@@ -162,15 +154,10 @@ const (
 	GojsModule = "gojs"
 )
 
-func instinit(ctxt *obj.Link) {
-	morestack = ctxt.Lookup("runtime.morestack")
-	morestackNoCtxt = ctxt.Lookup("runtime.morestack_noctxt")
-	sigpanic = ctxt.LookupABI("runtime.sigpanic", obj.ABIInternal)
-	wasm_pc_f_loop_export = ctxt.Lookup("wasm_pc_f_loop_export")
-	runtimeNotInitialized = ctxt.Lookup("runtime.notInitialized")
-}
+func instinit(ctxt *obj.Link) {}
 
 func preprocess(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
+	sigpanic := ctxt.LookupABI("runtime.sigpanic", obj.ABIInternal)
 	appendp := func(p *obj.Prog, as obj.As, args ...obj.Addr) *obj.Prog {
 		if p.As != obj.ANOP {
 			p2 := obj.Appendp(p, newprog)
@@ -218,7 +205,7 @@ func preprocess(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 		// body is just the code to translate and call the imported function.
 		framesize = 0
 	} else if s.Func().WasmExport != nil {
-		genWasmExportWrapper(s, appendp)
+		genWasmExportWrapper(ctxt, s, appendp)
 	}
 
 	if framesize > 0 && s.Func().WasmExport == nil { // genWasmExportWrapper has its own prologue generation
@@ -387,9 +374,9 @@ func preprocess(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 		// other architectures.
 		p = appendp(p, obj.ACALL, constAddr(0))
 		if s.Func().Text.From.Sym.NeedCtxt() {
-			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: morestack}
+			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ctxt.Lookup("runtime.morestack")}
 		} else {
-			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: morestackNoCtxt}
+			p.To = obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ctxt.Lookup("runtime.morestack_noctxt")}
 		}
 		p = appendp(p, AEnd)
 	}
@@ -900,7 +887,7 @@ func genWasmImportWrapper(s *obj.LSym, appendp func(p *obj.Prog, as obj.As, args
 }
 
 // Generate function body for wasmexport wrapper function.
-func genWasmExportWrapper(s *obj.LSym, appendp func(p *obj.Prog, as obj.As, args ...obj.Addr) *obj.Prog) {
+func genWasmExportWrapper(ctxt *obj.Link, s *obj.LSym, appendp func(p *obj.Prog, as obj.As, args ...obj.Addr) *obj.Prog) {
 	we := s.Func().WasmExport
 	we.CreateAuxSym()
 	p := s.Func().Text
@@ -917,7 +904,7 @@ func genWasmExportWrapper(s *obj.LSym, appendp func(p *obj.Prog, as obj.As, args
 	p = appendp(p, AGet, regAddr(REG_SP))
 	p = appendp(p, AI32Eqz)
 	p = appendp(p, AIf)
-	p = appendp(p, ACall, obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: runtimeNotInitialized})
+	p = appendp(p, ACall, obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ctxt.Lookup("runtime.notInitialized")})
 	p = appendp(p, AEnd)
 
 	// Now that we've checked the SP, generate the prologue
@@ -987,7 +974,7 @@ func genWasmExportWrapper(s *obj.LSym, appendp func(p *obj.Prog, as obj.As, args
 	p = appendp(p, AI64Const, constAddr(16))
 	p = appendp(p, AI64ShrU)
 	p = appendp(p, AI32WrapI64)
-	p = appendp(p, ACall, obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: wasm_pc_f_loop_export})
+	p = appendp(p, ACall, obj.Addr{Type: obj.TYPE_MEM, Name: obj.NAME_EXTERN, Sym: ctxt.Lookup("wasm_pc_f_loop_export")})
 	p = appendp(p, AEnd)
 
 	// Load result

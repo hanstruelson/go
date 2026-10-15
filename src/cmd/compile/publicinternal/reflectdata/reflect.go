@@ -47,8 +47,8 @@ func uncommonSize(target *ir.Package, t *types.Type) int { // Sizeof(runtime.unc
 	return int(rttype.For(target).UncommonType.Size())
 }
 
-func makefield(name string, t *types.Type) *types.Field {
-	sym := (*types.Pkg)(nil).Lookup(name)
+func makefield(target *ir.Package, name string, t *types.Type) *types.Field {
+	sym := target.InternalMapsPkg.Lookup(name)
 	return types.NewField(src.NoXPos, sym, t)
 }
 

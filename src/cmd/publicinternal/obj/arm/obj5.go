@@ -34,12 +34,10 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/sys"
+	"log"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
-	"log"
 )
-
-var progedit_tlsfallback *obj.LSym
 
 func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 	p.From.Class = 0
@@ -68,10 +66,6 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 
 			if buildcfg.GOARM.Version < 7 {
 				// Replace it with BL runtime.read_tls_fallback(SB) for ARM CPUs that lack the tls extension.
-				if progedit_tlsfallback == nil {
-					progedit_tlsfallback = ctxt.Lookup("runtime.read_tls_fallback")
-				}
-
 				// MOVW	LR, R11
 				p.As = AMOVW
 
@@ -85,7 +79,7 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 
 				p.As = ABL
 				p.To.Type = obj.TYPE_BRANCH
-				p.To.Sym = progedit_tlsfallback
+				p.To.Sym = ctxt.Lookup("runtime.read_tls_fallback")
 				p.To.Offset = 0
 
 				// MOVW	R11, LR
@@ -482,13 +476,13 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 			p.To.Type = obj.TYPE_BRANCH
 			switch o {
 			case ADIV:
-				p.To.Sym = symdiv
+				p.To.Sym = ctxt.Lookup("runtime._div")
 			case ADIVU:
-				p.To.Sym = symdivu
+				p.To.Sym = ctxt.Lookup("runtime._divu")
 			case AMOD:
-				p.To.Sym = symmod
+				p.To.Sym = ctxt.Lookup("runtime._mod")
 			case AMODU:
-				p.To.Sym = symmodu
+				p.To.Sym = ctxt.Lookup("runtime._modu")
 			}
 
 			/* MOV REGTMP, b */

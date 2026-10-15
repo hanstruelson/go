@@ -34,11 +34,12 @@ import (
 	"cmd/publicinternal/objabi"
 	"encoding/binary"
 	"fmt"
-	"publicinternal/buildcfg"
 	"log"
 	"math"
 	"math/bits"
+	"publicinternal/buildcfg"
 	"sort"
+	"sync"
 )
 
 // ctxt9 holds state while assembling a single function.
@@ -580,6 +581,8 @@ var prefixableOptab = []PrefixableOptab{
 	{Optab: Optab{as: AADD, a1: C_S34CON, a6: C_REG, type_: 22, size: 20}, minGOPPC64: 10, pfxsize: 8},
 }
 
+// buildopMu protects construction of the shared opcode tables.
+var buildopMu sync.Mutex
 var oprange [ALAST & obj.AMask][]Optab
 
 var xcmp [C_NCLASS][C_NCLASS]bool
@@ -1253,6 +1256,9 @@ func NeedTOCpointer(ctxt *obj.Link) bool {
 
 // Build the opcode table
 func buildop(ctxt *obj.Link) {
+	buildopMu.Lock()
+	defer buildopMu.Unlock()
+
 	// Limit PC-relative prefix instruction usage to supported and tested targets.
 	pfxEnabled = buildcfg.GOPPC64 >= 10 && buildcfg.GOOS == "linux"
 	cfg := fmt.Sprintf("power%d/%s/%s", buildcfg.GOPPC64, buildcfg.GOARCH, buildcfg.GOOS)

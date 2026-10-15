@@ -37,6 +37,7 @@ import (
 	"cmd/publicinternal/telemetry/counter"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"publicinternal/buildcfg"
 	"runtime"
@@ -73,12 +74,19 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 }
 
 func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, onTarget func(*ir.Package)) {
+	mainWithConfig(archInit, sourceFiles, reusable, nil, "", os.Stdout, onTarget)
+}
+
+func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceFile, reusable bool, request *Request, outputPath string, output io.Writer, onTarget func(*ir.Package)) {
 	var compilequeue []*ir.Func
 	var target *ir.Package
 	timer := &base.Timings{}
 	backend := ssagen.NewContext()
+	if output == nil {
+		output = os.Stdout
+	}
 	timer.Start("fe", "init")
-	if !base.InSession() {
+	if !reusable {
 		counter.Open()
 		counter.Inc("compile/invocations")
 	}
@@ -90,17 +98,22 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 
 	target = new(ir.Package)
 	target.LogOpt = logopt.NewContext()
-	target.Diagnostics = base.NewDiagnostics(os.Stdout)
+	target.Diagnostics = base.NewDiagnostics(output)
 	target.Diagnostics.PanicOnExit = reusable
 	target.ArchInfo = arch
 	target.Ctxt = obj.Linknew(arch.LinkArch)
+	target.Ctxt.DisableProgReuse = reusable
 	target.TypeContext = types.NewContext(arch.LinkArch.PtrSize, arch.LinkArch.RegSize, arch.MAXWIDTH)
 	target.TypeContext.Link = target.Ctxt
 	target.TypeContext.Diagnostics = target.Diagnostics
-	base.Ctxt = target.Ctxt
+	if request == nil {
+		base.Ctxt = target.Ctxt
+	} else {
+		target.Ctxt.Pkgpath = request.PackagePath
+	}
 	target.Ctxt.DiagFunc = target.Diagnostics.Diagf
 	target.Ctxt.DiagFlush = target.Diagnostics.FlushErrors
-	target.Ctxt.Bso = bufio.NewWriter(os.Stdout)
+	target.Ctxt.Bso = bufio.NewWriter(output)
 	if onTarget != nil {
 		onTarget(target)
 	}
@@ -112,21 +125,39 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	target.Ctxt.UseBASEntries = target.Ctxt.Headtype != objabi.Hdarwin
 
 	ssaOptions := ssacompile.NewOptions()
-	base.ParseFlagsWithDebugSSA(ssaOptions.PhaseOption)
-	target.Flags = base.Flag
-	target.Debug = base.Debug
-	target.Diagnostics.Configure(target.Ctxt, target.Flags, target.Debug, os.Stdout)
+	if request == nil {
+		base.ParseFlagsWithDebugSSA(ssaOptions.PhaseOption)
+		target.Flags = base.Flag
+		target.Debug = base.Debug
+		target.PGOHash = base.PGOHash
+		target.LoopVarHash = base.LoopVarHash
+		target.GossaHash = base.NewHashDebug("gossahash", target.Debug.Gossahash, nil)
+		target.ConvertHash = base.ConvertHash
+		target.FmaHash = base.FmaHash
+		target.LiteralAllocHash = base.LiteralAllocHash
+		target.VariableMakeHash = base.VariableMakeHash
+		target.MergeLocalsHash = base.MergeLocalsHash
+	} else {
+		options, err := base.ParseCompileConfig(target.Ctxt, request.Options, ssaOptions.PhaseOption, output)
+		if err != nil {
+			target.Diagnostics.Fatalf("invalid compiler options: %v", err)
+		}
+		target.Flags = options.Flags
+		target.Flags.LowerO = outputPath
+		target.Debug = options.Debug
+		target.GossaHash = options.GossaHash
+		target.PGOHash = options.PGOHash
+		target.LoopVarHash = options.LoopVarHash
+		target.ConvertHash = options.ConvertHash
+		target.FmaHash = options.FmaHash
+		target.LiteralAllocHash = options.LiteralAllocHash
+		target.VariableMakeHash = options.VariableMakeHash
+		target.MergeLocalsHash = options.MergeLocalsHash
+	}
+	target.Diagnostics.Configure(target.Ctxt, target.Flags, target.Debug, output)
 	ssaCompiler := ssacompile.ConfigureTarget(target, ssaOptions)
-	target.PGOHash = base.PGOHash
-	target.LoopVarHash = base.LoopVarHash
-	target.GossaHash = base.NewHashDebug("gossahash", target.Debug.Gossahash, nil)
-	target.ConvertHash = base.ConvertHash
-	target.FmaHash = base.FmaHash
-	target.LiteralAllocHash = base.LiteralAllocHash
-	target.VariableMakeHash = base.VariableMakeHash
-	target.MergeLocalsHash = base.MergeLocalsHash
 
-	if !base.InSession() {
+	if !reusable {
 		if flagGCStart := target.Debug.GCStart; flagGCStart > 0 || // explicit flags overrides environment variable disable of GC boost
 			os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" && target.Flags.LowerC != 1 { // explicit GC knobs or no concurrency implies default heap
 			startHeapMB := int64(128)
@@ -216,7 +247,9 @@ func mainWithSources(archInit func(*ssagen.ArchInfo), sourceFiles []noder.Source
 	}
 
 	arch.LinkArch.Init(target.Ctxt)
-	startProfile(target)
+	if !reusable {
+		startProfile(target)
+	}
 	if target.Flags.Race || target.Flags.MSan || target.Flags.ASan {
 		target.Flags.Cfg.Instrumenting = true
 	}

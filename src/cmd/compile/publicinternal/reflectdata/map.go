@@ -53,9 +53,9 @@ func MapGroupType(target *ir.Package, t *types.Type) *types.Type {
 		elemArr.SetNoalg(true)
 
 		fields = []*types.Field{
-			makefield("ctrl", target.Type(types.TUINT64)),
-			makefield("keys", keyArr),
-			makefield("elems", elemArr),
+			makefield(target, "ctrl", target.Type(types.TUINT64)),
+			makefield(target, "keys", keyArr),
+			makefield(target, "elems", elemArr),
 		}
 	} else {
 		// Interleaved slot layout (KVKVKVKV):
@@ -67,8 +67,8 @@ func MapGroupType(target *ir.Package, t *types.Type) *types.Type {
 		//     }
 		// }
 		slotFields := []*types.Field{
-			makefield("key", keytype),
-			makefield("elem", elemtype),
+			makefield(target, "key", keytype),
+			makefield(target, "elem", elemtype),
 		}
 		slot := types.NewStruct(slotFields)
 		slot.SetNoalg(true)
@@ -77,8 +77,8 @@ func MapGroupType(target *ir.Package, t *types.Type) *types.Type {
 		slotArr.SetNoalg(true)
 
 		fields = []*types.Field{
-			makefield("ctrl", target.Type(types.TUINT64)),
-			makefield("slots", slotArr),
+			makefield(target, "ctrl", target.Type(types.TUINT64)),
+			makefield(target, "slots", slotArr),
 		}
 	}
 
@@ -131,13 +131,13 @@ func mapTableType(target *ir.Package) *types.Type {
 	// }
 	// must match publicinternal/runtime/maps/table.go:table.
 	fields := []*types.Field{
-		makefield("used", target.Type(types.TUINT16)),
-		makefield("capacity", target.Type(types.TUINT16)),
-		makefield("growthLeft", target.Type(types.TUINT16)),
-		makefield("localDepth", target.Type(types.TUINT8)),
-		makefield("index", target.Type(types.TINT)),
-		makefield("groups_data", target.Type(types.TUNSAFEPTR)),
-		makefield("groups_lengthMask", target.Type(types.TUINT64)),
+		makefield(target, "used", target.Type(types.TUINT16)),
+		makefield(target, "capacity", target.Type(types.TUINT16)),
+		makefield(target, "growthLeft", target.Type(types.TUINT16)),
+		makefield(target, "localDepth", target.Type(types.TUINT8)),
+		makefield(target, "index", target.Type(types.TINT)),
+		makefield(target, "groups_data", target.Type(types.TUNSAFEPTR)),
+		makefield(target, "groups_lengthMask", target.Type(types.TUINT64)),
 	}
 
 	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.InternalMapsPkg.Lookup("table"))
@@ -183,15 +183,15 @@ func MapType(target *ir.Package) *types.Type {
 	// }
 	// must match publicinternal/runtime/maps/map.go:Map.
 	fields := []*types.Field{
-		makefield("used", target.Type(types.TUINT64)),
-		makefield("seed", target.Type(types.TUINTPTR)),
-		makefield("dirPtr", target.Type(types.TUNSAFEPTR)),
-		makefield("dirLen", target.Type(types.TINT)),
-		makefield("globalDepth", target.Type(types.TUINT8)),
-		makefield("globalShift", target.Type(types.TUINT8)),
-		makefield("writing", target.Type(types.TUINT8)),
-		makefield("tombstonePossible", target.Type(types.TBOOL)),
-		makefield("clearSeq", target.Type(types.TUINT64)),
+		makefield(target, "used", target.Type(types.TUINT64)),
+		makefield(target, "seed", target.Type(types.TUINTPTR)),
+		makefield(target, "dirPtr", target.Type(types.TUNSAFEPTR)),
+		makefield(target, "dirLen", target.Type(types.TINT)),
+		makefield(target, "globalDepth", target.Type(types.TUINT8)),
+		makefield(target, "globalShift", target.Type(types.TUINT8)),
+		makefield(target, "writing", target.Type(types.TUINT8)),
+		makefield(target, "tombstonePossible", target.Type(types.TBOOL)),
+		makefield(target, "clearSeq", target.Type(types.TUINT64)),
 	}
 
 	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, target.InternalMapsPkg.Lookup("Map"))
@@ -243,18 +243,18 @@ func MapIterType(target *ir.Package) *types.Type {
 	// }
 	// must match publicinternal/runtime/maps/table.go:Iter.
 	fields := []*types.Field{
-		makefield("key", target.Type(types.TUNSAFEPTR)),  // Used in range.go for TMAP.
-		makefield("elem", target.Type(types.TUNSAFEPTR)), // Used in range.go for TMAP.
-		makefield("typ", target.Type(types.TUNSAFEPTR)),
-		makefield("m", types.NewPtr(MapType(target))),
-		makefield("groupSlotOffset", target.Type(types.TUINT64)),
-		makefield("dirOffset", target.Type(types.TUINT64)),
-		makefield("clearSeq", target.Type(types.TUINT64)),
-		makefield("globalDepth", target.Type(types.TUINT8)),
-		makefield("dirIdx", target.Type(types.TINT)),
-		makefield("tab", types.NewPtr(mapTableType(target))),
-		makefield("group", target.Type(types.TUNSAFEPTR)),
-		makefield("entryIdx", target.Type(types.TUINT64)),
+		makefield(target, "key", target.Type(types.TUNSAFEPTR)),  // Used in range.go for TMAP.
+		makefield(target, "elem", target.Type(types.TUNSAFEPTR)), // Used in range.go for TMAP.
+		makefield(target, "typ", target.Type(types.TUNSAFEPTR)),
+		makefield(target, "m", types.NewPtr(MapType(target))),
+		makefield(target, "groupSlotOffset", target.Type(types.TUINT64)),
+		makefield(target, "dirOffset", target.Type(types.TUINT64)),
+		makefield(target, "clearSeq", target.Type(types.TUINT64)),
+		makefield(target, "globalDepth", target.Type(types.TUINT8)),
+		makefield(target, "dirIdx", target.Type(types.TINT)),
+		makefield(target, "tab", types.NewPtr(mapTableType(target))),
+		makefield(target, "group", target.Type(types.TUNSAFEPTR)),
+		makefield(target, "entryIdx", target.Type(types.TUINT64)),
 	}
 
 	// build iterator struct holding the above fields

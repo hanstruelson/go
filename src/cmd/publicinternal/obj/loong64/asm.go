@@ -11,6 +11,7 @@ import (
 	"log"
 	"math/bits"
 	"slices"
+	"sync"
 )
 
 // ctxt0 holds state while assembling a single function.
@@ -452,6 +453,8 @@ func pcAlignPadLength(ctxt *obj.Link, pc int64, alignedValue int64) int {
 	return int(-pc & (alignedValue - 1))
 }
 
+// buildopMu protects the one-time construction of the shared opcode tables.
+var buildopMu sync.Mutex
 var oprange [ALAST & obj.AMask][]Optab
 
 var xcmp [C_NCLASS][C_NCLASS]bool
@@ -1293,6 +1296,9 @@ func opset(a, b0 obj.As) {
 }
 
 func buildop(ctxt *obj.Link) {
+	buildopMu.Lock()
+	defer buildopMu.Unlock()
+
 	if ctxt.DiagFunc == nil {
 		ctxt.DiagFunc = func(format string, args ...any) {
 			log.Printf(format, args...)

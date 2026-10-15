@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"cmd/publicinternal/objabi"
 	"fmt"
+	"io"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
-	"io"
 	"strings"
 )
 
@@ -219,7 +219,7 @@ func (ctxt *Link) NewProg() *Prog {
 }
 
 func (ctxt *Link) CanReuseProgs() bool {
-	return ctxt.Debugasm == 0
+	return ctxt.Debugasm == 0 && !ctxt.DisableProgReuse
 }
 
 func isZReg(r int) bool {

@@ -36,13 +36,10 @@ import (
 	"cmd/publicinternal/sys"
 	"encoding/binary"
 	"fmt"
-	"publicinternal/buildcfg"
 	"log"
+	"publicinternal/buildcfg"
 	"strings"
-)
-
-var (
-	plan9privates *obj.LSym
+	"sync"
 )
 
 // Instruction layout.
@@ -343,6 +340,9 @@ const (
 )
 
 var ycover [Ymax * Ymax]uint8
+
+// instinitMu protects one-time construction of the shared opcode tables.
+var instinitMu sync.Mutex
 
 var reg [MAXREG]int
 
@@ -2247,6 +2247,9 @@ func span6(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 }
 
 func instinit(ctxt *obj.Link) {
+	instinitMu.Lock()
+	defer instinitMu.Unlock()
+
 	if ycover[0] != 0 {
 		// Already initialized; stop now.
 		// This happens in the cmd/asm tests,
@@ -2264,8 +2267,7 @@ func instinit(ctxt *obj.Link) {
 		// allowed to access from anywhere. (Would be nice to
 		// mark it external, but we don't have a mechanism for
 		// that.)
-		plan9privates = ctxt.Lookup("_privates")
-		plan9privates.Set(obj.AttrLinkname, true)
+		ctxt.LookupInit("_privates", func(sym *obj.LSym) { sym.Set(obj.AttrLinkname, true) })
 	}
 
 	for i := range avxOptab {
@@ -5125,7 +5127,7 @@ func (ab *AsmBuf) doasm(ctxt *obj.Link, cursym *obj.LSym, p *obj.Prog) {
 							pp.From = obj.Addr{}
 							pp.From.Type = obj.TYPE_MEM
 							pp.From.Name = obj.NAME_EXTERN
-							pp.From.Sym = plan9privates
+							pp.From.Sym = ctxt.Lookup("_privates")
 							pp.From.Offset = 0
 							pp.From.Index = REG_NONE
 							ab.Put1(0x8B)
@@ -5166,7 +5168,7 @@ func (ab *AsmBuf) doasm(ctxt *obj.Link, cursym *obj.LSym, p *obj.Prog) {
 						pp.From = obj.Addr{}
 						pp.From.Type = obj.TYPE_MEM
 						pp.From.Name = obj.NAME_EXTERN
-						pp.From.Sym = plan9privates
+						pp.From.Sym = ctxt.Lookup("_privates")
 						pp.From.Offset = 0
 						pp.From.Index = REG_NONE
 						ab.rexflag |= Pw

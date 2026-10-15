@@ -36,11 +36,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"publicinternal/buildcfg"
 	"log"
 	"math"
 	"math/bits"
+	"publicinternal/buildcfg"
 	"slices"
+	"sync"
 )
 
 // ctxt7 holds state while assembling a single function.
@@ -203,6 +204,8 @@ var atomicCASP = map[obj.As]uint32{
 	ACASPLW:  0<<30 | 0x41<<21 | 0x3f<<10,
 }
 
+// buildopMu protects the one-time construction of the shared opcode tables.
+var buildopMu sync.Mutex
 var oprange [obj.AllowedOpCodes][]Optab
 
 var xcmp [C_NCLASS][C_NCLASS]bool
@@ -2760,6 +2763,9 @@ func oprangeset(a obj.As, t []Optab) {
 }
 
 func buildop(ctxt *obj.Link) {
+	buildopMu.Lock()
+	defer buildopMu.Unlock()
+
 	if oprange[AAND&obj.AMask] != nil {
 		// Already initialized; stop now.
 		// This happens in the cmd/asm tests,

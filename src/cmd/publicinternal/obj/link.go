@@ -1178,6 +1178,7 @@ type Link struct {
 	Arch                 *LinkArch
 	CompressInstructions bool // use compressed instructions where possible (if supported by architecture)
 	Debugasm             int
+	DisableProgReuse     bool // disable the compiler's shared Prog cache for independent requests
 	Debugvlog            bool
 	Debugpcln            string
 	Flag_shared          bool

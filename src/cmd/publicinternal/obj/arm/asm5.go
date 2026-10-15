@@ -34,10 +34,11 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"fmt"
-	"publicinternal/buildcfg"
 	"log"
 	"math"
+	"publicinternal/buildcfg"
 	"slices"
+	"sync"
 )
 
 // ctxt5 holds state while assembling a single function.
@@ -352,16 +353,11 @@ var mbOp = []struct {
 	{REG_MB_OSHST, 2},
 }
 
+// buildopMu protects the one-time construction of the shared opcode tables.
+var buildopMu sync.Mutex
 var oprange [ALAST & obj.AMask][]Optab
 
 var xcmp [C_GOK + 1][C_GOK + 1]bool
-
-var (
-	symdiv  *obj.LSym
-	symdivu *obj.LSym
-	symmod  *obj.LSym
-	symmodu *obj.LSym
-)
 
 // Note about encoding: Prog.scond holds the condition encoding,
 // but XOR'ed with C_SCOND_XOR, so that C_SCOND_NONE == 0.
@@ -1226,17 +1222,15 @@ func opset(a, b0 obj.As) {
 }
 
 func buildop(ctxt *obj.Link) {
+	buildopMu.Lock()
+	defer buildopMu.Unlock()
+
 	if oprange[AAND&obj.AMask] != nil {
 		// Already initialized; stop now.
 		// This happens in the cmd/asm tests,
 		// each of which re-initializes the arch.
 		return
 	}
-
-	symdiv = ctxt.Lookup("runtime._div")
-	symdivu = ctxt.Lookup("runtime._divu")
-	symmod = ctxt.Lookup("runtime._mod")
-	symmodu = ctxt.Lookup("runtime._modu")
 
 	var n int
 
