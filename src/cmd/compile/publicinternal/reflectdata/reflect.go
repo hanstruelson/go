@@ -1206,7 +1206,7 @@ func WriteBasicTypes(target *ir.Package) {
 
 	// emit type for func(error) string,
 	// which is the type of an auto-generated wrapper.
-	writeType(target, types.NewPtr(types.NewSignature(nil, []*types.Field{
+	writeType(target, types.NewPtr(types.NewSignatureIn(target.TypeContext, nil, []*types.Field{
 		types.NewField(target.AutoPos, nil, target.ErrorType),
 	}, []*types.Field{
 		types.NewField(target.AutoPos, nil, target.Type(types.TSTRING)),

@@ -192,7 +192,7 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 	// only trace if there's work to do
 	if base.EnableTrace {
 		context := contextForFunc(curfunc)
-		if context == nil && n.Type() != nil {
+		if context == nil && n.Type() != nil && !n.Type().IsUntyped() {
 			context = n.Type().Context()
 		}
 		defer tracePrint("typecheck", n, context)(&res)
@@ -222,10 +222,10 @@ func typecheck(curfunc *ir.Func, n ir.Node, top int) (res ir.Node) {
 	n.SetTypecheck(1)
 
 	t := n.Type()
-	if t != nil && !t.IsFuncArgStruct() && n.Op() != ir.OTYPE {
+	if t != nil && !t.IsUntyped() && !t.IsFuncArgStruct() && n.Op() != ir.OTYPE {
 		switch t.Kind() {
 		case types.TFUNC, // might have TANY; wait until it's called
-			types.TANY, types.TFORW, types.TIDEAL, types.TNIL, types.TBLANK:
+			types.TANY, types.TFORW, types.TBLANK:
 			break
 
 		default:

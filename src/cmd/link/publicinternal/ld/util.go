@@ -28,6 +28,9 @@ func runAtExitFuncs() {
 // Exit exits with code after executing all atExitFuncs.
 func Exit(code int) {
 	runAtExitFuncs()
+	if inProcessLink {
+		panic(linkExit{code: code})
+	}
 	os.Exit(code)
 }
 

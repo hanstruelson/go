@@ -10,11 +10,11 @@ import (
 	"debug/macho"
 	"debug/pe"
 	"fmt"
-	"publicinternal/testenv"
-	"publicinternal/xcoff"
 	"io"
 	"os"
 	"path/filepath"
+	"publicinternal/testenv"
+	"publicinternal/xcoff"
 	"runtime"
 	"sync"
 	"testing"
@@ -34,6 +34,31 @@ func TestMain(m *testing.M) {
 		os.RemoveAll(buildDir)
 	}
 	os.Exit(exit)
+}
+
+func TestParseBytesAndEntryBytes(t *testing.T) {
+	var data bytes.Buffer
+	data.Write(archiveHeader)
+	var header [HeaderSize]byte
+	FormatHeader(header[:], "__.PKGDEF", 3)
+	data.Write(header[:])
+	data.Write([]byte{1, 2, 3})
+	data.WriteByte('\n')
+
+	a, err := ParseBytes(data.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Entries) != 1 || a.Entries[0].Type != EntryPkgDef {
+		t.Fatalf("unexpected parsed entries: %+v", a.Entries)
+	}
+	got, err := a.EntryBytes(a.Entries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte{1, 2, 3}) {
+		t.Fatalf("EntryBytes = %v, want [1 2 3]", got)
+	}
 }
 
 func copyDir(dst, src string) error {

@@ -240,6 +240,10 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		}
 		target.Flags = options.Flags
 		target.Flags.LowerO = outputPath
+		target.Flags.Cfg.PackageData = request.PackageArchives
+		if request.ImportMap != nil {
+			target.Flags.Cfg.ImportMap = request.ImportMap
+		}
 		target.Debug = options.Debug
 		target.Environment = options.Environment
 		target.GossaHash = options.GossaHash
@@ -388,9 +392,21 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 	// Parse and typecheck input.
 	var frontend *noder.Context
 	if command != nil {
-		frontend = noder.LoadPackage(commandFiles, target, timer)
+		jitFiles, hasJIT, err := commandJITSourceFiles(target, commandFiles)
+		if err != nil {
+			target.Diagnostics.ErrorfAt(target.AutoPos, 0, "jit metadata: %v", err)
+			target.Diagnostics.ErrorExit()
+		}
+		if hasJIT {
+			frontend = noder.LoadPackageFromSourceFiles(jitFiles, target, timer)
+		} else {
+			frontend = noder.LoadPackage(commandFiles, target, timer)
+		}
 	} else {
 		frontend = noder.LoadPackageFromSourceFiles(sourceFiles, target, timer)
+	}
+	if request != nil {
+		frontend.ObjectOutput = request.objectOutput
 	}
 
 	// As a convenience to users (toolchain maintainers, in particular),

@@ -5,8 +5,10 @@
 package noder
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	pathpkg "path"
 	"publicinternal/buildcfg"
@@ -58,23 +60,33 @@ func islocalname(name string) bool {
 		strings.HasPrefix(name, "../") || name == ".."
 }
 
-func openPackage(target *ir.Package, path string) (*os.File, error) {
+func openPackage(target *ir.Package, path string) (*bio.Reader, error) {
+	if data, ok := target.Flags.Cfg.PackageData[path]; ok {
+		return bio.NewReaderFrom(bytes.NewReader(data), "embedded:"+path), nil
+	}
+	openFile := func(name string) (*bio.Reader, error) {
+		f, err := os.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		return bio.NewReader(f), nil
+	}
 	if islocalname(path) {
 		if target.Flags.NoLocalImports {
 			return nil, errors.New("local imports disallowed")
 		}
 
 		if target.Flags.Cfg.PackageFile != nil {
-			return os.Open(target.Flags.Cfg.PackageFile[path])
+			return openFile(target.Flags.Cfg.PackageFile[path])
 		}
 
 		// try .a before .o.  important for building libraries:
 		// if there is an array.o in the array.a library,
 		// want to find all of array.a, not just array.o.
-		if file, err := os.Open(fmt.Sprintf("%s.a", path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s.a", path)); err == nil {
 			return file, nil
 		}
-		if file, err := os.Open(fmt.Sprintf("%s.o", path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s.o", path)); err == nil {
 			return file, nil
 		}
 		return nil, errors.New("file not found")
@@ -88,14 +100,14 @@ func openPackage(target *ir.Package, path string) (*os.File, error) {
 	}
 
 	if target.Flags.Cfg.PackageFile != nil {
-		return os.Open(target.Flags.Cfg.PackageFile[path])
+		return openFile(target.Flags.Cfg.PackageFile[path])
 	}
 
 	for _, dir := range target.Flags.Cfg.ImportDirs {
-		if file, err := os.Open(fmt.Sprintf("%s/%s.a", dir, path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s/%s.a", dir, path)); err == nil {
 			return file, nil
 		}
-		if file, err := os.Open(fmt.Sprintf("%s/%s.o", dir, path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s/%s.o", dir, path)); err == nil {
 			return file, nil
 		}
 	}
@@ -112,10 +124,10 @@ func openPackage(target *ir.Package, path string) (*os.File, error) {
 			suffix = "_asan"
 		}
 
-		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.a", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s/pkg/%s_%s%s/%s.a", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
 			return file, nil
 		}
-		if file, err := os.Open(fmt.Sprintf("%s/pkg/%s_%s%s/%s.o", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
+		if file, err := openFile(fmt.Sprintf("%s/pkg/%s_%s%s/%s.o", buildcfg.GOROOT, target.GOOS, target.Ctxt.Arch.Name, suffix, path)); err == nil {
 			return file, nil
 		}
 	}
@@ -237,9 +249,7 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 }
 
 // readExportData returns the contents of GC-created unified export data.
-func readExportData(f *os.File, target *ir.Package) (data string, err error) {
-	r := bio.NewReader(f)
-
+func readExportData(r *bio.Reader, target *ir.Package) (data string, err error) {
 	sz, err := exportdata.FindPackageDefinition(r.Reader)
 	if err != nil {
 		return
@@ -267,9 +277,17 @@ func readExportData(f *os.File, target *ir.Package) (data string, err error) {
 	// as a single large string. This reduces heap fragmentation and
 	// allows returning individual substrings very efficiently.
 	var mapped string
-	mapped, err = base.MapFile(r.File(), pos, end-pos)
-	if err != nil {
-		return
+	if file := r.File(); file != nil {
+		mapped, err = base.MapFile(file, pos, end-pos)
+		if err != nil {
+			return
+		}
+	} else {
+		section := make([]byte, end-pos)
+		if _, err = io.ReadFull(r.Reader, section); err != nil {
+			return
+		}
+		mapped = string(section)
 	}
 
 	// check for end-of-section marker "\n$$\n" and remove it

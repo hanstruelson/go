@@ -12,6 +12,7 @@ import (
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/syntax"
 	"cmd/compile/publicinternal/types"
+	"cmd/publicinternal/bio"
 	"cmd/publicinternal/src"
 )
 
@@ -19,6 +20,7 @@ import (
 // It is separate from the process-wide compiler state used by other packages.
 type Context struct {
 	Target         *ir.Package
+	ObjectOutput   *bio.Writer
 	Inliner        *inline.Context
 	timer          *base.Timings
 	localPkgReader *pkgReader

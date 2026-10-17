@@ -116,6 +116,7 @@ type CmdFlags struct {
 		ImportDirs   []string                 // appended to by -I
 		ImportMap    map[string]string        // set by -importcfg
 		PackageFile  map[string]string        // set by -importcfg; nil means not in use
+		PackageData  map[string][]byte        // in-memory package archives supplied by a compile request
 		CoverageInfo *covcmd.CoverFixupConfig // set by -coveragecfg
 		SpectreIndex bool                     // set by -spectre=index or -spectre=all
 		// Whether we are adding any sort of code instrumentation, such as

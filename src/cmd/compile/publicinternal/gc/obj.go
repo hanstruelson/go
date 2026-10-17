@@ -64,6 +64,10 @@ func notifyExport(target *ir.Package, exportFD int) {
 func dumpobj(frontend *noder.Context) {
 	target := frontend.Target
 	if target.Flags.LinkObj == "" {
+		if frontend.ObjectOutput != nil {
+			dumpobjToWriter(frontend, frontend.ObjectOutput, modeCompilerObj|modeLinkerObj)
+			return
+		}
 		dumpobj1(frontend, target.Flags.LowerO, modeCompilerObj|modeLinkerObj)
 		return
 	}
@@ -76,6 +80,17 @@ func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 		frontend.Target.Diagnostics.Fatalf("can't create %s: %v", outfile, err)
 	}
 
+	writeObjArchive(frontend, bout, mode)
+	if err := bout.Close(); err != nil {
+		frontend.Target.Diagnostics.Fatalf("error while writing to file %s: %v", outfile, err)
+	}
+}
+
+func dumpobjToWriter(frontend *noder.Context, bout *bio.Writer, mode int) {
+	writeObjArchive(frontend, bout, mode)
+}
+
+func writeObjArchive(frontend *noder.Context, bout *bio.Writer, mode int) {
 	bout.WriteString("!<arch>\n")
 
 	if mode&modeCompilerObj != 0 {
@@ -89,9 +104,6 @@ func dumpobj1(frontend *noder.Context, outfile string, mode int) {
 		finishArchiveEntry(bout, start, "_go_.o")
 	}
 
-	if err := bout.Close(); err != nil {
-		frontend.Target.Diagnostics.Fatalf("error while writing to file %s: %v", outfile, err)
-	}
 }
 
 func printObjHeader(target *ir.Package, bout *bio.Writer) {

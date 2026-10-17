@@ -808,12 +808,30 @@ func (b *Builder) buildExport(ctx context.Context, a *Action) (err error) {
 			fmt.Fprintf(&icfg, "importmap %s=%s\n", raw, final)
 		}
 	}
-	for _, a1 := range a.Deps {
-		p1 := a1.Package
-		if p1 == nil || p1.ImportPath == "" || a1.built == "" {
-			continue
+	// Make the complete selected package closure available to the compiler.
+	// Most compile actions only need direct imports, but compiler metadata
+	// producers may need to preserve export data and archives for packages
+	// referenced transitively by those imports.
+	seenPackageFiles := make(map[string]bool)
+	seenActions := make(map[*Action]bool)
+	var addPackageFiles func(*Action)
+	addPackageFiles = func(action *Action) {
+		if action == nil || seenActions[action] {
+			return
 		}
-		fmt.Fprintf(&icfg, "packagefile %s=%s\n", p1.ImportPath, a1.built)
+		seenActions[action] = true
+		if pkg := action.Package; pkg != nil && pkg.ImportPath != "" && action.built != "" {
+			if !seenPackageFiles[pkg.ImportPath] {
+				fmt.Fprintf(&icfg, "packagefile %s=%s\n", pkg.ImportPath, action.built)
+				seenPackageFiles[pkg.ImportPath] = true
+			}
+		}
+		for _, dep := range action.Deps {
+			addPackageFiles(dep)
+		}
+	}
+	for _, dep := range a.Deps {
+		addPackageFiles(dep)
 	}
 
 	// Prepare Go embed config if needed.

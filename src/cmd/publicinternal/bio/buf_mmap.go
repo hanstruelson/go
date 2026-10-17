@@ -33,6 +33,9 @@ func init() {
 }
 
 func (r *Reader) sliceOS(length uint64) ([]byte, bool) {
+	if r.f == nil {
+		return nil, false
+	}
 	// For small slices, don't bother with the overhead of a
 	// mapping, especially since we have no way to unmap it.
 	const threshold = 16 << 10

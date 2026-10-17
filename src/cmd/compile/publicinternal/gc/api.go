@@ -10,10 +10,9 @@ import (
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/ssagen"
+	"cmd/publicinternal/bio"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -32,6 +31,11 @@ type Request struct {
 	PackagePath string
 	Files       []noder.SourceFile
 	Options     []string
+	// PackageArchives supplies compiler archives by resolved import path.
+	// ImportMap translates source import paths to those resolved paths.
+	PackageArchives map[string][]byte
+	ImportMap       map[string]string
+	objectOutput    *bio.Writer
 }
 
 // Result contains the compiler object archive and diagnostics emitted while
@@ -78,13 +82,6 @@ func Compile(req Request) (result Result, err error) {
 		return result, err
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-compile-request-")
-	if err != nil {
-		return result, err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	outputPath := filepath.Join(tmpDir, "out.o")
 	sourceFiles, err := requestSourceFiles(req.Files)
 	if err != nil {
 		return result, err
@@ -93,9 +90,10 @@ func Compile(req Request) (result Result, err error) {
 	var capture bytes.Buffer
 	var target *ir.Package
 	var panicValue any
+	req.objectOutput = bio.NewBufferWriter()
 	func() {
 		defer func() { panicValue = recover() }()
-		mainWithConfig(req.ArchInit, sourceFiles, true, &req, outputPath, &capture, func(t *ir.Package) { target = t }, nil)
+		mainWithConfig(req.ArchInit, sourceFiles, true, &req, "", &capture, func(t *ir.Package) { target = t }, nil)
 	}()
 	if target != nil && target.Diagnostics != nil {
 		result.Errors = target.Diagnostics.Errors()
@@ -115,9 +113,9 @@ func Compile(req Request) (result Result, err error) {
 		return result, &CompileError{Status: status, Diagnostics: result.Diagnostics}
 	}
 
-	result.Object, err = os.ReadFile(outputPath)
+	result.Object, err = req.objectOutput.Bytes()
 	if err != nil {
-		return result, fmt.Errorf("read compiler object: %w", err)
+		return result, fmt.Errorf("read in-memory compiler object: %w", err)
 	}
 	return result, nil
 }
@@ -158,7 +156,7 @@ func validateRequestOptions(options []string) error {
 		switch name {
 		case "p", "o", "env", "asmhdr", "bench", "cpuprofile", "memprofile", "memprofilerate", "blockprofile", "mutexprofile", "traceprofile", "trace", "json", "linkobj", "exportfd":
 			return fmt.Errorf("compile option %q is managed by the request API", option)
-		case "shared", "dynlink", "linkshared":
+		case "shared", "linkshared":
 			return fmt.Errorf("compile option %q is unavailable in reusable compilation", option)
 		case "V":
 			return fmt.Errorf("compile option %q terminates the process and is unavailable in the request API", option)

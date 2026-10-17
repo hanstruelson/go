@@ -64,6 +64,11 @@ func identical(t1, t2 *Type, flags int, assumedEqual map[typePair]struct{}) bool
 		}
 		// Special case: we keep byte/uint8 and rune/int32
 		// separate for error messages. Treat them as equal.
+		// Context-free untyped bool and string values are not equal to
+		// named bool or string types. Avoid asking them for a target context.
+		if t1.context == nil || t2.context == nil {
+			return false
+		}
 		context := contextForType(t1)
 		switch t1.kind {
 		case TUINT8:

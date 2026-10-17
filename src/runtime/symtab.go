@@ -447,6 +447,13 @@ type moduledata struct {
 	typemap map[*_type]*_type // *_type to use from previous module
 
 	next *moduledata
+
+	// jitModule marks runtime metadata synthesized for in-memory Go code.
+	// jitAllocBase and jitAllocSize let the runtime release its table block
+	// when the module is unregistered.
+	jitModule    bool
+	jitAllocBase unsafe.Pointer
+	jitAllocSize uintptr
 }
 
 // A modulehash is used to compare the ABI of a new module or a
@@ -1022,6 +1029,9 @@ func pcvalue(f funcInfo, off uint32, targetpc uintptr, strict bool) (int32, uint
 	if off == 0 {
 		return -1, 0
 	}
+	// JIT module PC tables are released on unload. Do not cache their
+	// offsets: a later mmap may reuse the same PC range for different code.
+	jitModule := f.datap != nil && f.datap.jitModule
 
 	// Check the cache. This speeds up walks of deep stacks, which
 	// tend to have the same recursive functions over and over,
@@ -1029,7 +1039,7 @@ func pcvalue(f funcInfo, off uint32, targetpc uintptr, strict bool) (int32, uint
 	var checkVal int32
 	var checkPC uintptr
 	ck := pcvalueCacheKey(targetpc)
-	if !skipCache {
+	if !skipCache && !jitModule {
 		mp := acquirem()
 		cache := &mp.pcvalueCache
 		// The cache can be used by the signal handler on this M. Avoid
@@ -1096,7 +1106,7 @@ func pcvalue(f funcInfo, off uint32, targetpc uintptr, strict bool) (int32, uint
 					print("runtime: table value ", val, "@", prevpc, " != cache value ", checkVal, "@", checkPC, " at PC ", targetpc, " off ", off, "\n")
 					throw("bad pcvalue cache")
 				}
-			} else {
+			} else if !jitModule {
 				mp := acquirem()
 				cache := &mp.pcvalueCache
 				cache.inUse++

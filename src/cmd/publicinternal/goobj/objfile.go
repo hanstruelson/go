@@ -740,6 +740,30 @@ func (r *Reader) Sym(i uint32) *Sym {
 	return (*Sym)(unsafe.Pointer(&r.b[off]))
 }
 
+// Hashed64Def returns the i-th short hashed symbol definition.
+func (r *Reader) Hashed64Def(i uint32) *Sym {
+	off := r.h.Offsets[BlkHashed64def] + i*SymSize
+	return (*Sym)(unsafe.Pointer(&r.b[off]))
+}
+
+// HashedDef returns the i-th full hashed symbol definition.
+func (r *Reader) HashedDef(i uint32) *Sym {
+	off := r.h.Offsets[BlkHasheddef] + i*SymSize
+	return (*Sym)(unsafe.Pointer(&r.b[off]))
+}
+
+// NonpkgDef returns the i-th non-package symbol definition.
+func (r *Reader) NonpkgDef(i uint32) *Sym {
+	off := r.h.Offsets[BlkNonpkgdef] + i*SymSize
+	return (*Sym)(unsafe.Pointer(&r.b[off]))
+}
+
+// NonpkgRef returns the i-th non-package symbol reference.
+func (r *Reader) NonpkgRef(i uint32) *Sym {
+	off := r.h.Offsets[BlkNonpkgref] + i*SymSize
+	return (*Sym)(unsafe.Pointer(&r.b[off]))
+}
+
 // NRefFlags returns the number of referenced symbol flags.
 func (r *Reader) NRefFlags() int {
 	return int(r.h.Offsets[BlkRefFlags+1]-r.h.Offsets[BlkRefFlags]) / RefFlagsSize

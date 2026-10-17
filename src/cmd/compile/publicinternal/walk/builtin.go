@@ -842,7 +842,7 @@ func (w *walkState) walkUnsafeSlice(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 		mem := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TUINTPTR))
 		overflow := typecheck.TempAt(w.curfunc.Target.Pos, w.curfunc, w.curfunc.Target.Type(types.TBOOL))
 
-		decl := types.NewSignature(nil,
+		decl := types.NewSignatureIn(w.curfunc.Target.TypeContext, nil,
 			[]*types.Field{
 				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TUINTPTR)),
 				types.NewField(w.curfunc.Target.Pos, nil, w.curfunc.Target.Type(types.TUINTPTR)),

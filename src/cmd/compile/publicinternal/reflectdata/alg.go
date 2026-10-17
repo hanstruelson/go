@@ -99,7 +99,7 @@ func hashFunc(target *ir.Package, sig string) *ir.Func {
 	pos := target.AutoPos // less confusing than end of input
 
 	// func sym(p unsafe.Pointer, h uintptr) uintptr
-	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignature(nil,
+	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignatureIn(target.TypeContext, nil,
 		[]*types.Field{
 			types.NewField(pos, typecheck.Lookup(target, "p"), target.Type(types.TUNSAFEPTR)),
 			types.NewField(pos, typecheck.Lookup(target, "h"), target.Type(types.TUINTPTR)),
@@ -341,7 +341,7 @@ func eqFunc(target *ir.Package, sig string) *ir.Func {
 	pos := target.AutoPos // less confusing than end of input
 
 	// func sym(p, q unsafe.Pointer) bool
-	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignature(nil,
+	fn := ir.NewFunc(target, pos, pos, sym, types.NewSignatureIn(target.TypeContext, nil,
 		[]*types.Field{
 			types.NewField(pos, typecheck.Lookup(target, "p"), target.Type(types.TUNSAFEPTR)),
 			types.NewField(pos, typecheck.Lookup(target, "q"), target.Type(types.TUNSAFEPTR)),

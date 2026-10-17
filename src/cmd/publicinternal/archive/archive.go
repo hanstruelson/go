@@ -48,6 +48,7 @@ type Data struct {
 
 type Archive struct {
 	f       *os.File
+	data    []byte // non-nil when parsed from memory
 	Entries []Entry
 }
 
@@ -124,11 +125,18 @@ type objReader struct {
 }
 
 func (r *objReader) init(f *os.File) {
-	r.a = &Archive{f, nil}
+	r.a = &Archive{f: f}
 	r.offset, _ = f.Seek(0, io.SeekCurrent)
 	r.limit, _ = f.Seek(0, io.SeekEnd)
 	f.Seek(r.offset, io.SeekStart)
 	r.b = bio.NewReader(f)
+}
+
+func (r *objReader) initBytes(data []byte) {
+	r.a = &Archive{data: data}
+	r.offset = 0
+	r.limit = int64(len(data))
+	r.b = bio.NewReaderFrom(bytes.NewReader(data), "<memory>")
 }
 
 // error records that an error occurred.
@@ -246,6 +254,55 @@ func New(f *os.File) (*Archive, error) {
 func Parse(f *os.File, verbose bool) (*Archive, error) {
 	var r objReader
 	r.init(f)
+	return parseReader(&r, f.Name(), verbose)
+}
+
+// ParseBytes parses an archive or object file directly from memory. Entry
+// offsets refer to the supplied slice, and EntryBytes returns views into it.
+func ParseBytes(data []byte, verbose bool) (*Archive, error) {
+	var r objReader
+	r.initBytes(data)
+	return parseReader(&r, "<memory>", verbose)
+}
+
+// EntryBytes returns the bytes for e without copying when the archive was
+// parsed from memory. File-backed archives are read with ReadAt.
+func (a *Archive) EntryBytes(e Entry) ([]byte, error) {
+	return a.readRange(e.Offset, e.Size)
+}
+
+// ObjectBytes returns the goobj payload of a Go object archive member,
+// excluding its textual object header. It returns a view for memory-backed
+// archives and a copy for file-backed archives.
+func (a *Archive) ObjectBytes(e Entry) ([]byte, error) {
+	if e.Obj == nil {
+		return nil, errors.New("archive entry is not a Go object")
+	}
+	return a.readRange(e.Obj.Offset, e.Obj.Size)
+}
+
+func (a *Archive) readRange(offset, size int64) ([]byte, error) {
+	if offset < 0 || size < 0 || size > int64(^uint(0)>>1) || offset > int64(^uint(0)>>1)-size {
+		return nil, errCorruptArchive
+	}
+	end := offset + size
+	if a.data != nil {
+		if end > int64(len(a.data)) {
+			return nil, errCorruptArchive
+		}
+		return a.data[offset:end], nil
+	}
+	if a.f == nil {
+		return nil, errors.New("archive has no backing data")
+	}
+	data := make([]byte, int(size))
+	if _, err := a.f.ReadAt(data, offset); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func parseReader(r *objReader, name string, verbose bool) (*Archive, error) {
 	t, err := r.peek(8)
 	if err != nil {
 		if err == io.EOF {
@@ -269,7 +326,7 @@ func Parse(f *os.File, verbose bool) (*Archive, error) {
 			return nil, err
 		}
 		r.a.Entries = []Entry{{
-			Name: f.Name(),
+			Name: name,
 			Type: EntryGoObj,
 			Data: Data{off, r.limit - off},
 			Obj:  o,

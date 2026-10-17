@@ -270,7 +270,7 @@ func makeABIWrapper(target *ir.Package, f *ir.Func, wrapperABI obj.ABI) {
 
 	// Reuse f's types.Sym to create a new ODCLFUNC/function.
 	// TODO(mdempsky): Means we can't set sym.Def in Declfunc, ugh.
-	fn := ir.NewFunc(target, pos, pos, f.Sym(), types.NewSignature(nil,
+	fn := ir.NewFunc(target, pos, pos, f.Sym(), types.NewSignatureIn(target.TypeContext, nil,
 		typecheck.NewFuncParams(ft.Params()),
 		typecheck.NewFuncParams(ft.Results())))
 	fn.ABI = wrapperABI
@@ -391,7 +391,7 @@ func GenWasmExportWrapper(backend *Context, wrapped *ir.Func) {
 		Linkname: wrapped.WasmExport.Name,
 	}
 	ft := wrapped.Nname.Type()
-	fn := ir.NewFunc(backend.target, pos, pos, sym, types.NewSignature(nil,
+	fn := ir.NewFunc(backend.target, pos, pos, sym, types.NewSignatureIn(backend.target.TypeContext, nil,
 		typecheck.NewFuncParams(ft.Params()),
 		typecheck.NewFuncParams(ft.Results())))
 	fn.ABI = obj.ABI0 // actually wasm ABI
