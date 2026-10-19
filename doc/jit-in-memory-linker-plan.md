@@ -521,6 +521,64 @@ consumer belongs at that root phase. Its package/symbol map also supplies the
 retained set for a relocation-backed manifest. This is a bounded extension to
 the existing link pipeline, not a second archive-discovery mechanism.
 
+#### Compiler-to-linker root and manifest protocol
+
+Carry linker roots in the compiler object, not in a runtime-only metadata
+string and not in a sidecar file. Extend the versioned `goobj` format with a
+`JITScope` block and bump its magic/schema in lockstep with the compiler and
+linker. Each Go package object that has at least one file importing `jit`
+records the sorted unique resolved import paths visible in those files. The
+runtime `BuildMetadata.Files` record remains the per-file source of aliases and
+scope; the object block is only the linker root union. The object reader
+validates the schema, bounds, duplicate paths, and package fingerprints before
+the linker uses it. Older or mismatched object readers fail closed.
+
+After all libraries are loaded and their imports resolved, but before
+dead-code elimination, `cmd/link` collects these records. It verifies every
+root path is present in the selected `LibraryByPkg` graph, then traverses
+`Library.Imports` for the implementation dependency closure. For every
+library in this set it marks all Go definitions reachable, including text,
+data, package initialization records, type descriptors, method wrappers,
+generic helpers, and private functions. Rooting the whole imported package is
+the deliberate first contract: it avoids trying to predict which exported
+function, interface method, or generic body an unknown future Eval statement
+will use. Packages imported only by non-JIT files are not added unless they
+are dependencies of a JIT-visible package. Duplicate symbols still use the
+normal linker's resolution rules. If a required package is available only
+through `-linkshared`, a plugin, or another dynamic Go module, the JIT-capable
+link fails rather than claiming that its definitions are in the executable.
+
+Once ordinary symbol resolution, ABI-wrapper selection, and dead-code
+analysis finish, the linker emits one immutable `runtime.jitmanifest` table
+from that exact retained set. Entries contain the canonical package path,
+resolved linker symbol name, ABI/version, symbol kind, type identity when
+applicable, and a normal relocation to the selected function entry, variable
+storage, or static type descriptor. The table has a header with manifest
+schema, object-format version, compiler/linker/runtime fingerprint, GOOS,
+GOARCH, and enabled build modes. Link-time duplicates are collapsed only by
+the linker's existing canonical symbol identity; ambiguous or missing
+references are fatal link errors. The standard final relocation step supplies
+ASLR-correct process addresses. At startup, the JIT validates the header and
+indexes entries by full identity; it does not rediscover package archives,
+inspect process symbol tables, or resolve names by `dlsym`.
+
+The static type catalog is the type subset of this same table, including every
+Go type descriptor retained from the JIT-visible package closure. Type hash
+and display name are lookup accelerators only. The canonical identity record
+and exact descriptor relocation are authoritative. This ensures the dynamic
+type builder can reuse a host descriptor even when the host value carrying it
+arrives through `any` or an internal reflection path. The table is ordinary
+read-only link output containing relocations, not a copied package object
+archive or a second compiled copy of package code.
+
+The initial supported executable is a statically linked Go package graph on
+Linux/amd64 using the matching internal linker. `-linkshared`, dynamically
+loaded Go plugins as JIT symbol providers, and external Go package definitions
+fail closed. A cgo boundary may be present only under the separate complete
+effect-summary and explicit-pin rules; it does not add dynamically linked Go
+symbols to the manifest. This mode boundary is part of the binary fingerprint
+and is checked before Eval is enabled.
+
 I am confident this is the right architecture for a self-contained
 executable on a fixed Go toolchain and target. I am not confident that the
 current source implements it yet: package-wide roots and manifest generation,
@@ -1998,7 +2056,8 @@ values. General Eval remains Auto and supports arbitrary owner-carrying escapes.
 
 | Facility | Linux/amd64 initial contract |
 | --- | --- |
-| Optimized binary with matching compiler/runtime/linker fingerprint | Supported. It embeds compiler/link metadata, not another Go installation or package archives. |
+| Optimized statically linked Go binary using the matching internal linker and compiler/runtime/linker fingerprint | Supported. It embeds compiler/link metadata, not another Go installation or package archives. |
+| `-linkshared`, dynamically loaded Go plugins as JIT symbol providers, external Go package definitions | Fail closed; their symbol/type identities are not in the executable's relocation-backed manifest. |
 | GC, finalizers, `AddCleanup`, `Pinner`, stack growth, panic/defer, profiling, async preemption | Supported through owner edges, generated maps, and the JIT index protocol. |
 | cgo in statically linked host packages | Allowed only with complete effect summaries. Values retained via `runtime/cgo.Handle` retain owners. Raw JIT addresses need `Pin` and deregistration. Unknown C/assembly effects reject Auto. |
 | `unsafe` in dynamic source or transitive host call | Auto rejects unless the serialized effect summary proves no untracked code/data reference. Manual Pin preserves executable mapping but does not make invalid heap pointers safe. |
