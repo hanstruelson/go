@@ -15,12 +15,20 @@ trampoline. The snippet has no package clause or imports. Its generated
 function uses the caller package identity, and references to imported symbols
 are intended to bind to the host executable.
 
-The linker metadata prototype contains selected references to actual linked
-package symbols. A JIT call to a host package function and access to a host
-global are intended to use the same code and storage as static code. The
-prototype does not yet have a complete linker-generated root set or host
-symbol manifest, and its current metadata does not prove arbitrary import
-coverage.
+The worktree now contains a versioned object-file root record, a linker pass
+that roots the Eval caller package and imported package closures, and a
+relocation-backed manifest builder for linker-selected symbols. Runtime lookup
+uses package/name/ABI identities. These edits have not been built or run, and
+the manifest still lacks the complete dynamic type, itab, and owner contract;
+they are implementation in progress, not evidence that arbitrary imports
+work.
+
+The Linux/amd64 image mapper now uses a runtime-owned mapping token for RW/NX
+creation, page protection, checked unmapping, and runtime memory accounting.
+This is still an unverified seam: it has no JIT budget/reclaim protocol, and
+the current module registration path still appends to the static module chain.
+The production design below replaces that registration path with a separate
+generation index and reader grace periods.
 
 The current runtime returns a manual Code handle. Code.Close unmaps after
 calls made through that handle finish, but it cannot discover callbacks,
@@ -200,10 +208,10 @@ in-memory linker; it is not copied to disk or shipped as a second compiler.
 The current worktree has a schema/importer change intended to remove imported
 `.a` archives from runtime metadata. Build-time extraction still reads the
 exact selected package archive to obtain Go export data; the runtime compiler
-is intended to receive only that export payload. This source change has not
-been built or exercised here. The linker-root and complete host-symbol
-manifest described below are not implemented by the current static list of
-generated references.
+is intended to receive only that export payload. Source changes now add
+linker-readable package roots and a linker-generated symbol manifest. Neither
+the importer change nor the root/manifest path has been built or exercised in
+this work session; source inspection cannot establish that they work.
 
 ## Master plan: export-only package snapshots and host linking
 
@@ -600,7 +608,7 @@ results.
 | Call-site identity | Current `Eval` uses `runtime.Caller(1)` and filename matching. | Replace path inference with a compiler-emitted scope/call-site descriptor. Runtime paths can be transformed by `-trimpath` and do not carry lexical-variable/type-parameter scope. |
 | Export import | The in-process request accepts package export records and `noder` validates target header, export version, and pkgbits fingerprint before using the existing decoder. | This is the correct code-free package type-checking path. Build-time extraction may read the chosen archive; no archive belongs in the runtime snapshot. |
 | Link root point | `cmd/link` runs `loadlib`, `inittasks`, then `deadcode`; the dead-code pass has an explicit initial-root phase. `sym.Library` retains `Imports`, and loader symbols carry package identity. | A compiler-produced root record can be consumed before dead-code elimination. The linker can traverse its already-resolved library graph and root symbols for only Eval-visible packages plus their implementation dependencies. |
-| Host binding | `gc/jitmeta.go` synthesizes ordinary source references for local declarations and selected exported imported functions, variables, methods, and types; `jit/metadata.go` resolves function values to PCs with reflection. `cmd/link` has no JIT root or manifest integration in this worktree. | This keeps selected symbols alive for the prototype, but it is not a complete linker manifest: it omits private helpers and does not carry the exact linker-selected ABI symbol identity needed for arbitrary object relocations. |
+| Host binding | `gc/jitmeta.go` writes a versioned JITScope block; the linker roots each Eval caller package and imported package dependency closure before dead-code elimination, then emits a relocation-backed manifest for selected reachable package symbols. Runtime lookup indexes package/name/ABI identities. These edits have not been built or exercised. | This replaces source-generated references as the sole retention mechanism and binds to linker-selected addresses. It remains incomplete until exact type identity, dynamic types/itabs, and end-to-end import/global identity behavior are implemented and verified. |
 | Runtime module publication | `runtime.moduledata` carries text, function/PC tables, data/BSS ranges and GC masks, types, itabs, and module links. `modulesinit` builds GC masks and adds global-root scan work. The current JIT registration fills function/PC tables and publishes the module list, but not the full data/type contract. | Registration must be extended or factored through shared runtime code before arbitrary snippets with dynamic types or itabs can be supported. The first unloadable format routes pointerful globals to owner-held heap state instead of module root scanning. |
 | Runtime type caches | `typelinksinit` records module typelinks and keeps typemaps in `pinnedTypemaps`; `moduleToTypelinks` caches decoded links; itabs are inserted into a process-wide table. These paths have no general module-removal API. | Stop-the-world alone cannot make unloading safe. New-type/itab modules must stay pinned until every cache and escaped Go value can be invalidated or tracked. |
 | Plugin comparison | The inspected `runtime.plugin_lastmoduleinit` validates the loaded module, updates module/type state, and adds itabs under the itab lock; it does not itself call `stopTheWorld` and the plugin API has no unload operation. | Plugin code is a source of data-layout and validation patterns, not proof of a JIT publication or reclamation protocol. The JIT runtime contract needs its own audit. |
@@ -2120,7 +2128,7 @@ in this workspace. It inspected source and did not build or run tests.
 | What is a PC lifetime problem? | A PC is an address, often stored as `uintptr`; it has no GC edge and no observable last-use. Public raw-PC surfaces include `Caller`, `Callers`, `CallersFrames.Frame.PC`, `Func.Entry`, function-valued `reflect.Value.Pointer`/`UnsafePointer`, and profile/stack records such as `MemProfileRecord`, `BlockProfileRecord`, `MutexProfileRecord`, and `StackRecord`. | New APIs return owner-bearing `CodePC`/function handles. Compatibility APIs that return JIT PCs install a permanent generation pin. Internal profiles/traces use generation-relative `CodeLoc` plus copied strings so sampling does not pin code forever. |
 | Can `AddCleanup` be the destructor? | `runtime.AddCleanup` is asynchronous, arbitrarily delayed, not guaranteed before process exit, can be blocked by user cleanup, and can be prevented by references from its callback/argument. It runs through shared cleanup machinery. | No. Unreachable means eligible for retirement, not already unmapped. Use a dedicated runtime special and JIT queue. If no GC occurs, or at process exit before retirement, the external mapping remains mapped; it is not marked free. A completed GC plus JIT drain can reclaim eligible units. |
 | Do interface/type/reflection caches release dynamic metadata? | `runtime.itabTable` allocates itabs with `persistentalloc`; method slots are raw PCs. ABI type-assert and interface-switch caches store type/itab addresses as `uintptr`. `reflect.ptrMap`, `lookupCache`, `funcLookupCache`, `structLookupCache`, and `layoutCache` are global strong caches; the StructOf comment explicitly says it pins memory. | Use the static type catalog plus the canonical identity protocol below. Dynamic types and itabs bypass static global paths or use owner-local cells. Any shared dynamic canonicalizer uses copied full-identity keys and weak values. Add owner-aware type/name-offset resolution and never add JIT entries to module typelinks, `reflectOffs`, or the static module chain. |
-| Can the current mapper participate in `GOMEMLIMIT`? | `src/jit/image_map_linux_amd64.go` calls raw `mmap`/`munmap`. Runtime `sysAlloc`/`sysFree` update `memstats.other_sys` and `gcController.mappedReady`; `memoryLimitHeapGoal` uses `mappedReady`. The current JIT mapping is therefore invisible to these counters. | Add a runtime-owned JIT map/unmap API that accounts the page-rounded full reservation, exposes mapping bytes to runtime stats/pacing, and triggers the pressure/reclaim path before budget exhaustion. Keep accounting until successful unmap; current `sysFreeOS` has no error result, so the JIT API needs checked unmap semantics and a charged tombstone on failure. |
+| Can the current mapper participate in `GOMEMLIMIT`? | The worktree now has `runtime.JITMapMemory`/`JITMapping`: it charges the full mapping to `memstats.other_sys` and `gcController.mappedReady`, and only debits after checked `munmap`. The mapper uses that token. This source has not been built or exercised. | Keep the runtime token, add budget reservation and a reclaim-before-limit path, and retain a charged tombstone/control record after any failed teardown. Accounting alone does not guarantee reclamation or establish owner lifetime. |
 | What do `unsafe` and C references mean for ownership? | GC traces typed Go pointer fields, not integers containing addresses. A `runtime/cgo.Handle` roots the Go value stored in the handle table, but does not make an arbitrary code address safe. | Auto rejects unknown address storage or foreign retention. A Go callback passed through a rooted handle keeps its owner-bearing function value alive. A raw JIT PC stored by C or in an integer needs `Pin` until the foreign registration and all copied addresses are removed and quiesced. `runtime.Pinner` pins Go heap objects, not executable mappings. |
 | Which package/import context does Eval receive? | Go imports are file-scoped. The package path is package-wide, but an alias imported in a different source file is not in scope at this call site. | Parse a statement/function body with the containing package path, the imports from the file that contains the Eval call, package declarations and type information, and explicit capture descriptors. The snippet has no `package` or `import` clause. Resolve names against the existing executable's host symbols; do not rebuild/import package archives at runtime. |
 
@@ -2264,11 +2272,15 @@ runtime readers, and source audit.
 - Unsupported OS/runtime modes fail closed. No partial module is executable
   or visible after an error.
 
-The current tree still has manual Code.Close, incomplete host manifests and
-relocation coverage, no owner propagation, no dynamic type/cache teardown,
-and no JIT-specific cleanup/reaper or manual pin root table. The selected
-architecture uses module-level LinkUnits first and leaves per-function
-reclamation as a compatible optimization. The design choices are now closed
-for Linux/amd64; the implementation is not production-ready until it satisfies
-the source inventory and invariants above. No tests were run while revising
-this plan.
+The current tree still has manual Code.Close, an unbuilt and incomplete
+host-symbol manifest, prototype relocation coverage, and no owner propagation,
+dynamic type/cache teardown, JIT-specific cleanup/reaper, or manual pin root
+table. Runtime registration still appends JIT moduledata to the static module
+chain; it must be replaced by the separate generation index and reader
+protocol specified above. The runtime mapping token is source-only and
+unverified; it does not yet provide a JIT budget, retirement queue, or
+tombstone registry. The selected architecture uses module-level LinkUnits
+first and leaves per-function reclamation as a compatible optimization. The
+design choices are closed for Linux/amd64; the implementation is not
+production-ready until it satisfies the source inventory and invariants
+above. No builds or tests were run during this implementation pass.
