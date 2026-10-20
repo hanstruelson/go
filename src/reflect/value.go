@@ -473,7 +473,11 @@ func (v Value) call(op string, in []Value) []Value {
 	var stackArgs unsafe.Pointer
 	if frametype.Size() != 0 {
 		if nout == 0 {
-			stackArgs = framePool.Get().(unsafe.Pointer)
+			if framePool != nil {
+				stackArgs = framePool.Get().(unsafe.Pointer)
+			} else {
+				stackArgs = unsafe_New(frametype)
+			}
 		} else {
 			// Can't use pool if the function has return values.
 			// We will leak pointer to args in ret, so its lifetime is not scoped.
@@ -591,7 +595,9 @@ func (v Value) call(op string, in []Value) []Value {
 	if nout == 0 {
 		if stackArgs != nil {
 			typedmemclr(frametype, stackArgs)
-			framePool.Put(stackArgs)
+			if framePool != nil {
+				framePool.Put(stackArgs)
+			}
 		}
 	} else {
 		if stackArgs != nil {
@@ -966,7 +972,12 @@ func callMethod(ctxt *methodValue, frame unsafe.Pointer, retValid *bool, regs *a
 
 	// Make a new frame that is one word bigger so we can store the receiver.
 	// This space is used for both arguments and return values.
-	methodFrame := methodFramePool.Get().(unsafe.Pointer)
+	var methodFrame unsafe.Pointer
+	if methodFramePool != nil {
+		methodFrame = methodFramePool.Get().(unsafe.Pointer)
+	} else {
+		methodFrame = unsafe_New(methodFrameType)
+	}
 	var methodRegs abi.RegArgs
 
 	// Deal with the receiver. It's guaranteed to only be one word in size.
@@ -1126,7 +1137,9 @@ func callMethod(ctxt *methodValue, frame unsafe.Pointer, retValid *bool, regs *a
 	// This must happen after the statement above, so that the return
 	// values will always be scanned by someone.
 	typedmemclr(methodFrameType, methodFrame)
-	methodFramePool.Put(methodFrame)
+	if methodFramePool != nil {
+		methodFramePool.Put(methodFrame)
+	}
 
 	// See the comment in callReflect.
 	runtime.KeepAlive(ctxt)

@@ -21,7 +21,7 @@ const (
 	linkManifestMaxEntries  = 1 << 20
 )
 
-var linkManifestMagic = [8]byte{'G', 'O', 'J', 'I', 'T', 'M', 'F', '1'}
+var linkManifestMagic = [8]byte{'G', 'O', 'J', 'I', 'T', 'M', 'F', '2'}
 
 type linkerManifestPackage struct {
 	path        string
@@ -39,7 +39,7 @@ func loadLinkerManifest() ([]linkerManifestPackage, []LinkedSymbol, error) {
 	if string(data[:8]) != string(linkManifestMagic[:]) {
 		return nil, nil, fmt.Errorf("jit: invalid linker manifest magic")
 	}
-	if binary.LittleEndian.Uint32(data[8:]) != 1 || data[12] != uint8(unsafe.Sizeof(uintptr(0))) || data[13] != 1 || data[14] != 1 || data[15] != 0 {
+	if binary.LittleEndian.Uint32(data[8:]) != 2 || data[12] != uint8(unsafe.Sizeof(uintptr(0))) || data[13] != 1 || data[14] != 1 || data[15] != 0 {
 		return nil, nil, fmt.Errorf("jit: unsupported linker manifest version or target")
 	}
 	packageCount := uint64(binary.LittleEndian.Uint32(data[16:]))
@@ -95,7 +95,7 @@ func loadLinkerManifest() ([]linkerManifestPackage, []LinkedSymbol, error) {
 		address := binary.LittleEndian.Uint64(data[off+16:])
 		typeAddress := binary.LittleEndian.Uint64(data[off+24:])
 		reserved := binary.LittleEndian.Uint64(data[off+32:])
-		if pkgIndex >= packageCount || abi > 1 || kind < 1 || kind > 4 || flags != 0 || reserved != 0 || address == 0 || uint64(uintptr(address)) != address {
+		if pkgIndex >= packageCount || abi > 1 || kind < 1 || kind > 4 || flags&^uint8(HostEffectUnknown|HostEffectUnsafe|HostEffectForeign|HostEffectCodePointer|HostEffectRetainsCallbacks|HostEffectInterfaceCall) != 0 || (kind != 1 && flags != 0) || reserved != 0 || address == 0 || uint64(uintptr(address)) != address {
 			return nil, nil, fmt.Errorf("jit: invalid linker manifest symbol record %d", i)
 		}
 		name, err := linkerManifestString(data, nameOffset, nameLength, stringsOffset, totalSize)
@@ -127,6 +127,7 @@ func loadLinkerManifest() ([]linkerManifestPackage, []LinkedSymbol, error) {
 			Name:         name,
 			Kind:         linkKind,
 			ABI:          abi,
+			Effects:      HostEffect(flags),
 			Address:      uintptr(address),
 			TypeAddress:  typePtr,
 			Type:         reflectedType,

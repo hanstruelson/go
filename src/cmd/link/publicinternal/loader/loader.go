@@ -78,21 +78,47 @@ func (a Aux) Sym() Sym { return a.l.resolve(a.r, a.Aux.Sym()) }
 // extra information.
 type oReader struct {
 	*goobj.Reader
-	unit         *sym.CompilationUnit
-	version      int // version of static symbol
-	pkgprefix    string
-	jitScope     []goobj.ImportedPkg // packages visible to runtime Eval in this package
-	syms         []Sym               // Sym's global index, indexed by local index
-	pkg          []uint32            // indices of referenced package by PkgIdx (index into loader.objs array)
-	ndef         int                 // cache goobj.Reader.NSym()
-	nhashed64def int                 // cache goobj.Reader.NHashed64Def()
-	nhasheddef   int                 // cache goobj.Reader.NHashedDef()
-	objidx       uint32              // index of this reader in the objs slice
+	unit            *sym.CompilationUnit
+	version         int // version of static symbol
+	pkgprefix       string
+	jitScopeEnabled bool
+	jitScope        []goobj.ImportedPkg // packages visible to runtime Eval in this package
+	jitMethods      []string            // interface methods visible to runtime Eval source
+	jitEffects      map[uint32]uint8
+	syms            []Sym    // Sym's global index, indexed by local index
+	pkg             []uint32 // indices of referenced package by PkgIdx (index into loader.objs array)
+	ndef            int      // cache goobj.Reader.NSym()
+	nhashed64def    int      // cache goobj.Reader.NHashed64Def()
+	nhasheddef      int      // cache goobj.Reader.NHashedDef()
+	objidx          uint32   // index of this reader in the objs slice
 }
 
 // Total number of defined symbols (package symbols, hashed symbols, and
 // non-package symbols).
 func (r *oReader) NAlldef() int { return r.ndef + r.nhashed64def + r.nhasheddef + r.NNonpkgdef() }
+
+func jitEffectLocalIndex(r *goobj.Reader, ref goobj.SymRef) (uint32, bool) {
+	var base, count uint32
+	switch ref.PkgIdx {
+	case goobj.PkgIdxSelf:
+		count = uint32(r.NSym())
+	case goobj.PkgIdxHashed64:
+		base = uint32(r.NSym())
+		count = uint32(r.NHashed64def())
+	case goobj.PkgIdxHashed:
+		base = uint32(r.NSym() + r.NHashed64def())
+		count = uint32(r.NHasheddef())
+	case goobj.PkgIdxNone:
+		base = uint32(r.NSym() + r.NHashed64def() + r.NHasheddef())
+		count = uint32(r.NNonpkgdef())
+	default:
+		return 0, false
+	}
+	if ref.SymIdx >= count {
+		return 0, false
+	}
+	return base + ref.SymIdx, true
+}
 
 // whether the symbol at local index li is a content hashed symbol
 func (r *oReader) IsContentHashed(li uint32) bool {
@@ -842,13 +868,33 @@ func (l *Loader) JITScopePackages() ([]goobj.ImportedPkg, error) {
 	return packages, nil
 }
 
-// JITScopeOwners returns the sorted packages whose compiler objects contain a
-// JIT scope record. The owner package is a root in its own right; its unrelated
+// JITScopeMethods returns the sorted union of interface method names visible
+// to Eval source in compiler objects.
+func (l *Loader) JITScopeMethods() ([]string, error) {
+	set := make(map[string]bool)
+	for _, obj := range l.objs {
+		if obj == nil {
+			continue
+		}
+		for _, method := range obj.jitMethods {
+			set[method] = true
+		}
+	}
+	methods := make([]string, 0, len(set))
+	for method := range set {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	return methods, nil
+}
+
+// JITScopeOwners returns the sorted packages whose compiler objects carry a
+// JITScope record. The owner package is a root in its own right; its unrelated
 // imports are not automatically added to the Eval scope.
 func (l *Loader) JITScopeOwners() []string {
 	set := make(map[string]bool)
 	for _, obj := range l.objs {
-		if obj == nil || len(obj.jitScope) == 0 || obj.unit == nil || obj.unit.Lib == nil {
+		if obj == nil || !obj.jitScopeEnabled || obj.unit == nil || obj.unit.Lib == nil {
 			continue
 		}
 		set[obj.unit.Lib.Pkg] = true
@@ -859,6 +905,17 @@ func (l *Loader) JITScopeOwners() []string {
 	}
 	sort.Strings(packages)
 	return packages
+}
+
+// JITEffects returns compiler-emitted direct effects for a selected symbol.
+// Symbols without records are unknown and must be treated conservatively.
+func (l *Loader) JITEffects(s Sym) (uint8, bool) {
+	if s == 0 || l.IsExternal(s) {
+		return 0, false
+	}
+	r, local := l.toLocal(s)
+	effects, ok := r.jitEffects[local]
+	return effects, ok
 }
 
 // Number of reachable symbols.
@@ -2265,21 +2322,43 @@ func (l *Loader) Preload(localSymVersion int, f *bio.Reader, lib *sym.Library, u
 	if err != nil {
 		log.Fatalf("link: malformed JIT scope in %s: %v", f.File().Name(), err)
 	}
+	jitScopeEnabled := r.HasJITScope()
+	jitMethods, err := r.JITScopeMethods()
+	if err != nil {
+		log.Fatalf("link: malformed JIT scope methods in %s: %v", f.File().Name(), err)
+	}
+	jitEffectRecords, err := r.JITEffects()
+	if err != nil {
+		log.Fatalf("link: malformed JIT effect records in %s: %v", f.File().Name(), err)
+	}
 	pkgprefix := objabi.PathToPrefix(lib.Pkg) + "."
 	ndef := r.NSym()
 	nhashed64def := r.NHashed64def()
 	nhasheddef := r.NHasheddef()
 	or := &oReader{
-		Reader:       r,
-		unit:         unit,
-		version:      localSymVersion,
-		pkgprefix:    pkgprefix,
-		jitScope:     jitScope,
-		syms:         make([]Sym, ndef+nhashed64def+nhasheddef+r.NNonpkgdef()+r.NNonpkgref()),
-		ndef:         ndef,
-		nhasheddef:   nhasheddef,
-		nhashed64def: nhashed64def,
-		objidx:       uint32(len(l.objs)),
+		Reader:          r,
+		unit:            unit,
+		version:         localSymVersion,
+		pkgprefix:       pkgprefix,
+		jitScopeEnabled: jitScopeEnabled,
+		jitScope:        jitScope,
+		jitMethods:      jitMethods,
+		jitEffects:      make(map[uint32]uint8, len(jitEffectRecords)),
+		syms:            make([]Sym, ndef+nhashed64def+nhasheddef+r.NNonpkgdef()+r.NNonpkgref()),
+		ndef:            ndef,
+		nhasheddef:      nhasheddef,
+		nhashed64def:    nhashed64def,
+		objidx:          uint32(len(l.objs)),
+	}
+	for _, record := range jitEffectRecords {
+		local, ok := jitEffectLocalIndex(r, record.Sym)
+		if !ok {
+			log.Fatalf("link: JIT effect record in %s refers to an invalid symbol", f.File().Name())
+		}
+		if _, duplicate := or.jitEffects[local]; duplicate {
+			log.Fatalf("link: duplicate JIT effect record in %s", f.File().Name())
+		}
+		or.jitEffects[local] = record.Effects
 	}
 
 	if r.Unlinkable() {

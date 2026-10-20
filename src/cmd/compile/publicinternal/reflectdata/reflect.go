@@ -1522,3 +1522,25 @@ func MarkUsedIfaceMethod(curfunc *ir.Func, n *ir.CallExpr) {
 		Add:  InterfaceMethodOffset(curfunc.Target, ityp, midx),
 	})
 }
+
+// MarkIfaceTypeMethodsUsed marks every method in an interface type's method
+// set as used from curfunc. JIT capture lowering uses this for the static
+// interface type carried by a captured value, whose methods are only called
+// after the normal program has linked.
+func MarkIfaceTypeMethodsUsed(curfunc *ir.Func, ityp *types.Type) {
+	if curfunc.LSym == nil || ityp == nil || !ityp.IsInterface() || ityp.HasShape() {
+		return
+	}
+	methods := ityp.AllMethods()
+	if len(methods) == 0 {
+		return
+	}
+	tsym := TypeLinksym(curfunc.Target, ityp)
+	for midx := range methods {
+		curfunc.LSym.AddRel(curfunc.Target.Ctxt, obj.Reloc{
+			Type: objabi.R_USEIFACEMETHOD,
+			Sym:  tsym,
+			Add:  InterfaceMethodOffset(curfunc.Target, ityp, int64(midx)),
+		})
+	}
+}

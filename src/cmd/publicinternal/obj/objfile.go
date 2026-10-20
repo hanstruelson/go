@@ -212,11 +212,51 @@ func WriteObjFile(ctxt *Link, b *bio.Writer) {
 	h.Offsets[goobj.BlkRefName] = w.Offset()
 	w.refNames()
 
-	// Linker roots for runtime Eval. Paths are sorted by the compiler so the
-	// object representation is deterministic.
+	// Linker roots for runtime Eval. The object format version defines this
+	// block's single layout: package count, method count, package roots, method names.
 	h.Offsets[goobj.BlkJITScope] = w.Offset()
-	for _, pkg := range ctxt.JITScope {
-		pkg.Write(w.Writer)
+	if ctxt.JITScopeEnabled || len(ctxt.JITScope) != 0 || len(ctxt.JITScopeMethods) != 0 {
+		w.Uint32(uint32(len(ctxt.JITScope)))
+		w.Uint32(uint32(len(ctxt.JITScopeMethods)))
+		for _, pkg := range ctxt.JITScope {
+			pkg.Write(w.Writer)
+		}
+		for _, method := range ctxt.JITScopeMethods {
+			w.StringRef(method)
+		}
+	}
+
+	// Per-symbol direct effects are serialized for all text definitions. The
+	// linker combines these compiler facts with the relocation call graph. A
+	// text symbol not analyzed by the Go frontend is explicitly Unknown.
+	h.Offsets[goobj.BlkJITEffects] = w.Offset()
+	effectRecords := make([]goobj.JITEffect, 0)
+	for _, list := range [][]*LSym{ctxt.defs, ctxt.hashed64defs, ctxt.hasheddefs, ctxt.nonpkgdefs} {
+		for _, s := range list {
+			if !s.Type.IsText() {
+				continue
+			}
+			effects, analyzed := s.JITEffects()
+			if !analyzed {
+				effects |= goobj.JITEffectUnknown
+			}
+			effectRecords = append(effectRecords, goobj.JITEffect{
+				Sym:     goobj.SymRef{PkgIdx: uint32(s.PkgIdx), SymIdx: uint32(s.SymIdx)},
+				Effects: effects,
+			})
+		}
+	}
+	slices.SortFunc(effectRecords, func(a, b goobj.JITEffect) int {
+		if c := cmp.Compare(a.Sym.PkgIdx, b.Sym.PkgIdx); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Sym.SymIdx, b.Sym.SymIdx)
+	})
+	w.Uint32(uint32(len(effectRecords)))
+	for _, record := range effectRecords {
+		w.Uint32(record.Sym.PkgIdx)
+		w.Uint32(record.Sym.SymIdx)
+		w.Bytes([]byte{record.Effects})
 	}
 
 	h.Offsets[goobj.BlkEnd] = w.Offset()
@@ -308,6 +348,9 @@ func (w *writer) StringTable() {
 	for _, pkg := range w.ctxt.JITScope {
 		w.AddString(pkg.Pkg)
 	}
+	for _, method := range w.ctxt.JITScopeMethods {
+		w.AddString(method)
+	}
 	for _, pkg := range w.pkglist {
 		w.AddString(pkg)
 	}
@@ -320,7 +363,7 @@ func (w *writer) StringTable() {
 		// TODO: this includes references of indexed symbols from other packages,
 		// for which the linker doesn't need the name. Consider moving them to
 		// a separate block (for tools only).
-		if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 && s.PkgIdx < goobj.PkgIdxSpecial {
+		if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 && len(w.ctxt.JITScopeMethods) == 0 && s.PkgIdx < goobj.PkgIdxSpecial {
 			// Don't include them if Flag_noRefName
 			return
 		}
@@ -692,7 +735,7 @@ func (w *writer) refFlags() {
 // Emits names of referenced indexed symbols, used by tools (objdump, nm)
 // only.
 func (w *writer) refNames() {
-	if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 {
+	if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 && len(w.ctxt.JITScopeMethods) == 0 {
 		return
 	}
 	seen := make(map[*LSym]bool)

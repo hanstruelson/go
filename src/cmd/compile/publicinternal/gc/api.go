@@ -47,6 +47,7 @@ type Request struct {
 	JITCallSiteFile string
 	objectOutput    *bio.Writer
 	archFeatures    *ir.ArchFeatures
+	jitEffects      uint8
 }
 
 // PackageExportData is the compiler's in-memory package import record. It
@@ -60,6 +61,10 @@ type Result struct {
 	Diagnostics  string
 	Errors       int
 	SyntaxErrors int
+	// JITEffects is the union of direct effects classified from source IR in
+	// this compilation request. It excludes linker-generated wrappers; their
+	// call edges remain represented by their object relocations.
+	JITEffects   uint8
 }
 
 // CompileError reports a failed request without terminating the process.
@@ -139,6 +144,7 @@ func Compile(req Request) (result Result, err error) {
 	if err != nil {
 		return result, fmt.Errorf("read in-memory compiler object: %w", err)
 	}
+	result.JITEffects = req.jitEffects
 	return result, nil
 }
 

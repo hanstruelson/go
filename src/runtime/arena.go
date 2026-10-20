@@ -249,13 +249,22 @@ type userArena struct {
 	//
 	// In other words, every time a new chunk becomes active, its appended to this
 	// list.
-	refs []unsafe.Pointer
+	refs []userArenaChunkRef
 
 	// defunct is true if free has been called on this arena.
 	//
 	// This is just a best-effort way to discover a concurrent allocation
 	// and free. Also used to detect a double-free.
 	defunct atomic.Bool
+}
+
+// userArenaChunkRef keeps both the arena's memory and every JIT module whose
+// type metadata may still be present in that chunk's heap bitmap. Arena.Free
+// can leave active chunks available for reuse, so those owner edges must move
+// with the chunk until it is faulted and made non-scannable.
+type userArenaChunkRef struct {
+	x         unsafe.Pointer
+	jitOwners []*JITModuleOwner
 }
 
 // newUserArena creates a new userArena ready to be used.
@@ -330,7 +339,8 @@ func (a *userArena) free() {
 	for s != nil {
 		a.fullList = s.next
 		s.next = nil
-		freeUserArenaChunk(s, a.refs[i])
+		ref := a.refs[i]
+		freeUserArenaChunk(s, ref.x, ref.jitOwners)
 		s = a.fullList
 		i--
 	}
@@ -345,13 +355,16 @@ func (a *userArena) free() {
 	// Note that active's reference is always the last reference in refs.
 	s = a.active
 	if s != nil {
-		if raceenabled || msanenabled || asanenabled {
+		ref := a.refs[len(a.refs)-1]
+		if raceenabled || msanenabled || asanenabled || len(ref.jitOwners) != 0 {
 			// Don't reuse arenas with sanitizers enabled. We want to catch
-			// any use-after-free errors aggressively.
-			freeUserArenaChunk(s, a.refs[len(a.refs)-1])
+			// any use-after-free errors aggressively. Also fault chunks that
+			// carry JIT owners so their scanned type metadata can be retired
+			// with this arena instead of following a reusable chunk forever.
+			freeUserArenaChunk(s, ref.x, ref.jitOwners)
 		} else {
 			lock(&userArenaState.lock)
-			userArenaState.reuse = append(userArenaState.reuse, liveUserArenaChunk{s, a.refs[len(a.refs)-1]})
+			userArenaState.reuse = append(userArenaState.reuse, liveUserArenaChunk{s, ref.x, ref.jitOwners})
 			unlock(&userArenaState.lock)
 		}
 	}
@@ -365,6 +378,15 @@ func (a *userArena) free() {
 // it will be considered as an element type for a slice backing store with capacity
 // cap.
 func (a *userArena) alloc(typ *_type, cap int) unsafe.Pointer {
+	var typeOwners []*JITModuleOwner
+	if jitTypeNeedsOwner(typ) {
+		typeOwners, _ = jitOwnersForType(typ)
+		if len(typeOwners) == 0 {
+			// Incomplete reflected-type metadata cannot be tied to one chunk
+			// edge. Preserve the existing fail-closed behavior for this case.
+			jitPinTypeOwners(typ)
+		}
+	}
 	s := a.active
 	var x unsafe.Pointer
 	for {
@@ -374,6 +396,28 @@ func (a *userArena) alloc(typ *_type, cap int) unsafe.Pointer {
 		}
 		s = a.refill()
 	}
+	// User arena chunks bypass mallocgc, so attach type owners to the chunk's
+	// scanned reference record. The owner set follows the chunk through reuse
+	// and deferred faulting until old heap bits can no longer be scanned.
+	if inUserArenaChunk(uintptr(x)) && len(typeOwners) != 0 {
+		ref := &a.refs[len(a.refs)-1]
+		if a.active != s || ref.x == nil {
+			throw("runtime: user arena chunk owner record is missing")
+		}
+		for _, owner := range typeOwners {
+			found := false
+			for _, existing := range ref.jitOwners {
+				if existing == owner {
+					found = true
+					break
+				}
+			}
+			if !found {
+				ref.jitOwners = append(ref.jitOwners, owner)
+			}
+		}
+	}
+	KeepAlive(typeOwners)
 	return x
 }
 
@@ -396,16 +440,18 @@ func (a *userArena) refill() *mspan {
 		s = nil
 	}
 	var x unsafe.Pointer
+	var typeOwners []*JITModuleOwner
 
 	// Check the partially-used list.
 	lock(&userArenaState.lock)
 	if len(userArenaState.reuse) > 0 {
 		// Pick off the last arena chunk from the list.
 		n := len(userArenaState.reuse) - 1
-		x = userArenaState.reuse[n].x
-		s = userArenaState.reuse[n].mspan
-		userArenaState.reuse[n].x = nil
-		userArenaState.reuse[n].mspan = nil
+		chunk := userArenaState.reuse[n]
+		x = chunk.x
+		s = chunk.mspan
+		typeOwners = chunk.jitOwners
+		userArenaState.reuse[n] = liveUserArenaChunk{}
 		userArenaState.reuse = userArenaState.reuse[:n]
 	}
 	unlock(&userArenaState.lock)
@@ -416,7 +462,7 @@ func (a *userArena) refill() *mspan {
 			throw("out of memory")
 		}
 	}
-	a.refs = append(a.refs, x)
+	a.refs = append(a.refs, userArenaChunkRef{x: x, jitOwners: typeOwners})
 	a.active = s
 	return s
 }
@@ -425,7 +471,8 @@ type liveUserArenaChunk struct {
 	*mspan // Must represent a user arena chunk.
 
 	// Reference to mspan.base() to keep the chunk alive.
-	x unsafe.Pointer
+	x         unsafe.Pointer
+	jitOwners []*JITModuleOwner
 }
 
 var userArenaState struct {
@@ -933,7 +980,7 @@ func inUserArenaChunk(p uintptr) bool {
 // The runtime will set the user arena to fault once it's safe (the GC is no longer running)
 // and then once the user arena is no longer referenced by the application, will allow it to
 // be reused.
-func freeUserArenaChunk(s *mspan, x unsafe.Pointer) {
+func freeUserArenaChunk(s *mspan, x unsafe.Pointer, jitOwners []*JITModuleOwner) {
 	if !s.isUserArenaChunk {
 		throw("span is not for a user arena")
 	}
@@ -976,11 +1023,13 @@ func freeUserArenaChunk(s *mspan, x unsafe.Pointer) {
 		// Until the chunks are set to fault, keep them alive via the fault list.
 		KeepAlive(x)
 		KeepAlive(faultList)
+		KeepAlive(jitOwners)
 	} else {
 		// Put the user arena on the fault list.
 		lock(&userArenaState.lock)
-		userArenaState.fault = append(userArenaState.fault, liveUserArenaChunk{s, x})
+		userArenaState.fault = append(userArenaState.fault, liveUserArenaChunk{s, x, jitOwners})
 		unlock(&userArenaState.lock)
+		KeepAlive(jitOwners)
 	}
 	releasem(mp)
 }

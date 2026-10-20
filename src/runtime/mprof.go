@@ -1251,9 +1251,6 @@ func pprof_goroutineProfileWithLabels(p []profilerecord.StackRecord, labels []un
 
 // labels may be nil. If labels is non-nil, it must have the same length as p.
 func goroutineProfileWithLabels(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
-	// StackRecord exposes raw PCs and can outlive the captured goroutines.
-	// Pin all modules before stopping the world to take the snapshot.
-	pinAllJITModules()
 	if labels != nil && len(labels) != len(p) {
 		labels = nil
 	}
@@ -1268,8 +1265,6 @@ func pprof_goroutineLeakProfileWithLabels(p []profilerecord.StackRecord, labels 
 
 // labels may be nil. If labels is non-nil, it must have the same length as p.
 func goroutineLeakProfileWithLabels(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
-	// Leak profiles retain raw PCs beyond the captured goroutine stacks.
-	pinAllJITModules()
 	if labels != nil && len(labels) != len(p) {
 		labels = nil
 	}
@@ -1694,6 +1689,10 @@ func saveg(pc, sp uintptr, gp *g, r *profilerecord.StackRecord, pcbuf []uintptr)
 	var u unwinder
 	u.initAt(pc, sp, 0, gp, unwindSilentErrors)
 	n := tracebackPCs(&u, 0, pcbuf)
+	// The returned profile owns raw PCs after the goroutine resumes. Pin just
+	// the JIT generations present in this captured stack while the target
+	// goroutine is still stopped; unrelated and future modules stay collectible.
+	pinJITStack(pcbuf[:n])
 	r.Stack = make([]uintptr, n)
 	copy(r.Stack, pcbuf)
 }

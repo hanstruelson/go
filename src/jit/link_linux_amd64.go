@@ -7,6 +7,7 @@
 package jit
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"runtime"
@@ -14,6 +15,13 @@ import (
 )
 
 func loadLinkedSnippet(metadata *Metadata, compiled CompiledPackage) (*mappedImage, error) {
+	if compiled.objectHash == [32]byte{} || sha256.Sum256(compiled.Object) != compiled.objectHash {
+		return nil, fmt.Errorf("jit: compiler object changed after capture/effect analysis")
+	}
+	if compiled.EntryName != compiled.analyzedEntryName {
+		return nil, fmt.Errorf("jit: compiler entry name changed after owner analysis")
+	}
+	hostEffectPinReason := compiled.effects.hostPinReason(metadata)
 	entryName := compiled.EntryName
 	if entryName == "" {
 		entryName = "Eval"
@@ -25,9 +33,11 @@ func loadLinkedSnippet(metadata *Metadata, compiled CompiledPackage) (*mappedIma
 	if err := validateLinkedSnippetIdentity(image, metadata); err != nil {
 		return nil, err
 	}
-	mapped, err := mapModuleImage(image, func(symbol ImageImport) (uintptr, error) {
+	guard := runtime.JITBeginTypeIdentityUpdate()
+	defer guard.Release()
+	mapped, err := mapModuleImageWithTypeIdentityGuard(image, func(symbol ImageImport) (uintptr, error) {
 		return resolveImageImport(metadata, symbol)
-	})
+	}, guard)
 	if err != nil {
 		return mapped, err
 	}
@@ -91,12 +101,6 @@ func loadLinkedSnippet(metadata *Metadata, compiled CompiledPackage) (*mappedIma
 			Address: mapped.symbols[root.DataSymbol], Size: uintptr(dataSymbol.Size), Type: unsafe.Pointer(typeAddress),
 		}
 	}
-	typeMappings := make([]runtime.JITTypeMapping, len(image.TypeAliases))
-	for i, alias := range image.TypeAliases {
-		typeMappings[i] = runtime.JITTypeMapping{
-			Dynamic: mapped.symbols[alias.Symbol], Canonical: mapped.imports[alias.Import],
-		}
-	}
 	text := mapped.sections[textIndex]
 	typesStart, typesEnd := uintptr(0), uintptr(0)
 	if hasTypeMetadata {
@@ -126,7 +130,7 @@ func loadLinkedSnippet(metadata *Metadata, compiled CompiledPackage) (*mappedIma
 		return releaseFailedImage(mapped, fmt.Errorf("jit: runtime mapping token has unexpected implementation %T", mapped.runtimeMapping))
 	}
 	register := func() (*runtime.JITModuleOwner, error) {
-		return runtime.RegisterJITModule(uintptrPointer(text), uintptr(image.Sections[textIndex].MemSize), rodataStart, typesStart, typesEnd-typesStart, mapping, mapped.control, functions, globals, typeMappings, compiled.captures)
+		return runtime.RegisterJITModule(guard, uintptrPointer(text), uintptr(image.Sections[textIndex].MemSize), rodataStart, typesStart, typesEnd-typesStart, mapping, mapped.control, functions, globals, mapped.typeMappings, mapped.typeDescriptors, compiled.captures)
 	}
 	owner, err := register()
 	if isJITMemoryLimitError(err) {
@@ -144,10 +148,14 @@ func loadLinkedSnippet(metadata *Metadata, compiled CompiledPackage) (*mappedIma
 		runtime.PinJITModule(owner)
 		mapped.pinnedReason = "compiled entry has no generated GC owner propagation"
 	}
-	if compiled.pinRequired {
+	if compiled.pinRequired || compiled.effects.requiresPin() || hostEffectPinReason != "" {
 		runtime.PinJITModule(owner)
 		if mapped.pinnedReason == "" {
-			mapped.pinnedReason = "snippet uses a runtime feature without owner-aware lifetime tracking"
+			if compiled.effects.requiresPin() {
+				mapped.pinnedReason = compiled.effects.pinReason()
+			} else {
+				mapped.pinnedReason = hostEffectPinReason
+			}
 		}
 	}
 	return mapped, nil

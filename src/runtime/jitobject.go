@@ -67,6 +67,40 @@ func jitOwnerForType(typ *_type) (*JITModuleOwner, bool) {
 	return owner, dependent
 }
 
+// jitOwnersForType returns the complete owner set recorded for a
+// reflect-created descriptor, or the direct owner of an image descriptor.
+// Structural reflection caches may combine dependencies from several modules
+// and must keep the complete set live while publishing a canonical descriptor.
+func jitOwnersForType(typ *_type) ([]*JITModuleOwner, bool) {
+	if typ == nil {
+		return nil, false
+	}
+	address := uintptr(unsafe.Pointer(typ))
+	owner, found := jitOwnerForMappedAddress(address)
+	if found && owner == nil {
+		throw("runtime: JIT-dependent type has no live owner")
+	}
+	dependent := found || typ.TFlag&abi.TFlagJITDependent != 0
+	if owner != nil {
+		return []*JITModuleOwner{owner}, true
+	}
+	if !dependent {
+		return nil, false
+	}
+	if metadata := jitMetadataForHeapObject(address); metadata != nil {
+		if len(metadata.owners) != 0 {
+			KeepAlive(metadata)
+			return metadata.owners, true
+		}
+		KeepAlive(metadata)
+		return nil, true
+	}
+	if owner := jitOwnerFromTypeEdge(typ); owner != nil {
+		return []*JITModuleOwner{owner}, true
+	}
+	return nil, true
+}
+
 // jitOwnerFromTypeEdge resolves a reflect-created descriptor's non-GC side
 // edge to one of its originating module owners. Dependencies form a directed
 // acyclic chain because reflect constructors only refer to existing types.

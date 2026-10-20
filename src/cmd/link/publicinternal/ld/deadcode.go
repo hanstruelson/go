@@ -26,6 +26,8 @@ type deadcodePass struct {
 
 	ifaceMethod        map[methodsig]bool // methods called from reached interface call sites
 	genericIfaceMethod map[string]bool    // names of methods called from reached generic interface call sites
+	jitIfaceMethod     map[string]bool    // interface methods visible to runtime Eval source
+	jitEvalEnabled     bool               // runtime Eval can form interfaces unknown to the host linker
 	markableMethods    []methodref        // methods of reached types
 	reflectSeen        bool               // whether we have seen a reflect method call
 	dynlink            bool
@@ -39,6 +41,7 @@ func (d *deadcodePass) init() {
 	d.ldr.InitReachable()
 	d.ifaceMethod = make(map[methodsig]bool)
 	d.genericIfaceMethod = make(map[string]bool)
+	d.jitIfaceMethod = make(map[string]bool)
 	if buildcfg.Experiment.FieldTrack {
 		d.ldr.Reachparent = make([]loader.Sym, d.ldr.NSym())
 	}
@@ -149,6 +152,7 @@ func (d *deadcodePass) markJITPackageRoots() {
 	if len(packages) == 0 && len(owners) == 0 {
 		return
 	}
+	d.jitEvalEnabled = true
 	if !d.ctxt.IsLinux() || !d.ctxt.IsAMD64() || d.ctxt.LinkMode != LinkInternal || d.ctxt.linkShared ||
 		(d.ctxt.BuildMode != BuildModeExe && d.ctxt.BuildMode != BuildModePIE) {
 		d.ctxt.Errorf(0, "JIT Eval package roots are supported only for statically linked Linux/amd64 executables")
@@ -212,6 +216,14 @@ func (d *deadcodePass) markJITPackageRoots() {
 		linked[pkg] = true
 	}
 	d.ctxt.jitPackages = linked
+	methods, err := d.ldr.JITScopeMethods()
+	if err != nil {
+		d.ctxt.Errorf(0, "invalid JIT interface method roots: %v", err)
+		return
+	}
+	for _, method := range methods {
+		d.jitIfaceMethod[method] = true
+	}
 	for i := 1; i < d.ldr.NDef(); i++ {
 		s := loader.Sym(i)
 		if linked[d.ldr.SymPkg(s)] {
@@ -546,7 +558,16 @@ func deadcode(ctxt *Link) {
 		// in the last pass.
 		rem := d.markableMethods[:0]
 		for _, m := range d.markableMethods {
-			if (d.reflectSeen && (m.isExported() || d.dynlink)) || d.ifaceMethod[m.m] || d.genericIfaceMethod[m.m.name] {
+			jitMethod := d.jitIfaceMethod[m.m.name]
+			if d.jitEvalEnabled || (d.reflectSeen && (m.isExported() || d.dynlink)) || d.ifaceMethod[m.m] || d.genericIfaceMethod[m.m.name] || jitMethod {
+				if d.jitEvalEnabled || jitMethod {
+					// The JIT manifest must expose implementation symbols even when
+					// the concrete receiver type belongs to the main package or a
+					// package outside the Eval import closure. Runtime Eval may form
+					// anonymous interfaces after linking, so keep every method on each
+					// reachable concrete type as a potential dispatch target.
+					d.ctxt.jitPackages[d.ldr.SymPkg(m.src)] = true
+				}
 				d.markMethod(m)
 			} else {
 				rem = append(rem, m)

@@ -56,6 +56,7 @@ type LinkedSymbol struct {
 	Name         string
 	Kind         LinkKind
 	ABI          uint16
+	Effects      HostEffect // transitive effect summary from the static linker
 	Address      uintptr
 	PC           uintptr
 	TypeAddress  uintptr
@@ -344,7 +345,14 @@ func manifestPackagesForBuild(build BuildMetadata, manifest []linkerManifestPack
 			}
 		}
 	}
-	result := make(map[string][8]byte, len(checked))
+	// The linker may add packages that define methods on reachable concrete
+	// types. They are not necessarily nameable from the Eval import scope, but
+	// their method symbols and type descriptors must remain available to
+	// interface dispatch in generated code.
+	result := make(map[string][8]byte, len(manifestByPath))
+	for path, fingerprint := range manifestByPath {
+		result[path] = fingerprint
+	}
 	for path := range checked {
 		fingerprint, ok := manifestByPath[path]
 		if !ok {
@@ -353,7 +361,6 @@ func manifestPackagesForBuild(build BuildMetadata, manifest []linkerManifestPack
 		if pkg, hasExport := exports[path]; hasExport && fingerprint != pkg.Fingerprint {
 			return nil, fmt.Errorf("jit: linker manifest fingerprint for package %q does not match compiler export metadata", path)
 		}
-		result[path] = fingerprint
 	}
 	return result, nil
 }
@@ -446,11 +453,32 @@ func (m *Metadata) LookupLinkerSymbol(packagePath, name string, abi uint16) (Lin
 	return LinkedSymbol{}, false
 }
 
-// lookupUnnamedType resolves a compiler-emitted unnamed type descriptor to an
-// identical type already linked into the host executable. Go's runtime uses
-// descriptor pointer identity for interface method signatures and reflection,
-// so carrying a duplicate descriptor in a JIT image would break assertions
-// even when its structure is identical.
+// LookupLinkerMethodEffects returns transitive effects for every linked
+// method implementation with the requested Go method name. It deliberately
+// over-approximates receiver types: a captured interface's concrete value is
+// not known to the snippet compiler, so every linked same-name implementation
+// must be safe before dispatch can remain reclaimable.
+func (m *Metadata) LookupLinkerMethodEffects(name string) ([]HostEffect, bool) {
+	if m == nil || name == "" {
+		return nil, false
+	}
+	var effects []HostEffect
+	suffix := "." + name
+	for _, symbol := range m.Link.Symbols {
+		if !symbol.FromManifest || symbol.Kind != FunctionLink {
+			continue
+		}
+		if symbol.Name == name || strings.HasSuffix(symbol.Name, suffix) {
+			effects = append(effects, symbol.Effects)
+		}
+	}
+	return effects, len(effects) != 0
+}
+
+// lookupUnnamedType resolves an unambiguous compiler-emitted unnamed type
+// string to a host descriptor. Ambiguous display strings remain local so the
+// runtime can compare actual descriptors, including package paths, before
+// choosing a canonical identity.
 func (m *Metadata) lookupUnnamedType(typeString string) (LinkedSymbol, bool, error) {
 	if m == nil || typeString == "" {
 		return LinkedSymbol{}, false, nil
@@ -461,7 +489,10 @@ func (m *Metadata) lookupUnnamedType(typeString string) (LinkedSymbol, bool, err
 			continue
 		}
 		if match.Address != 0 && (match.Address != symbol.Address || match.Type != symbol.Type) {
-			return LinkedSymbol{}, false, fmt.Errorf("jit: host manifest has ambiguous unnamed type identity %q", typeString)
+			// Type strings are display names and can collapse distinct unnamed
+			// types that differ by unexported package paths. Leave this descriptor
+			// local so runtime registration can compare the actual type graphs.
+			return LinkedSymbol{}, false, nil
 		}
 		match = symbol
 	}

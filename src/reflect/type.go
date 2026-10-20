@@ -1443,6 +1443,18 @@ func hasJITType(t *abi.Type) bool {
 	return t != nil && runtime.JITTypeNeedsOwner(unsafe.Pointer(t))
 }
 
+func addJITReflectDependency(dependencies []*abi.Type, typ *abi.Type) ([]*abi.Type, bool) {
+	if !hasJITType(typ) {
+		return dependencies, false
+	}
+	for _, dependency := range dependencies {
+		if dependency == typ {
+			return dependencies, true
+		}
+	}
+	return append(dependencies, typ), true
+}
+
 func jitOffsetsForType(offsets *jitReflectOffsetBuilder, typ *abi.Type) *jitReflectOffsetBuilder {
 	if hasJITType(typ) {
 		return offsets
@@ -1577,6 +1589,8 @@ func appendJITTypeIdentity(dst []byte, typ *abi.Type, active map[*abi.Type]bool)
 }
 
 func jitReflectTypeCache(kind Kind, key []byte, dependencies []*abi.Type, candidate *abi.Type) *abi.Type {
+	// Keep dynamic reflect types visible to the runtime's weak catalog even
+	// when their inputs are static, so a later JIT image can reuse the identity.
 	deps := make([]unsafe.Pointer, len(dependencies))
 	for i, dependency := range dependencies {
 		deps[i] = unsafe.Pointer(dependency)
@@ -1686,7 +1700,12 @@ func (t *rtype) ptrTo() *abi.Type {
 		registerJITReflectType(&pp.Type, []*abi.Type{at}, offsetBuilder)
 		return jitReflectTypeCache(Pointer, jitKey, []*abi.Type{at}, &pp.Type)
 	}
-	pi, _ := ptrMap.LoadOrStore(t, &pp)
+	registerJITReflectType(&pp.Type, []*abi.Type{at}, offsetBuilder)
+	canonical := jitReflectTypeCache(Pointer, jitKey, []*abi.Type{at}, &pp.Type)
+	if hasJITType(canonical) {
+		return canonical
+	}
+	pi, _ := ptrMap.LoadOrStore(t, (*ptrType)(unsafe.Pointer(canonical)))
 	return &pi.(*ptrType).Type
 }
 
@@ -2142,7 +2161,12 @@ func ChanOf(dir ChanDir, t Type) Type {
 		registerJITReflectType(&ch.Type, jitDeps, offsetBuilder)
 		return toRType(jitReflectTypeCache(Chan, jitKey, jitDeps, &ch.Type))
 	}
-	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&ch.Type))
+	registerJITReflectType(&ch.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Chan, jitKey, jitDeps, &ch.Type)
+	if hasJITType(canonical) {
+		return toRType(canonical)
+	}
+	ti, _ := lookupCache.LoadOrStore(ckey, toRType(canonical))
 	return ti.(Type)
 }
 
@@ -2161,7 +2185,7 @@ func initFuncTypes(n int) Type {
 		return funcTypes[n]
 	}
 
-	funcTypes[n] = StructOf([]StructField{
+	typ := StructOf([]StructField{
 		{
 			Name: "FuncType",
 			Type: TypeOf(funcType{}),
@@ -2171,7 +2195,13 @@ func initFuncTypes(n int) Type {
 			Type: ArrayOf(n, TypeOf(&rtype{})),
 		},
 	})
-	return funcTypes[n]
+	if hasJITType(typ.common()) {
+		// This process-wide helper-type cache must not retain a reclaimable
+		// module merely because its descriptor has the same structural shape.
+		return typ
+	}
+	funcTypes[n] = typ
+	return typ
 }
 
 // FuncOf returns the function type with the given argument and result types.
@@ -2302,7 +2332,12 @@ func FuncOf(in, out []Type, variadic bool) Type {
 		registerJITReflectType(&ft.Type, jitDeps, offsetBuilder)
 		return toRType(jitReflectTypeCache(Func, jitKey, jitDeps, &ft.Type))
 	}
-	return addToCache(&ft.Type)
+	registerJITReflectType(&ft.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Func, jitKey, jitDeps, &ft.Type)
+	if hasJITType(canonical) {
+		return toType(canonical)
+	}
+	return addToCache(canonical)
 }
 func stringFor(t *abi.Type) string {
 	return toRType(t).String()
@@ -2485,7 +2520,12 @@ func SliceOf(t Type) Type {
 		registerJITReflectType(&slice.Type, jitDeps, offsetBuilder)
 		return toRType(jitReflectTypeCache(Slice, jitKey, jitDeps, &slice.Type))
 	}
-	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&slice.Type))
+	registerJITReflectType(&slice.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Slice, jitKey, jitDeps, &slice.Type)
+	if hasJITType(canonical) {
+		return toRType(canonical)
+	}
+	ti, _ := lookupCache.LoadOrStore(ckey, toRType(canonical))
 	return ti.(Type)
 }
 
@@ -2953,7 +2993,12 @@ func StructOf(fields []StructField) Type {
 		registerJITReflectType(&typ.Type, jitDeps, offsetBuilder)
 		return addToCache(toRType(jitReflectTypeCache(Struct, jitKey, jitDeps, &typ.Type)))
 	}
-	return addToCache(toType(&typ.Type))
+	registerJITReflectType(&typ.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Struct, jitKey, jitDeps, &typ.Type)
+	if hasJITType(canonical) {
+		return toType(canonical)
+	}
+	return addToCache(toType(canonical))
 }
 
 func embeddedIfaceMethStub() {
@@ -3089,7 +3134,19 @@ func ArrayOf(length int, elem Type) Type {
 	array.Align_ = typ.Align_
 	array.FieldAlign_ = typ.FieldAlign_
 	array.Len = uintptr(length)
-	array.Slice = &(SliceOf(elem).(*rtype).t)
+	sliceType := &SliceOf(elem).(*rtype).t
+	array.Slice = sliceType
+	var hasJITSlice bool
+	jitDeps, hasJITSlice = addJITReflectDependency(jitDeps, sliceType)
+	if hasJITSlice {
+		array.TFlag |= abi.TFlagJITDependent
+		if !jitDependent {
+			jitDependent = true
+			if cached := jitReflectTypeCache(Array, jitKey, jitDeps, nil); cached != nil {
+				return toRType(cached)
+			}
+		}
+	}
 
 	switch {
 	case array.PtrBytes == 0:
@@ -3150,7 +3207,12 @@ func ArrayOf(length int, elem Type) Type {
 		registerJITReflectType(&array.Type, jitDeps, offsetBuilder)
 		return toRType(jitReflectTypeCache(Array, jitKey, jitDeps, &array.Type))
 	}
-	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&array.Type))
+	registerJITReflectType(&array.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Array, jitKey, jitDeps, &array.Type)
+	if hasJITType(canonical) {
+		return toRType(canonical)
+	}
+	ti, _ := lookupCache.LoadOrStore(ckey, toRType(canonical))
 	return ti.(Type)
 }
 
@@ -3291,17 +3353,23 @@ func funcLayout(t *funcType, rcvr *abi.Type) (frametype *abi.Type, framePool *sy
 		registerJITReflectType(x, jitDeps, offsetBuilder)
 	}
 
-	// cache result for future callers
-	framePool = &sync.Pool{New: func() any {
-		return unsafe_New(x)
-	}}
+	// A process-wide sync.Pool retains each pool through at least a GC cycle,
+	// and its New closure retains x. For a JIT-dependent function type, that
+	// would turn a short-lived reflective call into an owner root unrelated to
+	// any live value. Allocate those frames directly so their owner edge ends
+	// with the call; static layouts continue to use the shared pool.
+	if !jitDependent {
+		framePool = &sync.Pool{New: func() any {
+			return unsafe_New(x)
+		}}
+	}
 	computed := layoutType{
 		t:         x,
 		framePool: framePool,
 		abid:      abid,
 	}
 	if jitDependent {
-		return computed.t, computed.framePool, computed.abid
+		return computed.t, nil, computed.abid
 	}
 	lti, _ := layoutCache.LoadOrStore(k, computed)
 	lt := lti.(layoutType)

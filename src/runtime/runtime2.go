@@ -592,6 +592,16 @@ type g struct {
 	// valgrindStackID is used to track what memory is used for stacks when a program is
 	// built with the "valgrind" build tag, otherwise it is unused.
 	valgrindStackID uintptr
+
+	// jitGopcOwner keeps the module containing gopc alive while this goroutine
+	// may report its creator in a traceback. gopc is an integer PC and is not
+	// visible to the garbage collector on its own.
+	jitGopcOwner *JITModuleOwner
+
+	// jitStartOwner keeps generated entry code mapped while this goroutine may
+	// still start or execute its initial function value. The funcval's code PC
+	// is a uintptr, so its ordinary GC pointer map cannot retain the module.
+	jitStartOwner *JITModuleOwner
 }
 
 // gTrackingPeriod is the number of transitions out of _Grunning between
@@ -1215,9 +1225,11 @@ type savedOpenDeferState struct {
 
 // ancestorInfo records details of where a goroutine was started.
 type ancestorInfo struct {
-	pcs  []uintptr // pcs from the stack of this goroutine
-	goid uint64    // goroutine id of this goroutine; original goroutine possibly dead
-	gopc uintptr   // pc of go statement that created this goroutine
+	pcs         []uintptr        // pcs from the stack of this goroutine
+	jitPCOwners []*JITModuleOwner // owners for JIT PCs in pcs
+	goid        uint64           // goroutine id of this goroutine; original goroutine possibly dead
+	gopc        uintptr          // pc of go statement that created this goroutine
+	jitGopcOwner *JITModuleOwner // owner for gopc when it points into a JIT module
 }
 
 // A waitReason explains why a goroutine has been stopped.

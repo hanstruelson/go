@@ -20,6 +20,7 @@ package goobj
 
 import (
 	"cmd/publicinternal/bio"
+	"cmd/publicinternal/objabi"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,7 +30,7 @@ import (
 // New object file format.
 //
 //    Header struct {
-//       Magic       [...]byte   // "\x00go121ld"
+//       Magic       [...]byte   // "\x00go122ld"
 //       Fingerprint [8]byte
 //       Flags       uint32
 //       Offsets     [...]uint32 // byte offset of each block below
@@ -106,7 +107,8 @@ import (
 //       ABI  uint16
 //    }
 //
-//    JITScope [...]ImportedPkg // packages whose code may be needed by runtime Eval
+//    JITScope JITScope // present for Eval-enabled packages: counts, package roots, method names
+//    JITEffects []JITEffect // per-text-symbol direct effects from compiler analysis
 //
 // string is encoded as is a uint32 length followed by a uint32 offset
 // that points to the corresponding string bytes.
@@ -205,6 +207,7 @@ const (
 	BlkData
 	BlkRefName
 	BlkJITScope
+	BlkJITEffects
 	BlkEnd
 	NBlk
 )
@@ -218,20 +221,15 @@ type Header struct {
 	Offsets     [NBlk]uint32
 }
 
-const (
-	LegacyMagic = "\x00go120ld"
-	Magic       = "\x00go121ld"
-)
+// Magic identifies the one object schema emitted and accepted by this toolchain.
+// Object archives from another schema must be rebuilt with this toolchain.
+const Magic = "\x00go122ld"
 
 func (h *Header) Write(w *Writer) {
 	w.RawString(h.Magic)
 	w.Bytes(h.Fingerprint[:])
 	w.Uint32(h.Flags)
-	n := len(h.Offsets)
-	if h.Magic == LegacyMagic {
-		n-- // the legacy format has no JITScope block
-	}
-	for _, x := range h.Offsets[:n] {
+	for _, x := range h.Offsets {
 		w.Uint32(x)
 	}
 }
@@ -239,34 +237,23 @@ func (h *Header) Write(w *Writer) {
 func (h *Header) Read(r *Reader) error {
 	b := r.BytesAt(0, len(Magic))
 	h.Magic = string(b)
-	if h.Magic != Magic && h.Magic != LegacyMagic {
-		return errors.New("wrong magic, not a Go object file")
+	if h.Magic != Magic {
+		return errors.New("wrong magic, not a supported Go object file")
 	}
 	off := uint32(len(h.Magic))
 	copy(h.Fingerprint[:], r.BytesAt(off, len(h.Fingerprint)))
 	off += 8
 	h.Flags = r.uint32At(off)
 	off += 4
-	n := len(h.Offsets)
-	if h.Magic == LegacyMagic {
-		n-- // the legacy end offset becomes both JITScope and End
-	}
-	for i := 0; i < n; i++ {
+	for i := range h.Offsets {
 		h.Offsets[i] = r.uint32At(off)
 		off += 4
-	}
-	if h.Magic == LegacyMagic {
-		h.Offsets[BlkEnd] = h.Offsets[BlkJITScope]
 	}
 	return nil
 }
 
 func (h *Header) Size() int {
-	n := len(h.Offsets)
-	if h.Magic == LegacyMagic {
-		n--
-	}
-	return len(h.Magic) + len(h.Fingerprint) + 4 + 4*n
+	return len(h.Magic) + len(h.Fingerprint) + 4 + 4*len(h.Offsets)
 }
 
 // Autolib
@@ -331,6 +318,17 @@ const (
 	SymFlagLinknameStd
 	SymFlagABIWrapper
 	SymFlagWasmExport
+)
+
+// JIT effect bits are attached to each text symbol compiled from Go source.
+// Unknown is the fail-closed state for symbols without compiler analysis.
+const (
+	JITEffectUnknown uint8 = 1 << iota
+	JITEffectUnsafe
+	JITEffectForeign
+	JITEffectCodePointer
+	JITEffectRetainsCallbacks
+	JITEffectInterfaceCall
 )
 
 // Returns the length of the name of the symbol.
@@ -535,14 +533,11 @@ const huge = (1<<31 - 1) / RelocSize
 //	RefName struct {
 //	   Sym  symRef
 //	   Name string
-//	   ABI  uint16 // absent in LegacyMagic objects
+//	   ABI  uint16
 //	}
 type RefName [RefNameSize]byte
 
-const (
-	LegacyRefNameSize = 8 + stringRefSize
-	RefNameSize       = LegacyRefNameSize + 2
-)
+const RefNameSize = 8 + stringRefSize + 2
 
 func (n *RefName) Sym() SymRef {
 	return SymRef{binary.LittleEndian.Uint32(n[:]), binary.LittleEndian.Uint32(n[4:])}
@@ -552,10 +547,7 @@ func (n *RefName) Name(r *Reader) string {
 	off := binary.LittleEndian.Uint32(n[12:])
 	return r.StringAt(off, len)
 }
-func (n *RefName) ABI(r *Reader) uint16 {
-	if r.h.Magic == LegacyMagic {
-		return 0
-	}
+func (n *RefName) ABI() uint16 {
 	return binary.LittleEndian.Uint16(n[16:])
 }
 
@@ -908,62 +900,180 @@ func (r *Reader) DataString(i uint32) string {
 
 // NRefName returns the number of referenced symbol names.
 func (r *Reader) NRefName() int {
-	return int(r.h.Offsets[BlkRefName+1]-r.h.Offsets[BlkRefName]) / r.refNameSize()
-}
-
-func (r *Reader) refNameSize() int {
-	if r.h.Magic == LegacyMagic {
-		return LegacyRefNameSize
-	}
-	return RefNameSize
+	return int(r.h.Offsets[BlkRefName+1]-r.h.Offsets[BlkRefName]) / RefNameSize
 }
 
 // RefName returns a pointer to the i-th referenced symbol name.
 // Note: here i is not a local symbol index, just a counter.
 func (r *Reader) RefName(i int) *RefName {
-	off := r.h.Offsets[BlkRefName] + uint32(i*r.refNameSize())
+	off := r.h.Offsets[BlkRefName] + uint32(i*RefNameSize)
 	return (*RefName)(unsafe.Pointer(&r.b[off]))
+}
+
+// HasJITScope reports whether this object enables runtime Eval. A present
+// block is meaningful even when it contains no package or method roots.
+func (r *Reader) HasJITScope() bool {
+	return r.h.Offsets[BlkJITScope] != r.h.Offsets[BlkJITScope+1]
 }
 
 // JITScope returns the sorted package roots needed by runtime Eval in this
 // object. Source-file visibility remains in compiler metadata; this linker
 // root set may also include imports referenced by same-package declarations.
-// An empty block means that this object does not enable Eval.
 func (r *Reader) JITScope() ([]ImportedPkg, error) {
+	packages, _, err := r.jitScope()
+	return packages, err
+}
+
+// JITScopeMethods returns the sorted interface method names visible to Eval
+// source through captured types and package scopes. These names seed the
+// linker's interface-method reachability fixpoint.
+func (r *Reader) JITScopeMethods() ([]string, error) {
+	_, methods, err := r.jitScope()
+	return methods, err
+}
+
+// JITEffect is the compiler's direct-effect record for one object symbol.
+type JITEffect struct {
+	Sym     SymRef
+	Effects uint8
+}
+
+// JITEffects returns the per-symbol direct-effect records stored in this
+// object. A valid effect block is required by the current object schema.
+func (r *Reader) JITEffects() ([]JITEffect, error) {
+	start, end := r.h.Offsets[BlkJITEffects], r.h.Offsets[BlkJITEffects+1]
+	if end < start || uint64(end) > uint64(len(r.b)) || end-start < 4 {
+		return nil, errors.New("malformed JIT effect block")
+	}
+	count := r.uint32At(start)
+	if count > 1<<24 || uint64(start)+4+uint64(count)*9 != uint64(end) {
+		return nil, errors.New("malformed JIT effect block length")
+	}
+	refs := make([]JITEffect, int(count))
+	off := start + 4
+	for i := range refs {
+		ref := SymRef{PkgIdx: r.uint32At(off), SymIdx: r.uint32At(off + 4)}
+		flags := r.b[off+8]
+		symbol := r.jitEffectSymbol(ref)
+		if flags&^uint8(JITEffectUnknown|JITEffectUnsafe|JITEffectForeign|JITEffectCodePointer|JITEffectRetainsCallbacks|JITEffectInterfaceCall) != 0 || symbol == nil || !objabi.SymKind(symbol.Type()).IsText() {
+			return nil, errors.New("invalid JIT effect record")
+		}
+		refs[i] = JITEffect{Sym: ref, Effects: flags}
+		off += 9
+		if i > 0 && !jitEffectLess(refs[i-1].Sym, ref) {
+			return nil, errors.New("JIT effect records are duplicated or unsorted")
+		}
+	}
+	return refs, nil
+}
+
+func (r *Reader) jitEffectSymbol(ref SymRef) *Sym {
+	switch ref.PkgIdx {
+	case PkgIdxSelf:
+		if ref.SymIdx < uint32(r.NSym()) {
+			return r.Sym(ref.SymIdx)
+		}
+	case PkgIdxHashed64:
+		if ref.SymIdx < uint32(r.NHashed64def()) {
+			return r.Hashed64Def(ref.SymIdx)
+		}
+	case PkgIdxHashed:
+		if ref.SymIdx < uint32(r.NHasheddef()) {
+			return r.HashedDef(ref.SymIdx)
+		}
+	case PkgIdxNone:
+		if ref.SymIdx < uint32(r.NNonpkgdef()) {
+			return r.NonpkgDef(ref.SymIdx)
+		}
+	default:
+	}
+	return nil
+}
+
+func jitEffectLess(a, b SymRef) bool {
+	if a.PkgIdx != b.PkgIdx {
+		return a.PkgIdx < b.PkgIdx
+	}
+	return a.SymIdx < b.SymIdx
+}
+
+func (r *Reader) jitScope() ([]ImportedPkg, []string, error) {
 	start, end := r.h.Offsets[BlkJITScope], r.h.Offsets[BlkJITScope+1]
-	if end < start || (end-start)%importedPkgSize != 0 {
-		return nil, errors.New("malformed JITScope block")
+	if end < start {
+		return nil, nil, errors.New("malformed JITScope block")
+	}
+	if uint64(end) > uint64(len(r.b)) {
+		return nil, nil, errors.New("JITScope block exceeds object size")
 	}
 	if start == end {
-		return nil, nil
+		return nil, nil, nil
 	}
-	n := int((end - start) / importedPkgSize)
-	if n > 1<<16 {
-		return nil, errors.New("JITScope contains too many package roots")
+	stringRef := func(off uint32) (string, error) {
+		if uint64(off)+stringRefSize > uint64(end) {
+			return "", errors.New("truncated JITScope string reference")
+		}
+		length := r.uint32At(off)
+		stringOffset := r.uint32At(off + 4)
+		stringsStart := uint32(r.h.Size())
+		stringsEnd := r.h.Offsets[BlkAutolib]
+		if stringsEnd < stringsStart || uint64(stringsEnd) > uint64(len(r.b)) || stringOffset < stringsStart || stringOffset > stringsEnd || length > stringsEnd-stringOffset {
+			return "", errors.New("JITScope string reference is outside the string table")
+		}
+		return r.StringAt(stringOffset, length), nil
 	}
-	packages := make([]ImportedPkg, n)
+	if end-start < 8 {
+		return nil, nil, errors.New("truncated JITScope header")
+	}
+	rawPkgCount := r.uint32At(start)
+	rawMethodCount := r.uint32At(start + 4)
+	if rawPkgCount > 1<<16 || rawMethodCount > 1<<16 {
+		return nil, nil, errors.New("JITScope contains too many entries")
+	}
+	pkgCount, methodCount := int(rawPkgCount), int(rawMethodCount)
+	off := start + 8
+	want := uint64(off) + uint64(pkgCount)*importedPkgSize + uint64(methodCount)*stringRefSize
+	if want != uint64(end) {
+		return nil, nil, errors.New("malformed JITScope length")
+	}
+	packages := make([]ImportedPkg, pkgCount)
 	for i := range packages {
-		off := start + uint32(i*importedPkgSize)
-		packages[i].Pkg = r.StringRef(off)
+		var err error
+		packages[i].Pkg, err = stringRef(off)
+		if err != nil {
+			return nil, nil, err
+		}
 		copy(packages[i].Fingerprint[:], r.BytesAt(off+stringRefSize, len(packages[i].Fingerprint)))
+		off += importedPkgSize
 		if packages[i].Pkg == "" || (i > 0 && packages[i-1].Pkg >= packages[i].Pkg) {
-			return nil, errors.New("JITScope package paths are empty, duplicated, or unsorted")
+			return nil, nil, errors.New("JITScope package paths are empty, duplicated, or unsorted")
+		}
+	}
+	methods := make([]string, methodCount)
+	for i := range methods {
+		var err error
+		methods[i], err = stringRef(off)
+		if err != nil {
+			return nil, nil, err
+		}
+		off += stringRefSize
+		if methods[i] == "" || (i > 0 && methods[i-1] >= methods[i]) {
+			return nil, nil, errors.New("JITScope method names are empty, duplicated, or unsorted")
 		}
 	}
 	imports := make(map[string]FingerprintType)
 	for _, imported := range r.Autolib() {
 		if previous, ok := imports[imported.Pkg]; ok && previous != imported.Fingerprint {
-			return nil, fmt.Errorf("conflicting autolib fingerprints for package %q", imported.Pkg)
+			return nil, nil, fmt.Errorf("conflicting autolib fingerprints for package %q", imported.Pkg)
 		}
 		imports[imported.Pkg] = imported.Fingerprint
 	}
 	for _, pkg := range packages {
 		fingerprint, ok := imports[pkg.Pkg]
 		if !ok || fingerprint != pkg.Fingerprint {
-			return nil, fmt.Errorf("JITScope package %q does not match an object import fingerprint", pkg.Pkg)
+			return nil, nil, fmt.Errorf("JITScope package %q does not match an object import fingerprint", pkg.Pkg)
 		}
 	}
-	return packages, nil
+	return packages, methods, nil
 }
 
 // ReadOnly returns whether r.BytesAt returns read-only bytes.

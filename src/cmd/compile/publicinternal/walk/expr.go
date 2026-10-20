@@ -581,6 +581,9 @@ func (w *walkState) walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 	if n.Op() == ir.OCALLINTER {
 		reflectdata.MarkUsedIfaceMethod(w.curfunc, n)
 	}
+	if n.Op() == ir.OCALLFUNC {
+		w.markJITCaptureInterfaceMethods(n)
+	}
 
 	if n.Op() == ir.OCALLFUNC && n.Fun.Op() == ir.OCLOSURE {
 		w.directClosureCall(n)
@@ -632,6 +635,24 @@ func (w *walkState) walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 
 	w.walkCall1(n, init)
 	return n
+}
+
+// markJITCaptureInterfaceMethods adds typed linker method roots for an
+// interface value captured by the compiler-generated CaptureValue helper.
+// The helper receives *T as its fourth argument, whose caller-side IR type is
+// the exact unshaped capture type even when the generic helper body is shared.
+func (w *walkState) markJITCaptureInterfaceMethods(n *ir.CallExpr) {
+	fun, ok := n.Fun.(*ir.Name)
+	if !ok || fun.Sym() == nil || fun.Sym().Pkg == nil ||
+		(fun.Sym().Pkg.Path != "jit" && !strings.HasSuffix(fun.Sym().Pkg.Path, "/jit")) ||
+		!strings.HasPrefix(fun.Sym().Name, "CaptureValue") || len(n.Args) < 4 {
+		return
+	}
+	capturePointer := n.Args[3].Type()
+	if capturePointer == nil || !capturePointer.IsPtr() {
+		return
+	}
+	reflectdata.MarkIfaceTypeMethodsUsed(w.curfunc, capturePointer.Elem())
 }
 
 func (w *walkState) walkCall1(n *ir.CallExpr, init *ir.Nodes) {

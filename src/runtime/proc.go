@@ -4547,6 +4547,9 @@ func gdestroy(gp *g) {
 	gp.labels = nil
 	gp.timer = nil
 	gp.bubble = nil
+	gp.ancestors = nil
+	gp.jitGopcOwner = nil
+	gp.jitStartOwner = nil
 	gp.fipsOnlyBypass = false
 	gp.secret = 0
 
@@ -5400,6 +5403,14 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	gostartcallfn(&newg.sched, fn)
 	newg.parentGoid = callergp.goid
 	newg.gopc = callerpc
+	startOwner, startIsJIT := jitOwnerForPC(fn.fn)
+	if startIsJIT && startOwner == nil {
+		throw("runtime: new goroutine has a JIT function without a live owner")
+	}
+	newg.jitStartOwner = startOwner
+	// Keep the creator PC's module mapped for traceback lookup, without pinning
+	// it beyond the lifetime of this goroutine.
+	newg.jitGopcOwner, _ = jitOwnerForLivePC(callerpc)
 	newg.ancestors = saveAncestors(callergp)
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
@@ -5508,15 +5519,17 @@ func saveAncestors(callergp *g) *[]ancestorInfo {
 	var pcs [tracebackInnerFrames]uintptr
 	npcs := gcallers(callergp, 0, pcs[:])
 	// Ancestor records retain raw PCs after the caller's stack has returned.
-	// Preserve any JIT modules they name before copying those integers into the
-	// new goroutine's long-lived ancestry record.
-	pinJITStack(pcs[:npcs])
+	// Copy typed owners alongside the integers so each goroutine retains only
+	// the modules named by its own traceback snapshot.
+	jitPCOwners := jitOwnersForLiveStack(pcs[:npcs])
 	ipcs := make([]uintptr, npcs)
 	copy(ipcs, pcs[:])
 	ancestors[0] = ancestorInfo{
-		pcs:  ipcs,
-		goid: callergp.goid,
-		gopc: callergp.gopc,
+		pcs:          ipcs,
+		jitPCOwners:  jitPCOwners,
+		goid:         callergp.goid,
+		gopc:         callergp.gopc,
+		jitGopcOwner: callergp.jitGopcOwner,
 	}
 
 	ancestorsp := new([]ancestorInfo)

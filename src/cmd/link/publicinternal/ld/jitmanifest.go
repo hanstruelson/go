@@ -12,29 +12,36 @@ import (
 
 	"cmd/link/publicinternal/loader"
 	"cmd/link/publicinternal/sym"
+	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"publicinternal/buildcfg"
 )
 
 const (
-	jitManifestVersion      = 1
-	jitManifestHeaderSize   = 48
-	jitManifestPackageSize  = 16
-	jitManifestSymbolSize   = 40
-	jitManifestKindFunction = 1
-	jitManifestKindVariable = 2
-	jitManifestKindType     = 3
-	jitManifestKindITable   = 4
+	jitManifestVersion        = 2
+	jitManifestHeaderSize     = 48
+	jitManifestPackageSize    = 16
+	jitManifestSymbolSize     = 40
+	jitManifestKindFunction   = 1
+	jitManifestKindVariable   = 2
+	jitManifestKindType       = 3
+	jitManifestKindITable     = 4
+	jitEffectUnknown          = uint8(goobj.JITEffectUnknown)
+	jitEffectUnsafe           = uint8(goobj.JITEffectUnsafe)
+	jitEffectForeign          = uint8(goobj.JITEffectForeign)
+	jitEffectCodePointer      = uint8(goobj.JITEffectCodePointer)
+	jitEffectRetainsCallbacks = uint8(goobj.JITEffectRetainsCallbacks)
 )
 
-var jitManifestMagic = [8]byte{'G', 'O', 'J', 'I', 'T', 'M', 'F', '1'}
+var jitManifestMagic = [8]byte{'G', 'O', 'J', 'I', 'T', 'M', 'F', '2'}
 
 type jitManifestSymbol struct {
 	pkg     string
 	name    string
 	abi     uint16
 	kind    uint8
+	effects uint8
 	sym     loader.Sym
 	typeSym loader.Sym
 }
@@ -52,6 +59,7 @@ func (ctxt *Link) buildJITManifest() error {
 		return fmt.Errorf("JIT symbol manifest requires a statically linked Linux/amd64 executable")
 	}
 	ldr := ctxt.loader
+	effectSummaries := jitManifestEffectSummaries(ldr)
 	packages := make([]string, 0, len(ctxt.jitPackages))
 	for pkg := range ctxt.jitPackages {
 		packages = append(packages, pkg)
@@ -121,7 +129,7 @@ func (ctxt *Link) buildJITManifest() error {
 			typeSym = s
 		}
 		entries = append(entries, jitManifestSymbol{
-			pkg: pkg, name: name, abi: abi, kind: kind, sym: s, typeSym: typeSym,
+			pkg: pkg, name: name, abi: abi, kind: kind, effects: effectSummaries[s], sym: s, typeSym: typeSym,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -227,6 +235,7 @@ func (ctxt *Link) buildJITManifest() error {
 		binary.LittleEndian.PutUint32(blob[off+8:], entryStrings[i].size)
 		binary.LittleEndian.PutUint16(blob[off+12:], entry.abi)
 		blob[off+14] = entry.kind
+		blob[off+15] = entry.effects
 	}
 	copy(blob[stringOffset:], stringsData)
 
@@ -263,6 +272,101 @@ func (ctxt *Link) buildJITManifest() error {
 	manifestSlice.AddUint(ctxt.Arch, uint64(len(blob)))
 	manifestSlice.AddUint(ctxt.Arch, uint64(len(blob)))
 	return nil
+}
+
+// jitManifestEffectSummaries derives a transitive effect summary for every
+// selected reachable text symbol from the per-symbol relocation records in
+// compiler objects. Direct-call relocations form the call graph; an indirect
+// call or a direct edge whose target cannot be classified propagates Unknown
+// to every caller. Compiler escape notes also identify callback-capable
+// parameters that can reach the heap; owner-carrying Go function values keep
+// their module alive through that retention. Raw-storage and full escape
+// certificates remain outside this summary.
+func jitManifestEffectSummaries(ldr *loader.Loader) map[loader.Sym]uint8 {
+	flags := make(map[loader.Sym]uint8)
+	reverse := make(map[loader.Sym][]loader.Sym)
+	for i := 1; i < ldr.NDef(); i++ {
+		s := loader.Sym(i)
+		if !ldr.AttrReachable(s) || !ldr.SymType(s).IsText() || ldr.Lookup(ldr.SymName(s), ldr.SymVersion(s)) != s {
+			continue
+		}
+		effects, ok := ldr.JITEffects(s)
+		if !ok {
+			effects = jitEffectUnknown
+		}
+		flags[s] = effects
+	}
+	for caller := range flags {
+		relocs := ldr.Relocs(caller)
+		for i := 0; i < relocs.Count(); i++ {
+			reloc := relocs.At(i)
+			switch typ := reloc.Type(); {
+			case typ == objabi.R_CALLIND:
+				flags[caller] |= jitEffectUnknown
+			case typ.IsDirectCall():
+				target := reloc.Sym()
+				if target == 0 {
+					flags[caller] |= jitEffectUnknown
+					continue
+				}
+				if _, ok := flags[target]; ok {
+					reverse[target] = append(reverse[target], caller)
+					continue
+				}
+				effect := jitManifestDirectCallEffect(ldr, target)
+				if effect == 0 {
+					effect = jitEffectUnknown
+				}
+				flags[caller] |= effect
+			}
+		}
+	}
+	queue := make([]loader.Sym, 0, len(flags))
+	inQueue := make(map[loader.Sym]bool)
+	for s, effect := range flags {
+		if effect != 0 {
+			queue = append(queue, s)
+			inQueue[s] = true
+		}
+	}
+	for head := 0; head < len(queue); head++ {
+		callee := queue[head]
+		inQueue[callee] = false
+		for _, caller := range reverse[callee] {
+			merged := flags[caller] | flags[callee]
+			if merged == flags[caller] {
+				continue
+			}
+			flags[caller] = merged
+			if !inQueue[caller] {
+				queue = append(queue, caller)
+				inQueue[caller] = true
+			}
+		}
+	}
+	return flags
+}
+
+func jitManifestDirectCallEffect(ldr *loader.Loader, target loader.Sym) uint8 {
+	name := ldr.SymName(target)
+	pkg := ldr.SymPkg(target)
+	if pkg == "runtime" && (strings.HasSuffix(name, ".FuncForPC") || strings.HasSuffix(name, ".ResolveJITFunction")) {
+		return jitEffectCodePointer
+	}
+	if pkg == "reflect" && (strings.HasSuffix(name, ".Pointer") || strings.HasSuffix(name, ".UnsafePointer")) {
+		return jitEffectCodePointer
+	}
+	if pkg == "unsafe" || strings.HasPrefix(pkg, "internal/unsafe") || strings.HasPrefix(pkg, "unsafe/") {
+		return jitEffectUnsafe
+	}
+	if pkg == "C" || strings.Contains(name, "_Cfunc_") {
+		return jitEffectForeign
+	}
+	switch ldr.SymType(target) {
+	case sym.SHOSTOBJ, sym.SDYNIMPORT, sym.SUNDEFEXT:
+		return jitEffectForeign
+	}
+	return 0
 }
 
 func jitManifestName(pkg, symbol string) string {

@@ -537,7 +537,10 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		}
 
 		if nextFunc < len(target.Funcs) {
-			enqueueFunc(target.Funcs[nextFunc], symABIs, &compilequeue, backend)
+			effects := enqueueFunc(target.Funcs[nextFunc], symABIs, &compilequeue, backend)
+			if request != nil {
+				request.jitEffects |= effects
+			}
 			nextFunc++
 			continue
 		}

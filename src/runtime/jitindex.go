@@ -812,6 +812,32 @@ func jitOwnerForMappedAddress(address uintptr) (*JITModuleOwner, bool) {
 	return owner, true
 }
 
+// jitLiveModuleOwners snapshots the currently published modules as strong
+// references. The immutable index contains weak owner handles, so promote each
+// handle while holding a read lease and release the lease before callers walk
+// module metadata or allocate.
+func jitLiveModuleOwners() []*JITModuleOwner {
+	index := jitIndexReadEnter()
+	if jitIndexPointer(index) == 0 {
+		jitIndexReadLeave(index)
+		return nil
+	}
+	entries := jitIndexEntries((*jitModuleIndex)(unsafe.Pointer(jitIndexPointer(index))))
+	owners := make([]*JITModuleOwner, 0, len(entries))
+	for i := range entries {
+		entry := &entries[i]
+		if atomic.Loaduintptr(&entry.owner) == 0 || entry.weakHandle == 0 {
+			continue
+		}
+		owner := (*JITModuleOwner)(internal_weak_runtime_makeStrongFromWeak(unsafe.Pointer(entry.weakHandle)))
+		if owner != nil {
+			owners = append(owners, owner)
+		}
+	}
+	jitIndexReadLeave(index)
+	return owners
+}
+
 // jitAddressIsMapped reports whether address belongs to a currently
 // published JIT mapping. It deliberately does not promote the weak owner.
 func jitAddressIsMapped(address uintptr) bool {
@@ -886,4 +912,32 @@ func pinJITStack(stk []uintptr) {
 			PinJITModule(owner)
 		}
 	}
+}
+
+// jitOwnersForLiveStack returns the deduplicated owner set for PCs captured
+// from a live Go stack. The stack itself keeps these modules alive until the
+// returned typed references take over, so callers can retain the slice with
+// the raw PCs instead of installing process-lifetime pins.
+func jitOwnersForLiveStack(stk []uintptr) []*JITModuleOwner {
+	var owners []*JITModuleOwner
+	for _, pc := range stk {
+		owner, found := jitOwnerForLivePC(pc)
+		if !found {
+			continue
+		}
+		if owner == nil {
+			throw("runtime: live JIT PC has no owner")
+		}
+		duplicate := false
+		for _, existing := range owners {
+			if existing == owner {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			owners = append(owners, owner)
+		}
+	}
+	return owners
 }

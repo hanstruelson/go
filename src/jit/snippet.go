@@ -373,10 +373,15 @@ func (m *Metadata) CompileSnippet(fileName, source string, captures ...Capture) 
 	captureByName := make(map[string]Capture, len(captures))
 	captureNames := make(map[string]bool, len(captures))
 	captureBases := make(map[string]string, len(captures))
+	seenCaptureIDs := make(map[uint64]bool, len(captures))
 	for i, capture := range captures {
 		if _, exists := captureByName[capture.name]; exists {
 			return CompiledPackage{}, fmt.Errorf("jit: duplicate lexical capture %q", capture.name)
 		}
+		if capture.bindingID == 0 || seenCaptureIDs[capture.bindingID] {
+			return CompiledPackage{}, fmt.Errorf("jit: duplicate or missing lexical capture identity for %q", capture.name)
+		}
+		seenCaptureIDs[capture.bindingID] = true
 		captureByName[capture.name] = capture
 		captureNames[capture.name] = true
 		if capture.kind == captureValue {
@@ -441,11 +446,15 @@ func (m *Metadata) CompileSnippet(fileName, source string, captures ...Capture) 
 		}
 		activeCaptures = append(activeCaptures, capture)
 	}
-	capturePointers := make([]unsafe.Pointer, 0, len(activeCaptures))
+	captureBindings := make([]runtime.JITCaptureBinding, 0, len(activeCaptures))
 	captureImportAliases := make(map[string]string)
 	for _, capture := range activeCaptures {
 		if capture.kind == captureValue {
-			capturePointers = append(capturePointers, capture.address)
+			captureBindings = append(captureBindings, runtime.JITCaptureBinding{
+				BindingID: capture.bindingID,
+				Address:   capture.address,
+				Type:      capture.typeRoot,
+			})
 		}
 		for _, imp := range capture.imports {
 			if previous, exists := captureImportAliases[imp.path]; exists && previous != imp.alias {
@@ -470,12 +479,13 @@ func (m *Metadata) CompileSnippet(fileName, source string, captures ...Capture) 
 	if err != nil {
 		return CompiledPackage{}, err
 	}
+	effects := summarizeSnippetEffects(source, ctx, m.Build.PackagePath, m.Build.Packages, m.Build.Declarations, activeCaptures)
 	for path := range captureImportAliases {
 		usedImports[path] = true
 	}
 	for _, imp := range ctx.Imports {
 		if usedImports[imp.Path] && imp.Path == "unsafe" {
-			pinRequired = true
+			effects.usesUnsafe = true
 		}
 	}
 	usedImports["runtime"] = true
@@ -554,14 +564,12 @@ func (m *Metadata) CompileSnippet(fileName, source string, captures ...Capture) 
 			file.WriteByte('\n')
 		}
 	}
-	captureIndex := 0
 	for _, capture := range activeCaptures {
 		if capture.kind != captureValue {
 			continue
 		}
-		fmt.Fprintf(&file, "%s := (*%s)(%s(%s, %d))\n", captureLocals[capture.name], capture.typeExpr, runtimeCaptureAddr, ownerName, captureIndex)
+		fmt.Fprintf(&file, "%s := (*%s)(%s(%s, %d))\n", captureLocals[capture.name], capture.typeExpr, runtimeCaptureAddr, ownerName, capture.bindingID)
 		fmt.Fprintf(&file, "_ = %s\n", captureLocals[capture.name])
-		captureIndex++
 	}
 	file.WriteString("{\n")
 	file.WriteString("//line jit-snippet.go:1\n")
@@ -632,8 +640,19 @@ func (m *Metadata) CompileSnippet(fileName, source string, captures ...Capture) 
 		return CompiledPackage{}, err
 	}
 	compiled.EntryName = entryName
+	compiled.analyzedEntryName = entryName
 	compiled.ownerAware = true
-	compiled.captures = capturePointers
+	compiled.captures = captureBindings
+	if compilerEffectsClassifyInterfaceCalls(compiled.compilerEffects) {
+		// The compiler has confirmed that every indirect operation in the
+		// generated object is typed interface dispatch, with no arbitrary
+		// function-value calls. Resolve its possible host implementations from
+		// the linker manifest below; unresolved or effectful methods still pin.
+		effects.hasIndirectCall = false
+		effects.interfaceCallsCertified = true
+	}
+	compiled.effects = effects
+	compiled.pinRequired = pinRequired || effects.requiresPin()
 	return compiled, nil
 }
 

@@ -7,6 +7,7 @@ package noder
 import (
 	"fmt"
 	"go/constant"
+	"go/scanner"
 	"go/token"
 	"go/version"
 	"publicinternal/pkgbits"
@@ -426,6 +427,13 @@ func (w *writer) boolConst(pos poser, value bool) {
 	w.pos(pos)
 	w.typ(types2.Typ[types2.Bool])
 	w.Value(constant.MakeBool(value))
+}
+
+func (w *writer) uint64Const(pos poser, value uint64) {
+	w.Code(exprConst)
+	w.pos(pos)
+	w.typ(types2.Typ[types2.Uint64])
+	w.Value(constant.MakeUint64(value))
 }
 
 // posBaseIdx returns the index for the given PosBase.
@@ -2269,6 +2277,10 @@ func (w *writer) expr(expr syntax.Expr) {
 			// compiler's resolved call site. This avoids runtime stack inspection
 			// and filename-based package guessing.
 			captures := jitEvalCaptures(w.p, expr.Pos())
+			if len(expr.ArgList) != 0 {
+				captures = jitFilterEvalCaptures(w.p, expr.ArgList[0], captures)
+			}
+			recordJITCaptureInterfaceMethods(w.p, expr.Pos(), captures)
 			w.Sync(pkgbits.SyncMultiExpr)
 			w.Bool(false) // N:N assignment
 			w.Len(3 + len(captures))
@@ -3297,7 +3309,7 @@ func jitEvalTarget(p *pkgWriter, expr syntax.Expr) *types2.Func {
 		return nil
 	}
 	captureSig, ok := captureFn.Type().(*types2.Signature)
-	if !ok || captureSig.Recv() != nil || !captureSig.Variadic() || captureSig.TypeParams().Len() != 1 || captureSig.Params().Len() != 5 || captureSig.Results().Len() != 1 {
+	if !ok || captureSig.Recv() != nil || !captureSig.Variadic() || captureSig.TypeParams().Len() != 1 || captureSig.Params().Len() != 6 || captureSig.Results().Len() != 1 || !types2.Identical(captureSig.Params().At(0).Type(), types2.Typ[types2.Uint64]) {
 		return nil
 	}
 	captureType := types2.CoreType(atSig.Params().At(3).Type()).(*types2.Slice).Elem()
@@ -3309,7 +3321,7 @@ func jitEvalTarget(p *pkgWriter, expr syntax.Expr) *types2.Func {
 		return nil
 	}
 	constantSig, ok := constantFn.Type().(*types2.Signature)
-	if !ok || constantSig.Recv() != nil || constantSig.Variadic() == false || constantSig.TypeParams().Len() != 0 || constantSig.Params().Len() != 6 || constantSig.Results().Len() != 1 || !types2.Identical(constantSig.Results().At(0).Type(), captureType) {
+	if !ok || constantSig.Recv() != nil || constantSig.Variadic() == false || constantSig.TypeParams().Len() != 0 || constantSig.Params().Len() != 7 || constantSig.Results().Len() != 1 || !types2.Identical(constantSig.Params().At(0).Type(), types2.Typ[types2.Uint64]) || !types2.Identical(constantSig.Results().At(0).Type(), captureType) {
 		return nil
 	}
 	typeAliasFn, ok := eval.Pkg().Scope().Lookup("CaptureTypeAlias").(*types2.Func)
@@ -3317,7 +3329,7 @@ func jitEvalTarget(p *pkgWriter, expr syntax.Expr) *types2.Func {
 		return nil
 	}
 	typeAliasSig, ok := typeAliasFn.Type().(*types2.Signature)
-	if !ok || typeAliasSig.Recv() != nil || !typeAliasSig.Variadic() || typeAliasSig.TypeParams().Len() != 0 || typeAliasSig.Params().Len() != 4 || typeAliasSig.Results().Len() != 1 || !types2.Identical(typeAliasSig.Results().At(0).Type(), captureType) {
+	if !ok || typeAliasSig.Recv() != nil || !typeAliasSig.Variadic() || typeAliasSig.TypeParams().Len() != 0 || typeAliasSig.Params().Len() != 5 || typeAliasSig.Results().Len() != 1 || !types2.Identical(typeAliasSig.Params().At(0).Type(), types2.Typ[types2.Uint64]) || !types2.Identical(typeAliasSig.Results().At(0).Type(), captureType) {
 		return nil
 	}
 	for i := 0; i < atSig.Results().Len(); i++ {
@@ -3335,6 +3347,7 @@ const (
 )
 
 type jitCaptureInfo struct {
+	bindingID   uint64
 	kind        uint8
 	object      types2.Object
 	variable    *types2.Var
@@ -3360,10 +3373,10 @@ func jitEvalCaptureTargetsForPackage(pkg *types2.Package) jitEvalCaptureTargets 
 	}
 }
 
-// jitEvalCaptures returns the caller's visible local variables in stable name
-// order. It also carries local constants and aliases. ScopePos is used instead
-// of declaration Pos so a short declaration's initializer cannot capture the
-// new variable before its Go scope begins.
+// jitEvalCaptures returns the caller's visible local variables in stable
+// source-declaration order. It also carries local constants and aliases.
+// ScopePos is used instead of declaration Pos so a short declaration's
+// initializer cannot capture the new variable before its Go scope begins.
 func jitEvalCaptures(p *pkgWriter, pos syntax.Pos) []jitCaptureInfo {
 	var innermost *types2.Scope
 	var fileScope *types2.Scope
@@ -3502,7 +3515,180 @@ func jitEvalCaptures(p *pkgWriter, pos syntax.Pos) []jitCaptureInfo {
 		}
 		return 0
 	})
+	// Binding IDs are local to this Eval frame. Their slot identity is stable
+	// for the lifetime of the descriptor and does not depend on source names.
+	for i := range captures {
+		captures[i].bindingID = uint64(i + 1)
+	}
 	return captures
+}
+
+// recordJITCaptureInterfaceMethods places every method exposed by an interface
+// in a captured value's type graph into the object-level JIT scope. The
+// linker uses these names to seed its existing interface-method fixpoint.
+// Matching by name is conservative: it keeps unrelated same-named methods
+// too, but cannot discard a dynamic implementation the Eval body may call.
+func recordJITCaptureInterfaceMethods(p *pkgWriter, pos syntax.Pos, captures []jitCaptureInfo) {
+	p.target.Ctxt.JITScopeEnabled = true
+	names := make(map[string]bool)
+	for _, capture := range captures {
+		if capture.kind != jitCaptureValue || capture.variable == nil {
+			continue
+		}
+		jitCaptureTypeInterfaceMethods(capture.variable.Type(), make(map[types2.Type]bool), names)
+	}
+	// The Eval body is runtime source, so it may use an imported interface in
+	// a type assertion even when the captured value itself has static type any.
+	// Include interface method sets visible from this file and the owning
+	// package; concrete host values can then reach the same linker fixpoint.
+	collectPackageInterfaceMethods(p.curpkg, names)
+	if predeclaredError := types2.Universe.Lookup("error"); predeclaredError != nil {
+		jitCaptureTypeInterfaceMethods(predeclaredError.Type(), make(map[types2.Type]bool), names)
+	}
+	for node, scope := range p.info.Scopes {
+		file, ok := node.(*syntax.File)
+		if !ok || file.Pos().FileBase() != pos.FileBase() {
+			continue
+		}
+		for _, name := range scope.Names() {
+			if imported, ok := scope.Lookup(name).(*types2.PkgName); ok {
+				collectPackageInterfaceMethods(imported.Imported(), names)
+			}
+		}
+	}
+	for name := range names {
+		p.target.Ctxt.JITScopeMethods = append(p.target.Ctxt.JITScopeMethods, name)
+	}
+	slices.Sort(p.target.Ctxt.JITScopeMethods)
+	p.target.Ctxt.JITScopeMethods = slices.Compact(p.target.Ctxt.JITScopeMethods)
+}
+
+func collectPackageInterfaceMethods(pkg *types2.Package, methods map[string]bool) {
+	if pkg == nil {
+		return
+	}
+	for _, name := range pkg.Scope().Names() {
+		if typeName, ok := pkg.Scope().Lookup(name).(*types2.TypeName); ok {
+			jitCaptureTypeInterfaceMethods(typeName.Type(), make(map[types2.Type]bool), methods)
+		}
+	}
+}
+
+func jitCaptureTypeInterfaceMethods(typ types2.Type, seen map[types2.Type]bool, methods map[string]bool) {
+	if typ == nil || seen[typ] {
+		return
+	}
+	seen[typ] = true
+	visit := func(child types2.Type) { jitCaptureTypeInterfaceMethods(child, seen, methods) }
+	switch typ := typ.(type) {
+	case *types2.Array:
+		visit(typ.Elem())
+	case *types2.Chan:
+		visit(typ.Elem())
+	case *types2.Interface:
+		for i := 0; i < typ.NumMethods(); i++ {
+			method := typ.Method(i)
+			methods[method.Name()] = true
+			visit(method.Type())
+		}
+		for i := 0; i < typ.NumEmbeddeds(); i++ {
+			visit(typ.EmbeddedType(i))
+		}
+	case *types2.Map:
+		visit(typ.Key())
+		visit(typ.Elem())
+	case *types2.Named:
+		visit(typ.Underlying())
+		if args := typ.TypeArgs(); args != nil {
+			for i := 0; i < args.Len(); i++ {
+				visit(args.At(i))
+			}
+		}
+	case *types2.Pointer:
+		visit(typ.Elem())
+	case *types2.Signature:
+		if typ.Recv() != nil {
+			visit(typ.Recv().Type())
+		}
+		visit(typ.Params())
+		visit(typ.Results())
+	case *types2.Slice:
+		visit(typ.Elem())
+	case *types2.Struct:
+		for i := 0; i < typ.NumFields(); i++ {
+			visit(typ.Field(i).Type())
+		}
+	case *types2.Tuple:
+		for i := 0; i < typ.Len(); i++ {
+			visit(typ.At(i).Type())
+		}
+	case *types2.Alias:
+		visit(typ.Rhs())
+		if args := typ.TypeArgs(); args != nil {
+			for i := 0; i < args.Len(); i++ {
+				visit(args.At(i))
+			}
+		}
+	case *types2.Union:
+		for i := 0; i < typ.Len(); i++ {
+			visit(typ.Term(i).Type())
+		}
+	}
+}
+
+// jitFilterEvalCaptures removes bindings that cannot be referenced by a
+// compile-time constant Eval body. This conservative lexical pass avoids
+// promoting unrelated caller locals; non-constant or lexically invalid source
+// keeps the complete capture set. Name occurrences in declarations, selector
+// names, labels, and composite literal keys may retain an unnecessary capture,
+// but never remove one that the runtime source could reference.
+func jitFilterEvalCaptures(p *pkgWriter, sourceExpr syntax.Expr, captures []jitCaptureInfo) []jitCaptureInfo {
+	if len(captures) == 0 {
+		return captures
+	}
+	tv, ok := p.maybeTypeAndValue(sourceExpr)
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return captures
+	}
+	used, ok := jitEvalIdentifierNames(constant.StringVal(tv.Value))
+	if !ok {
+		return captures
+	}
+	filtered := captures[:0]
+	for _, capture := range captures {
+		if used[capture.object.Name()] {
+			filtered = append(filtered, capture)
+		}
+	}
+	return filtered
+}
+
+// jitEvalIdentifierNames returns identifier spellings in source. Scanning is
+// intentionally less precise than parsing and resolving names: false
+// positives only keep extra capture cells, while scanner errors disable the
+// optimization entirely.
+func jitEvalIdentifierNames(source string) (map[string]bool, bool) {
+	file := token.NewFileSet().AddFile("jit-eval-source.go", -1, len(source))
+	var scan scanner.Scanner
+	hadError := false
+	scan.Init(file, []byte(source), func(token.Position, string) { hadError = true }, 0)
+	identifiers := make(map[string]bool)
+	for {
+		_, tok, lit := scan.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.ILLEGAL {
+			return nil, false
+		}
+		if tok == token.IDENT {
+			identifiers[lit] = true
+		}
+	}
+	if hadError || scan.ErrorCount != 0 {
+		return nil, false
+	}
+	return identifiers, true
 }
 
 type jitCaptureQualifier struct {
@@ -3839,7 +4025,8 @@ func (w *writer) jitCaptureExpr(pos syntax.Pos, targets jitEvalCaptureTargets, c
 		w.pos(pos)
 		w.Sync(pkgbits.SyncMultiExpr)
 		w.Bool(false) // N:N assignment
-		w.Len(4 + len(capture.imports))
+		w.Len(5 + len(capture.imports))
+		w.uint64Const(pos, capture.bindingID)
 		w.stringConst(pos, capture.variable.Name())
 		w.stringConst(pos, capture.typeExpr)
 		w.Code(exprUnaryOp)
@@ -3861,7 +4048,8 @@ func (w *writer) jitCaptureExpr(pos syntax.Pos, targets jitEvalCaptureTargets, c
 		w.pos(pos)
 		w.Sync(pkgbits.SyncMultiExpr)
 		w.Bool(false) // N:N assignment
-		w.Len(5 + len(capture.imports))
+		w.Len(6 + len(capture.imports))
+		w.uint64Const(pos, capture.bindingID)
 		w.stringConst(pos, capture.object.Name())
 		w.stringConst(pos, capture.typeExpr)
 		w.stringConst(pos, capture.literal)
@@ -3880,7 +4068,8 @@ func (w *writer) jitCaptureExpr(pos syntax.Pos, targets jitEvalCaptureTargets, c
 		w.pos(pos)
 		w.Sync(pkgbits.SyncMultiExpr)
 		w.Bool(false) // N:N assignment
-		w.Len(3 + len(capture.imports))
+		w.Len(4 + len(capture.imports))
+		w.uint64Const(pos, capture.bindingID)
 		w.stringConst(pos, capture.object.Name())
 		w.stringConst(pos, capture.declaration)
 		w.stringConst(pos, capture.unsupported)

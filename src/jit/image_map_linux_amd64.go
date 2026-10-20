@@ -26,6 +26,12 @@ const linuxAMD64TLSThreadOffset int64 = -8
 // and enforces final section permissions. One contiguous reservation keeps
 // direct RIP-relative references to host symbols within their encoded range.
 func mapModuleImage(image ModuleImage, resolve imageImportResolver) (result *mappedImage, err error) {
+	guard := runtime.JITBeginTypeIdentityUpdate()
+	defer guard.Release()
+	return mapModuleImageWithTypeIdentityGuard(image, resolve, guard)
+}
+
+func mapModuleImageWithTypeIdentityGuard(image ModuleImage, resolve imageImportResolver, guard *runtime.JITTypeIdentityGuard) (result *mappedImage, err error) {
 	if err := validateModuleImage(image); err != nil {
 		return nil, err
 	}
@@ -71,29 +77,34 @@ func mapModuleImage(image ModuleImage, resolve imageImportResolver) (result *map
 		}
 		importAddresses[i] = address
 	}
-	// Keep the image-local descriptor for resolving compiler offsets, but
-	// bind direct address relocations to the verified host descriptor. This
-	// prevents an unnamed structural type from acquiring a second runtime
-	// identity just because it was emitted in a JIT object.
-	typeAliasImports := make(map[uint32]uint32, len(image.TypeAliases))
-	for _, alias := range image.TypeAliases {
-		typeAliasImports[alias.Symbol] = alias.Import
+	hasRuntimeTypeDescriptors := false
+	for _, symbol := range image.Symbols {
+		if symbol.Kind == ImageType && uintptr(symbol.Size) >= runtime.JITTypeDescriptorSize() {
+			hasRuntimeTypeDescriptors = true
+			break
+		}
 	}
-	mapping, runtimeMapping, mapErr := mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset)
+	legacyTypeImports := make(map[uint32]uint32)
+	if !hasRuntimeTypeDescriptors {
+		for _, alias := range image.TypeAliases {
+			legacyTypeImports[alias.Symbol] = alias.Import
+		}
+	}
+	mapping, runtimeMapping, mapErr := mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset, legacyTypeImports, nil)
 	if isJITMemoryLimitError(mapErr) {
 		// External JIT bytes participate in runtime memory accounting. If the
 		// reservation is over budget, force collection and wait for eligible
 		// owner retirements before retrying the private mapping.
 		runtime.GC()
 		if runtime.JITWaitForRetirements(5e9) {
-			mapping, runtimeMapping, mapErr = mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset)
+			mapping, runtimeMapping, mapErr = mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset, legacyTypeImports, nil)
 		}
 	}
 	if mapErr != nil {
 		return nil, mapErr
 	}
 	mapped := &mappedImage{
-		sections: make([][]byte, len(image.Sections)), mapping: mapping,
+		mapping: mapping,
 		runtimeMapping: runtimeMapping, control: uintptrPointer(mapping[:pageSize]),
 	}
 	cleanup := true
@@ -108,18 +119,29 @@ func mapModuleImage(image ModuleImage, resolve imageImportResolver) (result *map
 			}
 		}
 	}()
-	sectionAddr := make([]uintptr, len(image.Sections))
-	for i, section := range image.Sections {
-		start := int(sectionOffset[i])
-		end := start + int(sectionSize[i])
-		mapped.sections[i] = mapping[start:end]
-		sectionAddr[i] = uintptrPointer(mapped.sections[i])
-		copy(mapped.sections[i], section.Data)
-	}
 	mapped.imports = append([]uintptr(nil), importAddresses...)
-	mapped.symbols = make([]uintptr, len(image.Symbols))
-	for i, symbol := range image.Symbols {
-		mapped.symbols[i] = sectionAddr[symbol.Section] + uintptr(symbol.Offset)
+	var sectionAddr []uintptr
+	installMappedSections := func() {
+		mapped.sections = make([][]byte, len(image.Sections))
+		sectionAddr = make([]uintptr, len(image.Sections))
+		for i, section := range image.Sections {
+			start := int(sectionOffset[i])
+			end := start + int(sectionSize[i])
+			mapped.sections[i] = mapping[start:end]
+			sectionAddr[i] = uintptrPointer(mapped.sections[i])
+			copy(mapped.sections[i], section.Data)
+		}
+		mapped.symbols = make([]uintptr, len(image.Symbols))
+		for i, symbol := range image.Symbols {
+			mapped.symbols[i] = sectionAddr[symbol.Section] + uintptr(symbol.Offset)
+		}
+	}
+	installMappedSections()
+	canonicalTypeAddresses := make(map[uintptr]uintptr, len(image.TypeAliases))
+	if !hasRuntimeTypeDescriptors {
+		for _, alias := range image.TypeAliases {
+			canonicalTypeAddresses[mapped.symbols[alias.Symbol]] = importAddresses[alias.Import]
+		}
 	}
 
 	resolveSymbol := func(target uint32, imported bool) (uintptr, error) {
@@ -132,82 +154,217 @@ func mapModuleImage(image ModuleImage, resolve imageImportResolver) (result *map
 		if int(target) >= len(image.Symbols) {
 			return 0, fmt.Errorf("jit: symbol index %d out of range", target)
 		}
-		if importIndex, ok := typeAliasImports[target]; ok {
-			if int(importIndex) >= len(importAddresses) {
-				return 0, fmt.Errorf("jit: canonical type import index %d out of range", importIndex)
-			}
-			return importAddresses[importIndex], nil
+		if canonical, ok := canonicalTypeAddresses[mapped.symbols[target]]; ok {
+			return canonical, nil
 		}
 		symbol := image.Symbols[target]
 		return sectionAddr[symbol.Section] + uintptr(symbol.Offset), nil
 	}
-	for i, reloc := range image.Relocations {
-		place := sectionAddr[reloc.Section] + uintptr(reloc.Offset)
-		var value uintptr
-		if reloc.Kind != RelocAMD64TLSLE32 {
-			target, resolveErr := resolveSymbol(reloc.Target, reloc.TargetImport)
-			if resolveErr != nil {
-				return nil, fmt.Errorf("jit: resolve relocation %d: %w", i, resolveErr)
+	applyRelocations := func() error {
+		for i, reloc := range image.Relocations {
+			place := sectionAddr[reloc.Section] + uintptr(reloc.Offset)
+			var value uintptr
+			if reloc.Kind != RelocAMD64TLSLE32 {
+				target, resolveErr := resolveSymbol(reloc.Target, reloc.TargetImport)
+				if resolveErr != nil {
+					return fmt.Errorf("jit: resolve relocation %d: %w", i, resolveErr)
+				}
+				var ok bool
+				value, ok = addSignedAddress(target, reloc.Addend)
+				if !ok {
+					return fmt.Errorf("jit: relocation %d address overflows", i)
+				}
 			}
-			var ok bool
-			value, ok = addSignedAddress(target, reloc.Addend)
-			if !ok {
-				return nil, fmt.Errorf("jit: relocation %d address overflows", i)
+			switch reloc.Kind {
+			case RelocAMD64Abs64:
+				binary.LittleEndian.PutUint64(mapped.sections[reloc.Section][reloc.Offset:], uint64(value))
+			case RelocAMD64Abs32:
+				if uint64(value) > uint64(^uint32(0)) {
+					return fmt.Errorf("jit: relocation %d absolute target %#x does not fit in 32 bits", i, value)
+				}
+				binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(value))
+			case RelocAMD64PC32, RelocAMD64PLT32, RelocAMD64GOTPCREL, RelocAMD64GOTPCRELX:
+				// AMD64 PC-relative relocations are based on the address after the
+				// four-byte displacement, as are x86-64 call/jump instructions.
+				delta := int64(value) - (int64(place) + 4)
+				if delta < -(1<<31) || delta > (1<<31)-1 {
+					label := fmt.Sprintf("symbol %d", reloc.Target)
+					if reloc.TargetImport && int(reloc.Target) < len(image.Imports) {
+						imp := image.Imports[reloc.Target]
+						label = imp.PackagePath + "." + imp.Name
+					}
+					return fmt.Errorf("jit: relocation %d PC-relative target %s is out of range (place=%#x target=%#x delta=%d)", i, label, place, value, delta)
+				}
+				binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(int32(delta)))
+			case RelocAMD64Addroff32:
+				if reloc.TargetImport || int(reloc.Target) >= len(image.Symbols) {
+					return fmt.Errorf("jit: relocation %d has an invalid addroff target", i)
+				}
+				targetSymbol := image.Symbols[reloc.Target]
+				baseIndex := rodataBaseIndex
+				if targetSymbol.Section >= uint32(len(image.Sections)) {
+					return fmt.Errorf("jit: relocation %d addroff target has invalid section %d", i, targetSymbol.Section)
+				}
+				targetKind := image.Sections[targetSymbol.Section].Kind
+				if targetKind == ImageText {
+					baseIndex = textBaseIndex
+				} else if targetKind != ImageReadOnly && targetKind != ImageTypes && targetKind != ImageITabs {
+					return fmt.Errorf("jit: relocation %d addroff target is in non-metadata section %d", i, targetKind)
+				}
+				if baseIndex < 0 || int(targetSymbol.Section) < baseIndex {
+					return fmt.Errorf("jit: relocation %d addroff target is outside its module base section", i)
+				}
+				targetOffset := sectionOffset[targetSymbol.Section] - sectionOffset[baseIndex] + targetSymbol.Offset
+				targetOffset, ok := addSignedOffset(targetOffset, reloc.Addend)
+				if !ok || targetOffset > uint64(^uint32(0)) {
+					return fmt.Errorf("jit: relocation %d addroff target is out of range", i)
+				}
+				binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(targetOffset))
+			case RelocAMD64TLSLE32:
+				tlsOffset := linuxAMD64TLSThreadOffset + reloc.Addend
+				if tlsOffset < -(1<<31) || tlsOffset > (1<<31)-1 {
+					return fmt.Errorf("jit: relocation %d TLS offset %d does not fit in 32 bits", i, tlsOffset)
+				}
+				binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(int32(tlsOffset)))
+			default:
+				return fmt.Errorf("jit: unsupported relocation %d kind %d", i, reloc.Kind)
 			}
 		}
-		switch reloc.Kind {
-		case RelocAMD64Abs64:
-			binary.LittleEndian.PutUint64(mapped.sections[reloc.Section][reloc.Offset:], uint64(value))
-		case RelocAMD64Abs32:
-			if uint64(value) > uint64(^uint32(0)) {
-				return nil, fmt.Errorf("jit: relocation %d absolute target %#x does not fit in 32 bits", i, value)
-			}
-			binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(value))
-		case RelocAMD64PC32, RelocAMD64PLT32, RelocAMD64GOTPCREL, RelocAMD64GOTPCRELX:
-			// AMD64 PC-relative relocations are based on the address after the
-			// four-byte displacement, as are x86-64 call/jump instructions.
-			delta := int64(value) - (int64(place) + 4)
-			if delta < -(1<<31) || delta > (1<<31)-1 {
-				label := fmt.Sprintf("symbol %d", reloc.Target)
-				if reloc.TargetImport && int(reloc.Target) < len(image.Imports) {
-					imp := image.Imports[reloc.Target]
-					label = imp.PackagePath + "." + imp.Name
+		return nil
+	}
+	if err := applyRelocations(); err != nil {
+		return nil, err
+	}
+
+	typesStart, typesEnd := uintptr(0), uintptr(0)
+	if rodataBaseIndex >= 0 {
+		typesStart = sectionAddr[rodataBaseIndex]
+		for i, section := range image.Sections {
+			switch section.Kind {
+			case ImageReadOnly, ImageTypes, ImageITabs:
+				if end := sectionAddr[i] + uintptr(section.MemSize); end > typesEnd {
+					typesEnd = end
 				}
-				return nil, fmt.Errorf("jit: relocation %d PC-relative target %s is out of range (place=%#x target=%#x delta=%d)", i, label, place, value, delta)
 			}
-			binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(int32(delta)))
-		case RelocAMD64Addroff32:
-			if reloc.TargetImport || int(reloc.Target) >= len(image.Symbols) {
-				return nil, fmt.Errorf("jit: relocation %d has an invalid addroff target", i)
+		}
+	}
+	explicitTypeMappings := make([]runtime.JITTypeMapping, 0, len(image.TypeAliases))
+	explicitTypeMappingByAddress := make(map[uintptr]int, len(image.TypeAliases))
+	conflictingTypeAddresses := make(map[uintptr]bool)
+	for _, alias := range image.TypeAliases {
+		dynamic, canonical := mapped.symbols[alias.Symbol], importAddresses[alias.Import]
+		if conflictingTypeAddresses[dynamic] {
+			continue
+		}
+		if previous, exists := explicitTypeMappingByAddress[dynamic]; exists {
+			if explicitTypeMappings[previous].Canonical != canonical {
+				explicitTypeMappings[previous].Dynamic = 0
+				delete(explicitTypeMappingByAddress, dynamic)
+				conflictingTypeAddresses[dynamic] = true
 			}
-			targetSymbol := image.Symbols[reloc.Target]
-			baseIndex := rodataBaseIndex
-			if targetSymbol.Section >= uint32(len(image.Sections)) {
-				return nil, fmt.Errorf("jit: relocation %d addroff target has invalid section %d", i, targetSymbol.Section)
+			continue
+		}
+		explicitTypeMappingByAddress[dynamic] = len(explicitTypeMappings)
+		explicitTypeMappings = append(explicitTypeMappings, runtime.JITTypeMapping{Dynamic: dynamic, Canonical: canonical})
+	}
+	if len(conflictingTypeAddresses) != 0 {
+		filtered := explicitTypeMappings[:0]
+		for _, mapping := range explicitTypeMappings {
+			if mapping.Dynamic != 0 {
+				filtered = append(filtered, mapping)
 			}
-			targetKind := image.Sections[targetSymbol.Section].Kind
-			if targetKind == ImageText {
-				baseIndex = textBaseIndex
-			} else if targetKind != ImageReadOnly && targetKind != ImageTypes && targetKind != ImageITabs {
-				return nil, fmt.Errorf("jit: relocation %d addroff target is in non-metadata section %d", i, targetKind)
+		}
+		explicitTypeMappings = filtered
+	}
+	mapped.typeMappings = append([]runtime.JITTypeMapping(nil), explicitTypeMappings...)
+	collectTypeDescriptors := func() {
+		mapped.typeDescriptors = nil
+		seenTypeDescriptors := make(map[uintptr]struct{})
+		for i, symbol := range image.Symbols {
+			if symbol.Kind == ImageType && uintptr(symbol.Size) >= runtime.JITTypeDescriptorSize() {
+				descriptor := mapped.symbols[i]
+				if _, duplicate := seenTypeDescriptors[descriptor]; !duplicate {
+					seenTypeDescriptors[descriptor] = struct{}{}
+					mapped.typeDescriptors = append(mapped.typeDescriptors, descriptor)
+				}
 			}
-			if baseIndex < 0 || int(targetSymbol.Section) < baseIndex {
-				return nil, fmt.Errorf("jit: relocation %d addroff target is outside its module base section", i)
+		}
+	}
+	collectTypeDescriptors()
+	if len(mapped.typeDescriptors) != 0 {
+		if typesStart == 0 || typesEnd <= typesStart {
+			return nil, fmt.Errorf("jit: type descriptors have no read-only metadata range")
+		}
+		descriptors := make([]unsafe.Pointer, len(mapped.typeDescriptors))
+		for i, descriptor := range mapped.typeDescriptors {
+			descriptors[i] = unsafe.Pointer(descriptor)
+		}
+		canonicalMappings, canonicalErr := runtime.JITCanonicalizeTypes(guard, typesStart, typesEnd-typesStart, descriptors, explicitTypeMappings)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("jit: canonicalize image types: %w", canonicalErr)
+		}
+		if !typeMappingsRelocationsFit(image, mapped.symbols, sectionAddr, canonicalMappings) {
+			// The first reservation let the runtime inspect the relocated type
+			// graph. Rebase once near its discovered canonical descriptors so every
+			// direct PC-relative type reference can use the same identity.
+			oldSymbolsForAddress := make(map[uintptr][]uint32, len(image.Symbols))
+			for i, symbol := range image.Symbols {
+				oldSymbolsForAddress[mapped.symbols[i]] = append(oldSymbolsForAddress[mapped.symbols[i]], uint32(i))
 			}
-			targetOffset := sectionOffset[targetSymbol.Section] - sectionOffset[baseIndex] + targetSymbol.Offset
-			targetOffset, ok := addSignedOffset(targetOffset, reloc.Addend)
-			if !ok || targetOffset > uint64(^uint32(0)) {
-				return nil, fmt.Errorf("jit: relocation %d addroff target is out of range", i)
+			canonicalTargets := make(map[uint32]uintptr, len(canonicalMappings))
+			for _, alias := range canonicalMappings {
+				symbols := oldSymbolsForAddress[alias.Dynamic]
+				if len(symbols) == 0 {
+					return nil, fmt.Errorf("jit: canonical type descriptor %#x has no image symbol", alias.Dynamic)
+				}
+				if len(oldSymbolsForAddress[alias.Canonical]) == 0 {
+					for _, symbol := range symbols {
+						canonicalTargets[symbol] = alias.Canonical
+					}
+				}
 			}
-			binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(targetOffset))
-		case RelocAMD64TLSLE32:
-			tlsOffset := linuxAMD64TLSThreadOffset + reloc.Addend
-			if tlsOffset < -(1<<31) || tlsOffset > (1<<31)-1 {
-				return nil, fmt.Errorf("jit: relocation %d TLS offset %d does not fit in 32 bits", i, tlsOffset)
+			if unmapErr := mapped.runtimeMapping.Unmap(); unmapErr != nil {
+				return nil, fmt.Errorf("jit: release staging image before type rebase: %w", unmapErr)
 			}
-			binary.LittleEndian.PutUint32(mapped.sections[reloc.Section][reloc.Offset:], uint32(int32(tlsOffset)))
-		default:
-			return nil, fmt.Errorf("jit: unsupported relocation %d kind %d", i, reloc.Kind)
+			mapped.runtimeMapping = nil
+			mapped.mapping = nil
+			mapped.sections = nil
+			mapping, runtimeMapping, mapErr = mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset, nil, canonicalTargets)
+			if isJITMemoryLimitError(mapErr) {
+				runtime.GC()
+				if runtime.JITWaitForRetirements(5e9) {
+					mapping, runtimeMapping, mapErr = mapImageNearImports(totalSize, pageSize, image, importAddresses, sectionOffset, nil, canonicalTargets)
+				}
+			}
+			if mapErr != nil {
+				return nil, mapErr
+			}
+			mapped.mapping = mapping
+			mapped.runtimeMapping = runtimeMapping
+			mapped.control = uintptrPointer(mapping[:pageSize])
+			installMappedSections()
+			for i := range canonicalMappings {
+				oldDynamic := canonicalMappings[i].Dynamic
+				oldCanonical := canonicalMappings[i].Canonical
+				symbols := oldSymbolsForAddress[oldDynamic]
+				if len(symbols) == 0 {
+					return nil, fmt.Errorf("jit: canonical type descriptor %#x lost its image symbol", oldDynamic)
+				}
+				canonicalMappings[i].Dynamic = mapped.symbols[symbols[0]]
+				if canonicalSymbols := oldSymbolsForAddress[oldCanonical]; len(canonicalSymbols) != 0 {
+					canonicalSymbol := canonicalSymbols[0]
+					canonicalMappings[i].Canonical = mapped.symbols[canonicalSymbol]
+				}
+			}
+		}
+		mapped.typeMappings = canonicalMappings
+		collectTypeDescriptors()
+		clear(canonicalTypeAddresses)
+		for _, alias := range canonicalMappings {
+			canonicalTypeAddresses[alias.Dynamic] = alias.Canonical
+		}
+		if err := applyRelocations(); err != nil {
+			return nil, err
 		}
 	}
 
@@ -249,34 +406,70 @@ func mapModuleImage(image ModuleImage, resolve imageImportResolver) (result *map
 	return mapped, nil
 }
 
+func typeMappingsRelocationsFit(image ModuleImage, symbols, sectionAddr []uintptr, mappings []runtime.JITTypeMapping) bool {
+	byAddress := make(map[uintptr]int, len(mappings))
+	for i, mapping := range mappings {
+		byAddress[mapping.Dynamic] = i
+	}
+	for _, reloc := range image.Relocations {
+		if reloc.TargetImport || int(reloc.Target) >= len(symbols) {
+			continue
+		}
+		mappingIndex, aliased := byAddress[symbols[reloc.Target]]
+		if !aliased || reloc.Kind == RelocAMD64Addroff32 || reloc.Kind == RelocAMD64TLSLE32 {
+			continue
+		}
+		value, ok := addSignedAddress(mappings[mappingIndex].Canonical, reloc.Addend)
+		if !ok {
+			return false
+		}
+		switch reloc.Kind {
+		case RelocAMD64Abs32:
+			if uint64(value) > uint64(^uint32(0)) {
+				return false
+			}
+		case RelocAMD64PC32, RelocAMD64PLT32, RelocAMD64GOTPCREL, RelocAMD64GOTPCRELX:
+			place := sectionAddr[reloc.Section] + uintptr(reloc.Offset)
+			delta := int64(value) - (int64(place) + 4)
+			if delta < -(1<<31) || delta > (1<<31)-1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func isJITMemoryLimitError(err error) bool {
 	var limitError runtime.JITMemoryLimitError
 	return errors.As(err, &limitError)
 }
 
-func mapImageNearImports(totalSize, pageSize uint64, image ModuleImage, imports []uintptr, sectionOffset []uint64) ([]byte, *runtime.JITMapping, error) {
+func mapImageNearImports(totalSize, pageSize uint64, image ModuleImage, imports []uintptr, sectionOffset []uint64, legacyTypeImports map[uint32]uint32, canonicalTargets map[uint32]uintptr) ([]byte, *runtime.JITMapping, error) {
 	low, high := int64(0x10000), int64(0x00007ffffffff000-totalSize)
 	hasPCImport := false
-	canonicalTypes := make(map[uint32]uint32, len(image.TypeAliases))
-	for _, alias := range image.TypeAliases {
-		canonicalTypes[alias.Symbol] = alias.Import
-	}
 	for _, reloc := range image.Relocations {
-		if reloc.Kind != RelocAMD64PC32 && reloc.Kind != RelocAMD64PLT32 {
+		if reloc.Kind != RelocAMD64PC32 && reloc.Kind != RelocAMD64PLT32 &&
+			reloc.Kind != RelocAMD64GOTPCREL && reloc.Kind != RelocAMD64GOTPCRELX {
 			continue
 		}
-		targetIndex, imported := reloc.Target, reloc.TargetImport
-		if !imported {
-			targetIndex, imported = canonicalTypes[reloc.Target]
-		}
-		if !imported {
+		var target uintptr
+		if reloc.TargetImport {
+			if int(reloc.Target) >= len(imports) {
+				return nil, nil, fmt.Errorf("jit: PC-relative relocation has invalid import index %d", reloc.Target)
+			}
+			target = imports[reloc.Target]
+		} else if importIndex, canonical := legacyTypeImports[reloc.Target]; canonical {
+			if int(importIndex) >= len(imports) {
+				return nil, nil, fmt.Errorf("jit: PC-relative relocation has invalid type import index %d", importIndex)
+			}
+			target = imports[importIndex]
+		} else if canonical, ok := canonicalTargets[reloc.Target]; ok {
+			target = canonical
+		} else {
 			continue
 		}
 		hasPCImport = true
-		if int(targetIndex) >= len(imports) {
-			return nil, nil, fmt.Errorf("jit: PC-relative relocation has invalid import index %d", targetIndex)
-		}
-		value, ok := addSignedAddress(imports[targetIndex], reloc.Addend)
+		value, ok := addSignedAddress(target, reloc.Addend)
 		if !ok {
 			return nil, nil, fmt.Errorf("jit: PC-relative import relocation address overflows")
 		}
@@ -291,7 +484,7 @@ func mapImageNearImports(totalSize, pageSize uint64, image ModuleImage, imports 
 	low = (low + int64(pageSize-1)) &^ int64(pageSize-1)
 	high &^= int64(pageSize - 1)
 	if low < 0x10000 || high < low {
-		return nil, nil, fmt.Errorf("jit: host imports have no common amd64 PC-relative mapping range")
+		return nil, nil, fmt.Errorf("jit: canonical targets have no common amd64 PC-relative mapping range")
 	}
 	step := (high - low) / 2048
 	step = (step + int64(pageSize-1)) &^ int64(pageSize-1)
@@ -316,11 +509,15 @@ func mapImageNearImports(totalSize, pageSize uint64, image ModuleImage, imports 
 		if err == nil {
 			return mapped, token, nil
 		}
-		if !errors.Is(err, syscall.EEXIST) && !errors.Is(err, syscall.EINVAL) {
+		// MAP_FIXED_NOREPLACE reports EEXIST when this address is occupied.
+		// Other errors, including EINVAL, indicate an invalid request or an
+		// unsupported mapping mode and must not be mistaken for address
+		// collisions.
+		if !errors.Is(err, syscall.EEXIST) {
 			return nil, nil, fmt.Errorf("jit: map image near host symbols: %w", err)
 		}
 	}
-	return nil, nil, fmt.Errorf("jit: no free amd64 mapping address satisfies host PC-relative relocations in [%#x,%#x]", low, high)
+	return nil, nil, fmt.Errorf("jit: no free amd64 mapping address satisfies PC-relative relocations in [%#x,%#x]", low, high)
 }
 
 func mmapFixed(address uintptr, size int) ([]byte, *runtime.JITMapping, error) {
@@ -363,6 +560,8 @@ func closeMappedImage(mapped *mappedImage) error {
 	mapped.mapping = nil
 	mapped.symbols = nil
 	mapped.imports = nil
+	mapped.typeMappings = nil
+	mapped.typeDescriptors = nil
 	for i := range mapped.sections {
 		mapped.sections[i] = nil
 	}

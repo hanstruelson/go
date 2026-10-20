@@ -1079,11 +1079,22 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		}
 	}
 
-	// Short-circuit zero-sized allocation requests.
-	if size == 0 {
-		return unsafe.Pointer(&zerobase)
-	}
 	jitOwner, jitTypeDependent := jitOwnerForType(typ)
+
+	// Short-circuit zero-sized allocation requests. The shared zerobase cannot
+	// carry a per-object owner edge, so give JIT-dependent zero-sized objects a
+	// small noscan allocation that can retain their descriptor or module owner.
+	if size == 0 {
+		if jitOwner == nil && !jitTypeDependent {
+			return unsafe.Pointer(&zerobase)
+		}
+		allocationSize := uintptr(typ.Align_)
+		if allocationSize < maxTinySize {
+			allocationSize = maxTinySize
+		}
+		x := mallocgc(allocationSize, nil, needzero)
+		return jitFinishHeapAllocation(x, jitOwner, typ)
+	}
 
 	if jitOwner == nil && !jitTypeDependent && sizeSpecializedMallocEnabled && size < uintptr(len(mallocNoScanTable)) {
 		if typ == nil || !typ.Pointers() {

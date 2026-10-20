@@ -471,6 +471,27 @@ type LSym struct {
 	Pkg    string
 	PkgIdx int32
 	SymIdx int32
+
+	// jitEffects carries the compiler's direct-effect summary. A high marker
+	// bit distinguishes a known zero-effect summary from an unanalyzed symbol.
+	jitEffects uint8
+}
+
+const jitEffectsSetBit = 1 << 7
+
+// SetJITEffects records compiler analysis for this function symbol.
+func (s *LSym) SetJITEffects(effects uint8) {
+	valid := uint8(goobj.JITEffectUnknown | goobj.JITEffectUnsafe | goobj.JITEffectForeign | goobj.JITEffectCodePointer | goobj.JITEffectRetainsCallbacks | goobj.JITEffectInterfaceCall)
+	if effects&^valid != 0 {
+		panic("invalid JIT effect bits")
+	}
+	s.jitEffects = effects | jitEffectsSetBit
+}
+
+// JITEffects returns the analyzed direct effects and whether the symbol has
+// a compiler record.
+func (s *LSym) JITEffects() (uint8, bool) {
+	return s.jitEffects &^ jitEffectsSetBit, s.jitEffects&jitEffectsSetBit != 0
 }
 
 // A FuncInfo contains extra fields for STEXT symbols.
@@ -1207,7 +1228,13 @@ type Link struct {
 	// JITScope lists imported Go packages whose symbols may be needed by
 	// runtime Eval, including imports used by package declarations and generic
 	// bodies. Per-file identifier visibility is carried in JIT build metadata.
+	// JITScopeEnabled distinguishes an Eval-enabled package with no linker roots
+	// from a package that does not contain Eval call sites.
+	JITScopeEnabled bool
 	JITScope        []goobj.ImportedPkg
+	// JITScopeMethods lists methods visible to runtime Eval source and seeds
+	// the linker's interface-method reachability fixpoint.
+	JITScopeMethods []string
 	DiagFunc        func(string, ...any)
 	DiagFlush       func()
 	DebugInfo       func(ctxt *Link, fn *LSym, info *LSym, curfn Func) ([]dwarf.Scope, dwarf.InlCalls)

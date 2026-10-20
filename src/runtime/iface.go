@@ -124,6 +124,7 @@ type jitDynamicItab struct {
 // Static pairs continue through the regular cached path in getitab.
 func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 	var typeOwner, interfaceOwner *JITModuleOwner
+	var typeOwners, interfaceOwners []*JITModuleOwner
 	var typeInImage, interfaceInImage bool
 	if typ != nil {
 		typeOwner, typeInImage = jitOwnerForMappedAddress(uintptr(unsafe.Pointer(typ)))
@@ -140,13 +141,23 @@ func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 		return nil, false
 	}
 	// Reflect-created types live on the Go heap rather than in a JIT mapping.
-	// Follow their owner edges so their dynamic itabs can use the same weak,
-	// owner-local cache as image-backed descriptors.
+	// Keep every source owner live while resolving and publishing the dynamic
+	// itab. A reflected descriptor may combine types from multiple modules.
 	if typeOwner == nil && typeIsJIT {
-		typeOwner, _ = jitOwnerForType(typ)
+		typeOwners, _ = jitOwnersForType(typ)
+		if len(typeOwners) == 0 {
+			pinAllJITModules()
+		} else {
+			typeOwner = typeOwners[0]
+		}
 	}
 	if interfaceOwner == nil && interfaceIsJIT {
-		interfaceOwner, _ = jitOwnerForType(&inter.Type)
+		interfaceOwners, _ = jitOwnersForType(&inter.Type)
+		if len(interfaceOwners) == 0 {
+			pinAllJITModules()
+		} else {
+			interfaceOwner = interfaceOwners[0]
+		}
 	}
 	if (typeInImage && typeOwner == nil) || (interfaceInImage && interfaceOwner == nil) {
 		throw("runtime: JIT type has no live owner")
@@ -161,6 +172,8 @@ func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 	if typ.TFlag&abi.TFlagUncommon == 0 {
 		KeepAlive(typeOwner)
 		KeepAlive(interfaceOwner)
+		KeepAlive(typeOwners)
+		KeepAlive(interfaceOwners)
 		if canfail {
 			return nil, true
 		}
@@ -172,6 +185,8 @@ func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 		if tab := jitLookupDynamicItab(cacheOwner, inter, typ); tab != nil {
 			KeepAlive(typeOwner)
 			KeepAlive(interfaceOwner)
+			KeepAlive(typeOwners)
+			KeepAlive(interfaceOwners)
 			if tab.Fun[0] != 0 {
 				return tab, true
 			}
@@ -206,6 +221,8 @@ func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 	if cacheOwner == nil {
 		KeepAlive(typeOwner)
 		KeepAlive(interfaceOwner)
+		KeepAlive(typeOwners)
+		KeepAlive(interfaceOwners)
 		if tab.Fun[0] != 0 {
 			return tab, true
 		}
@@ -258,6 +275,8 @@ func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
 	}
 	KeepAlive(typeOwner)
 	KeepAlive(interfaceOwner)
+	KeepAlive(typeOwners)
+	KeepAlive(interfaceOwners)
 	if tab.Fun[0] != 0 {
 		return tab, true
 	}

@@ -42,22 +42,20 @@ func JITMapMemory(hint, size uintptr) (*JITMapping, error) {
 		flags |= jitMapFixedNoReplace
 	}
 	p, errno := mmap(unsafe.Pointer(hint), size, _PROT_READ|_PROT_WRITE, flags, -1, 0)
-	if errno != 0 || p == nil {
+	if errno != 0 {
 		releaseJITMemory(size)
-		if errno != 0 {
-			return nil, JITMemoryError{errno: uintptr(errno)}
-		}
-		munmap(p, size)
+		return nil, JITMemoryError{errno: uintptr(errno)}
+	}
+	if p == nil {
+		jitDiscardUnpublishedMapping(uintptr(p), size)
 		return nil, JITModuleError("runtime: cannot map JIT memory")
 	}
 	if hint != 0 && uintptr(p) != hint {
-		munmap(p, size)
-		releaseJITMemory(size)
+		jitDiscardUnpublishedMapping(uintptr(p), size)
 		return nil, JITModuleError("runtime: JIT mapping did not honor its address")
 	}
 	if uintptr(p)+size < uintptr(p) {
-		munmap(p, size)
-		releaseJITMemory(size)
+		jitDiscardUnpublishedMapping(uintptr(p), size)
 		return nil, JITModuleError("runtime: JIT mapping address overflows")
 	}
 	if asanenabled {
@@ -67,6 +65,20 @@ func JITMapMemory(hint, size uintptr) (*JITMapping, error) {
 	gcController.mappedReady.Add(int64(size))
 	setVMAName(p, size, "jit executable")
 	return &JITMapping{base: uintptr(p), size: size}, nil
+}
+
+// jitDiscardUnpublishedMapping rolls back a mapping that failed validation
+// before it became visible to the caller. Keep its reservation charged if the
+// kernel refuses to unmap it; releasing the charge would make leaked address
+// space available to later reservations.
+func jitDiscardUnpublishedMapping(base, size uintptr) {
+	_, _, errno := linux.Syscall6(jitSysMunmap, base, size, 0, 0, 0, 0)
+	if errno != 0 {
+		memstats.other_sys.add(int64(size))
+		gcController.mappedReady.Add(int64(size))
+		throw("runtime: cannot roll back invalid JIT mapping")
+	}
+	releaseJITMemory(size)
 }
 
 // Protect changes permissions on a subrange of this mapping. Writable

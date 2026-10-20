@@ -40,16 +40,18 @@ type ModuleImage struct {
 // mappedImage owns the process mappings associated with one validated module
 // image. Target-specific loaders populate it after relocation and protection.
 type mappedImage struct {
-	sections       [][]byte
-	mapping        []byte
-	symbols        []uintptr
-	imports        []uintptr
-	runtimeMapping jitMemoryMapping
-	entry          uintptr
-	control        uintptr
-	runtimeOwner   *runtime.JITModuleOwner
-	ownerAware     bool
-	pinnedReason   string
+	sections        [][]byte
+	mapping         []byte
+	symbols         []uintptr
+	imports         []uintptr
+	typeMappings    []runtime.JITTypeMapping
+	typeDescriptors []uintptr
+	runtimeMapping  jitMemoryMapping
+	entry           uintptr
+	control         uintptr
+	runtimeOwner    *runtime.JITModuleOwner
+	ownerAware      bool
+	pinnedReason    string
 }
 
 type jitMemoryMapping interface {
@@ -137,9 +139,9 @@ type ImageGlobalRoot struct {
 	TypeImport bool
 }
 
-// ImageTypeAlias maps a local module-relative type descriptor to the
-// canonical host descriptor used for Go type identity. The local descriptor
-// stays in the image so all its relative offsets remain module-relative.
+// ImageTypeAlias maps a local module-relative type descriptor to its
+// canonical descriptor used for Go type identity. The local descriptor stays
+// in the image so all its relative offsets remain module-relative.
 type ImageTypeAlias struct {
 	Symbol uint32
 	Import uint32

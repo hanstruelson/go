@@ -5,9 +5,9 @@
 package jit
 
 import (
+	"crypto/sha256"
 	"errors"
 	"runtime"
-	"unsafe"
 
 	"cmd/compile/publicinternal/gc"
 	"cmd/compile/publicinternal/noder"
@@ -36,7 +36,9 @@ type CompileRequest struct {
 }
 
 // CompiledPackage contains the Go compiler's object archive and diagnostics.
-// Object is not an executable and cannot be called directly.
+// Object is not an executable and cannot be called directly. LoadSnippet
+// rejects edits made after compilation because its owner and effect metadata
+// are valid only for the exact object archive returned here.
 type CompiledPackage struct {
 	Object      []byte
 	Diagnostics string
@@ -50,7 +52,20 @@ type CompiledPackage struct {
 	// through APIs the runtime cannot represent with an owner edge.
 	pinRequired bool
 	// captures are caller storage locations retained by the runtime owner.
-	captures []unsafe.Pointer
+	captures []runtime.JITCaptureBinding
+	// effects summarizes direct runtime-source effects and records candidate
+	// host call identities. LoadSnippet resolves these against the linker's
+	// per-symbol transitive summaries before deciding whether the owner can be
+	// reclaimed.
+	effects effectSummary
+	// compilerEffects is the union of source-IR effects classified during
+	// compilation. Unlike syntax-only guesses, it distinguishes interface
+	// dispatch from arbitrary function-value calls.
+	compilerEffects uint8
+	// objectHash and analyzedEntryName bind the owner/effect analysis to the
+	// exact public object bytes and entry name returned by compilation.
+	objectHash        [32]byte
+	analyzedEntryName string
 }
 
 // Compile runs the Go compiler frontend and machine-code backend in this
@@ -78,5 +93,9 @@ func compileWithJITCallSite(req CompileRequest, callSiteFile string) (CompiledPa
 	if err != nil {
 		return CompiledPackage{}, err
 	}
-	return CompiledPackage{Object: result.Object, Diagnostics: result.Diagnostics, ownerAware: req.ownerAware, pinRequired: req.pinRequired}, nil
+	return CompiledPackage{
+		Object: result.Object, Diagnostics: result.Diagnostics, ownerAware: req.ownerAware,
+		pinRequired: req.pinRequired, compilerEffects: result.JITEffects,
+		objectHash: sha256.Sum256(result.Object),
+	}, nil
 }

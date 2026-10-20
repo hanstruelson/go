@@ -25,19 +25,19 @@ import (
 
 // "Portable" code generation.
 
-func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs, queue *[]*ir.Func, backend *ssagen.Context) {
+func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs, queue *[]*ir.Func, backend *ssagen.Context) uint8 {
 	if ir.FuncName(fn) == "_" {
 		// Skip compiling blank functions.
 		// Frontend already reported any spec-mandated errors (#29870).
-		return
+		return 0
 	}
 
 	if fn.IsClosure() {
-		return // we'll get this as part of its enclosing function
+		return 0 // we'll get this as part of its enclosing function
 	}
 
 	if ssagen.CreateWasmImportWrapper(backend, fn) {
-		return
+		return 0
 	}
 
 	if len(fn.Body) == 0 {
@@ -63,28 +63,30 @@ func enqueueFunc(fn *ir.Func, symABIs *ssagen.SymABIs, queue *[]*ir.Func, backen
 				x := ssagen.EmitArgInfo(fn, abiInfo)
 				objw.Global(fn.Target.Ctxt, x, int32(len(x.P)), obj.RODATA|obj.LOCAL)
 			}
-			return
+			return 0
 		}
 	}
 
 	errorsBefore := fn.Target.Diagnostics.Errors()
 
 	todo := []*ir.Func{fn}
+	var effects uint8
 	for len(todo) > 0 {
 		next := todo[len(todo)-1]
 		todo = todo[:len(todo)-1]
 
-		prepareFunc(next, backend)
+		effects |= prepareFunc(next, backend)
 		todo = append(todo, next.Closures...)
 	}
 
 	if fn.Target.Diagnostics.Errors() > errorsBefore {
-		return
+		return 0
 	}
 
 	// Enqueue just fn itself. compileFunctions will handle
 	// scheduling compilation of its closures after it's done.
 	*queue = append(*queue, fn)
+	return effects
 }
 
 func needsIntrinsicBody(fn *ir.Func, symABIs *ssagen.SymABIs) bool {
@@ -93,7 +95,7 @@ func needsIntrinsicBody(fn *ir.Func, symABIs *ssagen.SymABIs) bool {
 
 // prepareFunc handles any remaining frontend compilation tasks that
 // aren't yet safe to perform concurrently.
-func prepareFunc(fn *ir.Func, backend *ssagen.Context) {
+func prepareFunc(fn *ir.Func, backend *ssagen.Context) uint8 {
 	// Set up the function's LSym early to avoid data races with the assemblers.
 	// Do this before walk, as walk needs the LSym to set attributes/relocations
 	// (e.g. in MarkTypeUsedInInterface).
@@ -115,12 +117,18 @@ func prepareFunc(fn *ir.Func, backend *ssagen.Context) {
 	// Must be done after InitLSym and CalcSize.
 	ssagen.GenWasmExportWrapper(backend, fn)
 
+	// Record effects before walk rewrites FuncPCABI calls into raw integer
+	// literals. The linker consumes this summary when deciding whether an
+	// Eval module may be reclaimed or needs a raw-PC pin.
+	effects := jitDirectEffects(fn)
+	fn.Linksym().SetJITEffects(effects)
 	walk.Walk(fn)
 	if ir.MatchAstDump(fn, "walk") {
 		ir.AstDump(fn, "walk, "+ir.FuncName(fn))
 	}
 
 	fn.Target.Ctxt.DwTextCount++
+	return effects
 }
 
 // compileFunctions compiles all functions in compilequeue.

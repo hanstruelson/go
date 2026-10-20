@@ -857,6 +857,9 @@ func printcreatedby(gp *g) {
 	if f.valid() && showframe(f.srcFunc(), gp, false, abi.FuncIDNormal) && gp.goid != 1 {
 		printcreatedby1(f, pc, gp.parentGoid)
 	}
+	// The PC is stored as an integer, so keep its typed owner alive through
+	// findfunc and the final metadata reads above.
+	KeepAlive(gp.jitGopcOwner)
 }
 
 func printcreatedby1(f funcInfo, pc uintptr, goid uint64) {
@@ -1140,6 +1143,10 @@ func printAncestorTraceback(ancestor ancestorInfo) {
 		// Pass 0 for the goid parameter so we don't print it again.
 		printcreatedby1(f, ancestor.gopc, 0)
 	}
+	// PCs are stored as integers, so explicitly keep their typed owners alive
+	// through findfunc and the final metadata reads above.
+	KeepAlive(ancestor.jitPCOwners)
+	KeepAlive(ancestor.jitGopcOwner)
 }
 
 // printAncestorTracebackFuncInfo prints the given function info at a given pc

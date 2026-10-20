@@ -13,9 +13,11 @@ import (
 )
 
 var (
-	jitReflectTypeLock  mutex
-	jitReflectTypes     map[string]unsafe.Pointer // weak handles; keys contain no descriptor addresses
-	jitReflectTypeBytes uint64
+	jitTypeIdentityLock        mutex
+	jitActiveTypeIdentityGuard *JITTypeIdentityGuard // protected by jitTypeIdentityLock
+	jitReflectTypeLock         mutex
+	jitReflectTypes            map[string]unsafe.Pointer // weak handles; keys contain no descriptor addresses
+	jitReflectTypeBytes        uint64
 )
 
 const (
@@ -48,6 +50,16 @@ type JITFunctionMetadata struct {
 	FuncData [][]byte
 }
 
+// JITCaptureBinding couples a call-site-local binding identity with the
+// address and exact static type of its caller cell. Runtime owners retain
+// these records as a scanned slice and retain module owners referenced by the
+// type graph; generated code resolves a binding by ID rather than position.
+type JITCaptureBinding struct {
+	BindingID uint64
+	Address   unsafe.Pointer
+	Type      unsafe.Pointer // exact static capture type descriptor
+}
+
 // JITGlobalMetadata describes one writable package global in a JIT image.
 // Type points at the Go runtime type descriptor for the exact symbol extent.
 // The runtime uses its pointer map to scan this external storage while the
@@ -58,11 +70,51 @@ type JITGlobalMetadata struct {
 	Type    unsafe.Pointer
 }
 
-// JITTypeMapping associates a local, module-relative descriptor with the
-// canonical descriptor used by the host executable.
+// JITTypeMapping associates a local, module-relative descriptor with its
+// canonical descriptor. The canonical descriptor can belong to the host
+// executable, to an already published JIT module, or to a live reflect-created
+// type descriptor. The private roots keep weakly cataloged candidates live
+// until registration takes over their lifetime dependency.
 type JITTypeMapping struct {
 	Dynamic   uintptr
 	Canonical uintptr
+	owner     *JITModuleOwner // temporary strong edge held from discovery through registration
+	heapType  *_type          // temporary root for a reflect-created canonical descriptor
+}
+
+// JITTypeIdentityGuard serializes image canonicalization, reflect-created type
+// interning, and plugin typelink publication. Keep it from descriptor
+// discovery through module publish so a reflect constructor or plugin load
+// cannot change the canonical descriptor catalog in the middle of an update.
+type JITTypeIdentityGuard struct {
+	locked bool
+}
+
+// JITBeginTypeIdentityUpdate starts one serialized runtime type-catalog update.
+func JITBeginTypeIdentityUpdate() *JITTypeIdentityGuard {
+	guard := new(JITTypeIdentityGuard)
+	lock(&jitTypeIdentityLock)
+	guard.locked = true
+	if jitActiveTypeIdentityGuard != nil {
+		throw("runtime: JIT type identity guard already active")
+	}
+	jitActiveTypeIdentityGuard = guard
+	return guard
+}
+
+// Release ends the serialized type-catalog update. It is safe to call after a
+// failed mapping or registration, but each guard must be released once.
+func (guard *JITTypeIdentityGuard) Release() {
+	if guard == nil || !guard.locked || jitActiveTypeIdentityGuard != guard {
+		throw("runtime: invalid JIT type identity guard release")
+	}
+	jitActiveTypeIdentityGuard = nil
+	guard.locked = false
+	unlock(&jitTypeIdentityLock)
+}
+
+func jitTypeIdentityGuardHeld(guard *JITTypeIdentityGuard) bool {
+	return guard != nil && guard.locked && jitActiveTypeIdentityGuard == guard
 }
 
 // JITReflectOffset is one name, type, or text target referenced by a
@@ -101,6 +153,203 @@ func JITTypeUsesGCMaskOnDemand(typ unsafe.Pointer) bool {
 // JITTypeDescriptorSize is the common ABI descriptor size expected by the
 // runtime for a compiler-emitted JIT type symbol.
 func JITTypeDescriptorSize() uintptr { return unsafe.Sizeof(_type{}) }
+
+// JITCanonicalizeTypes finds existing identities for unnamed descriptors in
+// a staged image. The returned mappings are only candidates: registration
+// validates them again and retains every JIT module that owns a canonical
+// descriptor before publishing the new module. It checks static typelinks,
+// live JIT descriptors, and reflect-created descriptors already present in
+// the weak structural cache; candidate roots are held until registration.
+func JITCanonicalizeTypes(guard *JITTypeIdentityGuard, typesStart, typesSize uintptr, descriptors []unsafe.Pointer, mappings []JITTypeMapping) ([]JITTypeMapping, error) {
+	if !jitTypeIdentityGuardHeld(guard) {
+		return nil, JITModuleError("runtime: JIT type canonicalization requires an identity guard")
+	}
+	if typesStart == 0 || typesSize == 0 || typesStart+typesSize < typesStart {
+		return nil, JITModuleError("runtime: invalid staged JIT type range")
+	}
+	typesEnd := typesStart + typesSize
+	descriptorSize := unsafe.Sizeof(_type{})
+	typeMap := make(map[*_type]*_type, len(mappings)+len(descriptors))
+	staged := &moduledata{types: typesStart, etypes: typesEnd, jitModule: true, typemap: typeMap}
+	seen := make(map[_typePair]struct{})
+	var result []JITTypeMapping
+	for _, pair := range mappings {
+		if pair.Dynamic%goarch.PtrSize != 0 || pair.Dynamic < typesStart || pair.Dynamic > typesEnd ||
+			typesEnd-pair.Dynamic < descriptorSize || pair.Canonical == 0 || pair.Canonical%goarch.PtrSize != 0 {
+			return nil, JITModuleError("runtime: invalid explicit JIT type mapping")
+		}
+		dynamicType := (*_type)(unsafe.Pointer(pair.Dynamic))
+		if owner, found := jitOwnerForMappedAddress(pair.Canonical); found {
+			if owner == nil {
+				return nil, JITModuleError("runtime: canonical JIT type module is retiring")
+			}
+			pair.owner = owner
+		}
+		if pair.heapType == nil {
+			obj, span, _ := findObject(pair.Canonical, 0, 0)
+			if obj == pair.Canonical && span != nil && span.elemsize >= descriptorSize {
+				candidateType := (*_type)(unsafe.Pointer(pair.Canonical))
+				if metadata := jitMetadataForHeapObject(pair.Canonical); metadata != nil && metadata.typ == candidateType {
+					pair.heapType = candidateType
+					KeepAlive(metadata)
+				}
+			}
+		}
+		canonicalValid := pair.heapType != nil
+		for _, md := range activeModules() {
+			if pair.Canonical >= md.types && pair.Canonical <= md.etypes && md.etypes-pair.Canonical >= descriptorSize {
+				canonicalValid = true
+				break
+			}
+		}
+		if pair.owner != nil {
+			md := (*moduledata)(unsafe.Pointer(pair.owner.module))
+			if md != nil && md.jitModule && pair.Canonical >= md.types && pair.Canonical <= md.etypes && md.etypes-pair.Canonical >= descriptorSize {
+				canonicalValid = true
+			}
+		}
+		if !canonicalValid {
+			return nil, JITModuleError("runtime: explicit canonical JIT type is not in a live type descriptor range")
+		}
+		canonicalType := (*_type)(unsafe.Pointer(pair.Canonical))
+		equal := dynamicType.Hash == canonicalType.Hash && jitTypesEqual(dynamicType, canonicalType, seen, staged)
+		clear(seen)
+		KeepAlive(pair.owner)
+		KeepAlive(pair.heapType)
+		if !equal {
+			// The object linker can only use a display string to propose a host
+			// alias. If the actual descriptors differ, discard the hint and let
+			// structural interning choose the right identity from the catalogs.
+			continue
+		}
+		if previous, exists := typeMap[dynamicType]; exists {
+			if previous == canonicalType {
+				continue
+			}
+			continue
+		}
+		typeMap[dynamicType] = canonicalType
+		result = append(result, pair)
+	}
+	descriptorTypes := make([]*_type, 0, len(descriptors))
+	seenDescriptors := make(map[*_type]struct{}, len(descriptors))
+	wantedHashes := make(map[uint32]struct{})
+	for _, descriptor := range descriptors {
+		address := uintptr(descriptor)
+		if address%goarch.PtrSize != 0 || address < typesStart || address > typesEnd || typesEnd-address < descriptorSize {
+			return nil, JITModuleError("runtime: staged JIT type descriptor is outside its type range")
+		}
+		typ := (*_type)(descriptor)
+		if _, duplicate := seenDescriptors[typ]; duplicate {
+			continue
+		}
+		seenDescriptors[typ] = struct{}{}
+		descriptorTypes = append(descriptorTypes, typ)
+		if typ.TFlag&abi.TFlagNamed == 0 {
+			wantedHashes[typ.Hash] = struct{}{}
+		}
+	}
+
+	type candidate struct {
+		typ   *_type
+		owner *JITModuleOwner
+		heap  *_type
+	}
+	byHash := make(map[uint32][]candidate)
+	seenCandidates := make(map[*_type]struct{})
+	addCandidate := func(typ *_type, owner *JITModuleOwner, heapType *_type) {
+		if typ == nil || typ.TFlag&abi.TFlagNamed != 0 {
+			return
+		}
+		if _, wanted := wantedHashes[typ.Hash]; !wanted {
+			return
+		}
+		if _, ok := seenCandidates[typ]; ok {
+			return
+		}
+		seenCandidates[typ] = struct{}{}
+		byHash[typ.Hash] = append(byHash[typ.Hash], candidate{typ: typ, owner: owner, heap: heapType})
+	}
+	// The static module order defines the process-lifetime canonical identity.
+	for _, md := range activeModules() {
+		for _, typ := range moduleTypelinks(md) {
+			if canonical := md.typemap[typ]; canonical != nil {
+				typ = canonical
+			}
+			addCandidate(typ, nil, nil)
+		}
+	}
+	owners := jitLiveModuleOwners()
+	for _, owner := range owners {
+		md := (*moduledata)(unsafe.Pointer(owner.module))
+		if md == nil || !md.jitModule {
+			continue
+		}
+		for _, address := range owner.typeDescriptors {
+			typ := (*_type)(unsafe.Pointer(address))
+			if canonical := md.typemap[typ]; canonical != nil {
+				typ = canonical
+			}
+			addCandidate(typ, owner, nil)
+		}
+	}
+	reflectTypes := jitLiveReflectTypeDescriptors()
+	for _, typ := range reflectTypes {
+		addCandidate(typ, nil, typ)
+	}
+
+	for _, typ := range descriptorTypes {
+		address := uintptr(unsafe.Pointer(typ))
+		if _, explicit := typeMap[typ]; explicit || typ.TFlag&abi.TFlagNamed != 0 {
+			canonical := typeMap[typ]
+			if canonical == nil {
+				canonical = typ
+			}
+			addCandidate(canonical, nil, nil)
+			continue
+		}
+		for _, candidate := range byHash[typ.Hash] {
+			if typ == candidate.typ {
+				continue
+			}
+			if jitTypesEqual(typ, candidate.typ, seen, staged) {
+				typeMap[typ] = candidate.typ
+				result = append(result, JITTypeMapping{
+					Dynamic: address, Canonical: uintptr(unsafe.Pointer(candidate.typ)),
+					owner: candidate.owner, heapType: candidate.heap,
+				})
+				break
+			}
+			clear(seen)
+		}
+		canonical := typeMap[typ]
+		if canonical == nil {
+			canonical = typ
+		}
+		addCandidate(canonical, nil, nil)
+	}
+	KeepAlive(owners)
+	KeepAlive(reflectTypes)
+	KeepAlive(descriptorTypes)
+	return result, nil
+}
+
+func jitLiveReflectTypeDescriptors() []*_type {
+	lock(&jitReflectTypeLock)
+	handles := make([]unsafe.Pointer, 0, len(jitReflectTypes))
+	for _, weak := range jitReflectTypes {
+		handles = append(handles, weak)
+	}
+	unlock(&jitReflectTypeLock)
+	types := make([]*_type, 0, len(handles))
+	for _, handle := range handles {
+		if typ := (*_type)(internal_weak_runtime_makeStrongFromWeak(handle)); typ != nil {
+			types = append(types, typ)
+		}
+	}
+	KeepAlive(handles)
+	return types
+}
 
 // JITTypeIdentity returns a process-unique identity for a named dynamic type.
 // Image types use their module generation and module-relative address. A
@@ -180,18 +429,20 @@ func (m *JITMapping) Size() uintptr {
 // stack or closure slots. Its fields are private because only the runtime may
 // retire the associated mapping and metadata.
 type JITModuleOwner struct {
-	mapping    *JITMapping
-	module     uintptr
-	control    uintptr
-	generation uint64
-	captures   []unsafe.Pointer
-	globals    []jitGlobalRoot
-	typeMap    map[*_type]*_type
-	weakHandle unsafe.Pointer
-	pinSlot    *jitOwnerRootSlot
-	itabLock   mutex
-	itabs      *jitDynamicItab
-	itabCaches uint32
+	mapping         *JITMapping
+	module          uintptr
+	control         uintptr
+	generation      uint64
+	captures        []JITCaptureBinding
+	globals         []jitGlobalRoot
+	typeMap         map[*_type]*_type
+	typeOwners      []*JITModuleOwner // dependencies for canonical descriptors and direct type references
+	typeDescriptors []uintptr         // descriptors considered by future JIT interning
+	weakHandle      unsafe.Pointer
+	pinSlot         *jitOwnerRootSlot
+	itabLock        mutex
+	itabs           *jitDynamicItab
+	itabCaches      uint32
 }
 
 // JITRegisterReflectType installs GC-owned metadata for a reflect-created
@@ -225,15 +476,15 @@ func JITRegisterReflectType(typ unsafe.Pointer, dependencies []unsafe.Pointer, o
 			metadata.addOwner(owner)
 		}
 	}
+	if len(metadata.owners) != 0 {
+		(*_type)(typ).TFlag |= abi.TFlagJITDependent
+	}
 	if len(metadata.owners) == 0 {
 		if owner, _ := jitOwnerForType((*_type)(typ)); owner != nil {
 			metadata.addOwner(owner)
 		}
 	}
-	if len(metadata.owners) == 0 || missingOwner {
-		if _, dependent := jitOwnerForType((*_type)(typ)); !dependent {
-			throw("runtime: JIT reflection metadata has no module owner")
-		}
+	if _, dependent := jitOwnerForType((*_type)(typ)); dependent && (len(metadata.owners) == 0 || missingOwner) {
 		// Corrupt or incomplete dependency metadata must not leave raw PCs
 		// pointing into a reclaimable mapping. Pin every module as a safe,
 		// intentionally permanent fallback.
@@ -249,9 +500,52 @@ func JITRegisterReflectType(typ unsafe.Pointer, dependencies []unsafe.Pointer, o
 	KeepAlive(offsets)
 }
 
+// jitCanonicalReflectType finds an already published unnamed type with the
+// same runtime descriptor shape as typ. The caller holds jitTypeIdentityLock,
+// so no JIT image can be published while this candidate is being checked.
+func jitCanonicalReflectType(typ *_type) *_type {
+	if typ == nil || typ.TFlag&abi.TFlagNamed != 0 {
+		return nil
+	}
+	seen := make(map[_typePair]struct{})
+	for _, md := range activeModules() {
+		for _, candidate := range moduleTypelinks(md) {
+			if canonical := md.typemap[candidate]; canonical != nil {
+				candidate = canonical
+			}
+			if typ.Hash == candidate.Hash && jitTypesEqual(typ, candidate, seen, nil) {
+				return candidate
+			}
+			clear(seen)
+		}
+	}
+	owners := jitLiveModuleOwners()
+	for _, owner := range owners {
+		md := (*moduledata)(unsafe.Pointer(owner.module))
+		if md == nil || !md.jitModule {
+			continue
+		}
+		for _, address := range owner.typeDescriptors {
+			candidate := (*_type)(unsafe.Pointer(address))
+			if canonical := md.typemap[candidate]; canonical != nil {
+				candidate = canonical
+			}
+			if typ.Hash == candidate.Hash && jitTypesEqual(typ, candidate, seen, nil) {
+				KeepAlive(owners)
+				return candidate
+			}
+			clear(seen)
+		}
+	}
+	KeepAlive(owners)
+	return nil
+}
+
 // JITReflectTypeCache looks up or stores a reflect-created type descriptor in
 // a process-wide weak-value cache. keys contains the complete structural
 // identity chosen by reflect; it does not keep any input descriptors alive.
+// For a new candidate, the identity lock coordinates it with JIT publication
+// and an already published static or JIT descriptor takes precedence.
 // Passing candidate == nil does
 // a lookup. Passing a candidate stores it unless another goroutine has already
 // stored the same key, in which case the existing canonical descriptor wins.
@@ -262,28 +556,28 @@ func JITReflectTypeCache(kind uint8, keys []byte, dependencies []unsafe.Pointer,
 		if dependency == nil || !jitTypeNeedsOwner((*_type)(dependency)) {
 			continue
 		}
-		owner, _ := jitOwnerForType((*_type)(dependency))
-		if owner == nil {
+		dependencyOwners, _ := jitOwnersForType((*_type)(dependency))
+		if len(dependencyOwners) == 0 {
 			// An incomplete descriptor edge cannot be represented by this
 			// canonicalizer. Preserve safety by pinning before returning it.
 			pinAllJITModules()
 			continue
 		}
-		found := false
-		for _, existing := range owners {
-			if existing == owner {
-				found = true
-				break
+		for _, owner := range dependencyOwners {
+			found := false
+			for _, existing := range owners {
+				if existing == owner {
+					found = true
+					break
+				}
+			}
+			if !found {
+				owners = append(owners, owner)
 			}
 		}
-		if !found {
-			owners = append(owners, owner)
-		}
 	}
-	if len(owners) == 0 {
-		KeepAlive(dependencies)
-		return candidate
-	}
+	lock(&jitTypeIdentityLock)
+	defer unlock(&jitTypeIdentityLock)
 
 	keyBytes := make([]byte, len(keys)+1)
 	keyBytes[0] = kind
@@ -312,6 +606,12 @@ func JITReflectTypeCache(kind uint8, keys []byte, dependencies []unsafe.Pointer,
 			KeepAlive(dependencies)
 			return nil
 		}
+		if canonical := jitCanonicalReflectType((*_type)(candidate)); canonical != nil {
+			KeepAlive(candidate)
+			KeepAlive(owners)
+			KeepAlive(dependencies)
+			return unsafe.Pointer(canonical)
+		}
 
 		// The weak handle does not root the descriptor or any of its module
 		// owners. A live descriptor carries its own owner metadata.
@@ -329,12 +629,18 @@ func JITReflectTypeCache(kind uint8, keys []byte, dependencies []unsafe.Pointer,
 		if jitReflectTypes[key] == nil {
 			jitReflectTypes[key] = weak
 			entryBytes := uint64(len(key)) + jitReflectTypeCacheEntryBytes
+			previousBytes := jitReflectTypeBytes
 			if jitReflectTypeBytes > ^uint64(0)-entryBytes {
 				unlock(&jitReflectTypeLock)
 				throw("runtime: JIT reflect type cache size overflow")
 			}
 			jitReflectTypeBytes += entryBytes
+			prune := len(jitReflectTypes)%64 == 0 ||
+				previousBytes/jitReflectTypeCachePruneBytes < jitReflectTypeBytes/jitReflectTypeCachePruneBytes
 			unlock(&jitReflectTypeLock)
+			if prune {
+				jitPruneReflectTypeCache(false)
+			}
 			KeepAlive(candidate)
 			KeepAlive(owners)
 			KeepAlive(dependencies)
@@ -530,9 +836,15 @@ func JITManifest() []byte {
 // JIT PC index. The executable reservation must start with a writable,
 // non-executable control page. The returned owner is the GC-visible lifetime
 // edge for generated frames and closures; dropping the last edge schedules
-// asynchronous retirement. captures contains addresses of typed Go variables
-// and is copied into a scanned owner field before the module becomes visible.
-func RegisterJITModule(textStart, textSize, rodataStart, typesStart, typesSize uintptr, mapping *JITMapping, controlPage uintptr, functions []JITFunctionMetadata, globals []JITGlobalMetadata, typeMappings []JITTypeMapping, captures []unsafe.Pointer) (*JITModuleOwner, error) {
+// asynchronous retirement. Each capture couples a call-site binding ID with
+// its address of a typed Go variable; these records are copied into a scanned
+// owner field before the module becomes visible.
+// typeDescriptors is a pointer-free list of emitted descriptors for later
+// unnamed-type comparisons; it does not keep this module alive.
+func RegisterJITModule(guard *JITTypeIdentityGuard, textStart, textSize, rodataStart, typesStart, typesSize uintptr, mapping *JITMapping, controlPage uintptr, functions []JITFunctionMetadata, globals []JITGlobalMetadata, typeMappings []JITTypeMapping, typeDescriptors []uintptr, captures []JITCaptureBinding) (*JITModuleOwner, error) {
+	if !jitTypeIdentityGuardHeld(guard) {
+		return nil, JITModuleError("runtime: JIT module registration requires a type identity guard")
+	}
 	if !jitPlatformSupported() {
 		return nil, JITModuleError("runtime: JIT module registration is unavailable on this platform")
 	}
@@ -556,11 +868,41 @@ func RegisterJITModule(textStart, textSize, rodataStart, typesStart, typesSize u
 	if typesSize != 0 && rodataStart != typesStart {
 		return nil, JITModuleError("runtime: JIT type metadata must begin at the read-only data base")
 	}
+	seenTypeDescriptors := make(map[uintptr]struct{}, len(typeDescriptors))
+	for _, descriptor := range typeDescriptors {
+		if descriptor%goarch.PtrSize != 0 || descriptor < typesStart || descriptor > typesStart+typesSize ||
+			typesStart+typesSize-descriptor < unsafe.Sizeof(_type{}) {
+			return nil, JITModuleError("runtime: JIT type descriptor is outside the module type range")
+		}
+		if _, duplicate := seenTypeDescriptors[descriptor]; duplicate {
+			return nil, JITModuleError("runtime: duplicate JIT type descriptor")
+		}
+		seenTypeDescriptors[descriptor] = struct{}{}
+	}
 	if len(functions) == 0 || len(functions) > 1<<20 {
 		return nil, JITModuleError("runtime: JIT module function count is invalid")
 	}
 	if len(globals) > 1<<20 {
 		return nil, JITModuleError("runtime: too many JIT global roots")
+	}
+	seenCaptureIDs := make(map[uint64]struct{}, len(captures))
+	for _, capture := range captures {
+		if capture.BindingID == 0 {
+			return nil, JITModuleError("runtime: JIT capture has no binding identity")
+		}
+		if capture.Address == nil {
+			return nil, JITModuleError("runtime: JIT capture has no storage address")
+		}
+		if capture.Type == nil || uintptr(capture.Type)%goarch.PtrSize != 0 {
+			return nil, JITModuleError("runtime: JIT capture has no aligned type descriptor")
+		}
+		if JITCaptureAddressOnCurrentStack(capture.Address) {
+			return nil, JITModuleError("runtime: JIT capture points into the current goroutine stack")
+		}
+		if _, duplicate := seenCaptureIDs[capture.BindingID]; duplicate {
+			return nil, JITModuleError("runtime: duplicate JIT capture binding identity")
+		}
+		seenCaptureIDs[capture.BindingID] = struct{}{}
 	}
 	for i, fn := range functions {
 		if fn.Size == 0 || uint64(fn.Offset)+uint64(fn.Size) > uint64(textSize) || fn.Name == "" || len(fn.PCSP) == 0 {
@@ -606,29 +948,126 @@ func RegisterJITModule(textStart, textSize, rodataStart, typesStart, typesSize u
 		globalRoots = append(globalRoots, jitGlobalRoot{address: global.Address, ptrBytes: uintptr(typ.PtrBytes), mask: unsafe.Pointer(mask)})
 	}
 	typeMap := make(map[*_type]*_type, len(typeMappings))
+	var typeOwners []*JITModuleOwner
+	var typeOwnerSet map[*JITModuleOwner]struct{}
+	addTypeOwners := func(owners []*JITModuleOwner) {
+		for _, owner := range owners {
+			if owner == nil {
+				continue
+			}
+			if typeOwnerSet == nil {
+				typeOwnerSet = make(map[*JITModuleOwner]struct{})
+			}
+			if _, seen := typeOwnerSet[owner]; !seen {
+				typeOwnerSet[owner] = struct{}{}
+				typeOwners = append(typeOwners, owner)
+			}
+		}
+	}
+	descriptorSize := unsafe.Sizeof(_type{})
+	stagedTypeModule := &moduledata{
+		types: typesStart, etypes: typesStart + typesSize,
+		jitModule: true, typemap: typeMap,
+	}
+	seenTypePairs := make(map[_typePair]struct{})
 	for _, pair := range typeMappings {
-		if pair.Dynamic < typesStart || pair.Dynamic >= typesStart+typesSize || pair.Canonical == 0 {
+		if pair.Dynamic%goarch.PtrSize != 0 || pair.Dynamic < typesStart || pair.Dynamic > typesStart+typesSize ||
+			typesStart+typesSize-pair.Dynamic < descriptorSize || pair.Canonical == 0 || pair.Canonical%goarch.PtrSize != 0 {
 			return nil, JITModuleError("runtime: JIT type mapping is outside the module type range")
 		}
 		var canonicalModule *moduledata
-		for md := &firstmoduledata; md != nil; md = md.next {
-			if pair.Canonical >= md.types && pair.Canonical < md.etypes {
-				canonicalModule = md
-				break
+		var canonicalOwners []*JITModuleOwner
+		canonicalInHeap := false
+		if pair.Canonical >= typesStart && pair.Canonical < typesStart+typesSize {
+			canonicalModule = stagedTypeModule
+		} else {
+			for _, md := range activeModules() {
+				if pair.Canonical >= md.types && pair.Canonical < md.etypes {
+					canonicalModule = md
+					break
+				}
 			}
 		}
 		if canonicalModule == nil {
-			return nil, JITModuleError("runtime: canonical JIT type is not in a linked module")
+			// Cross-module aliases must retain the canonical module. Promote its
+			// weak owner before inspecting moduledata, then keep that owner on the
+			// new module so the descriptor cannot be unmapped while this alias is
+			// reachable. Because the target must already be published, these
+			// dependency edges point to earlier registrations and cannot cycle.
+			canonicalOwner, found := jitOwnerForMappedAddress(pair.Canonical)
+			if found && canonicalOwner == nil {
+				return nil, JITModuleError("runtime: canonical JIT type module is retiring")
+			}
+			if canonicalOwner != nil {
+				candidate := (*moduledata)(unsafe.Pointer(canonicalOwner.module))
+				if candidate != nil && candidate.jitModule && pair.Canonical >= candidate.types && pair.Canonical < candidate.etypes {
+					canonicalModule = candidate
+					canonicalOwners = append(canonicalOwners, canonicalOwner)
+				}
+			}
+		}
+		if canonicalModule == nil && len(canonicalOwners) == 0 {
+			// reflect can synthesize a canonical descriptor whose storage is an
+			// ordinary Go heap object rather than a module type range. Keep that
+			// descriptor reachable through typeMap and retain its full owner set
+			// when it was itself built from JIT types.
+			canonicalType := (*_type)(unsafe.Pointer(pair.Canonical))
+			obj, span, _ := findObject(pair.Canonical, 0, 0)
+			if obj == pair.Canonical && span != nil && span.elemsize >= descriptorSize {
+				canonicalInHeap = true
+				if metadata := jitMetadataForHeapObject(pair.Canonical); metadata != nil {
+					if len(metadata.owners) == 0 && jitTypeNeedsOwner(canonicalType) {
+						return nil, JITModuleError("runtime: canonical reflected JIT type has incomplete owner metadata")
+					}
+					canonicalOwners = append(canonicalOwners, metadata.owners...)
+					KeepAlive(metadata)
+				} else if jitTypeNeedsOwner(canonicalType) {
+					owners, dependent := jitOwnersForType(canonicalType)
+					if !dependent || len(owners) == 0 {
+						return nil, JITModuleError("runtime: canonical reflected JIT type has incomplete owner metadata")
+					}
+					canonicalOwners = append(canonicalOwners, owners...)
+				}
+			}
+		}
+		if canonicalModule == nil && !canonicalInHeap {
+			return nil, JITModuleError("runtime: canonical type is not in a linked module or a reflected heap descriptor")
+		}
+		if canonicalModule != nil {
+			if pair.Canonical < canonicalModule.types || pair.Canonical > canonicalModule.etypes ||
+				canonicalModule.etypes-pair.Canonical < descriptorSize {
+				return nil, JITModuleError("runtime: canonical JIT type descriptor is truncated")
+			}
 		}
 		dynamicType := (*_type)(unsafe.Pointer(pair.Dynamic))
 		canonicalType := (*_type)(unsafe.Pointer(pair.Canonical))
 		if dynamicType.Hash != canonicalType.Hash {
+			KeepAlive(pair.owner)
+			KeepAlive(pair.heapType)
 			return nil, JITModuleError("runtime: canonical JIT type hash mismatch")
 		}
+		equal := jitTypesEqual(dynamicType, canonicalType, seenTypePairs, stagedTypeModule)
+		KeepAlive(pair.owner)
+		KeepAlive(pair.heapType)
+		if !equal {
+			return nil, JITModuleError("runtime: canonical JIT type is not structurally identical")
+		}
+		clear(seenTypePairs)
 		if _, exists := typeMap[dynamicType]; exists {
 			return nil, JITModuleError("runtime: duplicate local JIT type mapping")
 		}
 		typeMap[dynamicType] = canonicalType
+		addTypeOwners(canonicalOwners)
+	}
+	// A capture's static type descriptor can itself live in an unloadable JIT
+	// module, or be a reflect-created structural type that depends on several
+	// modules. Carry those dependencies into the new owner before publication.
+	for _, capture := range captures {
+		owners, dependent := jitOwnersForType((*_type)(capture.Type))
+		if dependent && len(owners) == 0 {
+			return nil, JITModuleError("runtime: captured JIT type has incomplete owner metadata")
+		}
+		addTypeOwners(owners)
 	}
 
 	// Compute one non-pointer allocation for moduledata and every table it
@@ -918,15 +1357,17 @@ func RegisterJITModule(textStart, textSize, rodataStart, typesStart, typesSize u
 	md.types, md.etypes = typesStart, typesStart+typesSize
 	md.typemap = typeMap
 	// Dynamic images do not publish a sorted typelinks table. Explicit aliases
-	// keep their relative-offset descriptors local while canonicalizing host
-	// type identities on resolution.
+	// keep their relative-offset descriptors local while canonicalizing type
+	// identity on resolution.
 	md.typedesclen = 0
 	md.jitModule = true
 	md.jitGofuncSize = gofuncSize
 	md.jitAllocBase, md.jitAllocSize = base, total
 	owner := &JITModuleOwner{
 		mapping: mapping, module: uintptr(unsafe.Pointer(md)), control: controlPage,
-		captures: append([]unsafe.Pointer(nil), captures...), globals: globalRoots, typeMap: typeMap,
+		captures: append([]JITCaptureBinding(nil), captures...),
+		globals:  globalRoots, typeMap: typeMap,
+		typeOwners: typeOwners, typeDescriptors: append([]uintptr(nil), typeDescriptors...),
 	}
 	if !registerJITOwnerRoots(owner) {
 		sysFree(base, total, &memstats.other_sys)
@@ -994,15 +1435,41 @@ func jitScanNewModuleGlobals(owner *JITModuleOwner) {
 	releasem(mp)
 }
 
+// JITCaptureAddressOnCurrentStack reports whether address points into the
+// current goroutine's stack. The jit package uses it to verify that compiler-
+// generated capture storage has escaped before an owner retains it.
+// The current direct-Eval ABI only captures variables from the calling
+// goroutine, so an address in that goroutine's stack can never be a valid
+// long-lived capture cell.
+func JITCaptureAddressOnCurrentStack(address unsafe.Pointer) bool {
+	if address == nil {
+		return false
+	}
+	gp := getg()
+	if gp == nil {
+		// Without a current goroutine there is no safe way to prove that the
+		// address is not stack storage. Fail closed at the jit API boundary.
+		return true
+	}
+	p := uintptr(address)
+	return p >= gp.stack.lo && p < gp.stack.hi
+}
+
 // JITCaptureAddr returns the address of a lexical variable captured for one
 // generated module. The owner is a scanned Go object, so its capture slice
 // keeps pointer-bearing variable storage reachable for as long as generated
 // code or one of its closures retains the owner.
-func JITCaptureAddr(owner *JITModuleOwner, index int) unsafe.Pointer {
-	if owner == nil || index < 0 || index >= len(owner.captures) {
-		throw("runtime: invalid JIT capture index")
+func JITCaptureAddr(owner *JITModuleOwner, bindingID uint64) unsafe.Pointer {
+	if owner == nil || bindingID == 0 {
+		throw("runtime: invalid JIT capture binding identity")
 	}
-	return owner.captures[index]
+	for _, capture := range owner.captures {
+		if capture.BindingID == bindingID {
+			return capture.Address
+		}
+	}
+	throw("runtime: unknown JIT capture binding identity")
+	return nil
 }
 
 // ResolveJITFunction returns the entry PC for a linked Go function by its
@@ -1012,7 +1479,7 @@ func ResolveJITFunction(name string) uintptr {
 	if name == "runtime.unreachableMethod" {
 		return abi.FuncPCABIInternal(unreachableMethod)
 	}
-	for md := &firstmoduledata; md != nil; md = md.next {
+	for _, md := range activeModules() {
 		for i := 0; i+1 < len(md.ftab); i++ {
 			f := funcInfo{(*_func)(unsafe.Pointer(&md.pclntable[md.ftab[i].funcoff])), md}
 			actual := funcname(f)

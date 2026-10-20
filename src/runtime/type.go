@@ -379,6 +379,9 @@ func resolveTypeOff(ptrInModule unsafe.Pointer, off typeOff) *_type {
 	res := md.types + uintptr(off)
 	resType := (*_type)(unsafe.Pointer(res))
 	if t := md.typemap[resType]; t != nil {
+		if md.jitModule {
+			KeepAlive(ptrInModule)
+		}
 		return t
 	}
 	if res > md.etypes {
@@ -760,4 +763,176 @@ func typesEqual(t, v *_type, seen map[_typePair]struct{}) bool {
 		throw("runtime: impossible type kind")
 		return false
 	}
+}
+
+// jitTypesEqual compares an unpublished JIT descriptor against a canonical
+// descriptor. The staged module supplies the relative-offset base for the
+// new descriptor; named types remain identity atoms and only match by pointer.
+// This keeps a same-spelled Eval-local type from being merged across modules.
+func jitTypesEqual(t, v *_type, seen map[_typePair]struct{}, staged *moduledata) (equal bool) {
+	tp := _typePair{t, v}
+	if _, ok := seen[tp]; ok {
+		return true
+	}
+	seen[tp] = struct{}{}
+	defer func() {
+		if !equal {
+			delete(seen, tp)
+		}
+	}()
+	if t == v {
+		return true
+	}
+	if t == nil || v == nil || t.TFlag&abi.TFlagNamed != 0 || v.TFlag&abi.TFlagNamed != 0 {
+		return false
+	}
+	if t.Kind() != v.Kind() || t.Size_ != v.Size_ || t.PtrBytes != v.PtrBytes || t.Align_ != v.Align_ || t.FieldAlign_ != v.FieldAlign_ {
+		return false
+	}
+	switch t.Kind() {
+	case abi.Bool, abi.Int, abi.Int8, abi.Int16, abi.Int32, abi.Int64,
+		abi.Uint, abi.Uint8, abi.Uint16, abi.Uint32, abi.Uint64, abi.Uintptr,
+		abi.Float32, abi.Float64, abi.Complex64, abi.Complex128, abi.String, abi.UnsafePointer:
+		return true
+	case abi.Array:
+		at, av := (*arraytype)(unsafe.Pointer(t)), (*arraytype)(unsafe.Pointer(v))
+		return at.Len == av.Len && jitTypesEqual(at.Elem, av.Elem, seen, staged)
+	case abi.Chan:
+		ct, cv := (*chantype)(unsafe.Pointer(t)), (*chantype)(unsafe.Pointer(v))
+		return ct.Dir == cv.Dir && jitTypesEqual(ct.Elem, cv.Elem, seen, staged)
+	case abi.Func:
+		ft, fv := (*functype)(unsafe.Pointer(t)), (*functype)(unsafe.Pointer(v))
+		if ft.OutCount != fv.OutCount || ft.InCount != fv.InCount {
+			return false
+		}
+		tin, vin := ft.InSlice(), fv.InSlice()
+		for i := range tin {
+			if !jitTypesEqual(tin[i], vin[i], seen, staged) {
+				return false
+			}
+		}
+		tout, vout := ft.OutSlice(), fv.OutSlice()
+		for i := range tout {
+			if !jitTypesEqual(tout[i], vout[i], seen, staged) {
+				return false
+			}
+		}
+		return true
+	case abi.Interface:
+		it, iv := (*interfacetype)(unsafe.Pointer(t)), (*interfacetype)(unsafe.Pointer(v))
+		if it.PkgPath.Name() != iv.PkgPath.Name() || len(it.Methods) != len(iv.Methods) {
+			return false
+		}
+		for i := range it.Methods {
+			tm, vm := &it.Methods[i], &iv.Methods[i]
+			tname, ok := jitResolveNameOff(unsafe.Pointer(tm), tm.Name, staged)
+			if !ok {
+				return false
+			}
+			vname, ok := jitResolveNameOff(unsafe.Pointer(vm), vm.Name, staged)
+			if !ok || tname.Name() != vname.Name() || tname.IsExported() != vname.IsExported() {
+				return false
+			}
+			tpkg, ok := jitNamePkgPath(tname, staged)
+			if !ok {
+				return false
+			}
+			vpkg, ok := jitNamePkgPath(vname, staged)
+			if !ok || tpkg != vpkg {
+				return false
+			}
+			typ, ok := jitResolveTypeOff(unsafe.Pointer(tm), tm.Typ, staged)
+			if !ok {
+				return false
+			}
+			other, ok := jitResolveTypeOff(unsafe.Pointer(vm), vm.Typ, staged)
+			if !ok || !jitTypesEqual(typ, other, seen, staged) {
+				return false
+			}
+		}
+		return true
+	case abi.Map:
+		mt, mv := (*abi.MapType)(unsafe.Pointer(t)), (*abi.MapType)(unsafe.Pointer(v))
+		return jitTypesEqual(mt.Key, mv.Key, seen, staged) && jitTypesEqual(mt.Elem, mv.Elem, seen, staged)
+	case abi.Pointer:
+		pt, pv := (*ptrtype)(unsafe.Pointer(t)), (*ptrtype)(unsafe.Pointer(v))
+		return jitTypesEqual(pt.Elem, pv.Elem, seen, staged)
+	case abi.Slice:
+		st, sv := (*slicetype)(unsafe.Pointer(t)), (*slicetype)(unsafe.Pointer(v))
+		return jitTypesEqual(st.Elem, sv.Elem, seen, staged)
+	case abi.Struct:
+		st, sv := (*structtype)(unsafe.Pointer(t)), (*structtype)(unsafe.Pointer(v))
+		if st.PkgPath.Name() != sv.PkgPath.Name() || len(st.Fields) != len(sv.Fields) {
+			return false
+		}
+		for i := range st.Fields {
+			tf, vf := &st.Fields[i], &sv.Fields[i]
+			if tf.Name.Name() != vf.Name.Name() || tf.Name.IsExported() != vf.Name.IsExported() || tf.Name.Tag() != vf.Name.Tag() ||
+				tf.Name.IsEmbedded() != vf.Name.IsEmbedded() || tf.Offset != vf.Offset {
+				return false
+			}
+			tpkg, ok := jitNamePkgPath(tf.Name, staged)
+			if !ok {
+				return false
+			}
+			vpkg, ok := jitNamePkgPath(vf.Name, staged)
+			if !ok || tpkg != vpkg || !jitTypesEqual(tf.Typ, vf.Typ, seen, staged) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func jitResolveNameOff(ptr unsafe.Pointer, off nameOff, staged *moduledata) (name, bool) {
+	base := uintptr(ptr)
+	if staged != nil && base >= staged.types && base < staged.etypes {
+		if off == 0 {
+			return name{}, true
+		}
+		if off < 0 || uintptr(off) >= staged.etypes-staged.types {
+			return name{}, false
+		}
+		return name{Bytes: (*byte)(unsafe.Pointer(staged.types + uintptr(off)))}, true
+	}
+	return resolveNameOff(ptr, off), true
+}
+
+func jitResolveTypeOff(ptr unsafe.Pointer, off typeOff, staged *moduledata) (*_type, bool) {
+	if off == 0 || off == -1 {
+		return nil, true
+	}
+	base := uintptr(ptr)
+	if staged != nil && base >= staged.types && base < staged.etypes {
+		if off < 0 || uintptr(off) >= staged.etypes-staged.types {
+			return nil, false
+		}
+		typ := (*_type)(unsafe.Pointer(staged.types + uintptr(off)))
+		if canonical := staged.typemap[typ]; canonical != nil {
+			typ = canonical
+		}
+		return typ, true
+	}
+	return resolveTypeOff(ptr, off), true
+}
+
+func jitNamePkgPath(n name, staged *moduledata) (string, bool) {
+	if n.Bytes == nil || *n.Data(0)&(1<<2) == 0 {
+		return "", true
+	}
+	i, l := n.ReadVarint(1)
+	off := 1 + i + l
+	if *n.Data(0)&(1<<1) != 0 {
+		i2, l2 := n.ReadVarint(off)
+		off += i2 + l2
+	}
+	var packageOffset nameOff
+	copy((*[4]byte)(unsafe.Pointer(&packageOffset))[:], (*[4]byte)(unsafe.Pointer(n.Data(off)))[:])
+	packageName, ok := jitResolveNameOff(unsafe.Pointer(n.Bytes), packageOffset, staged)
+	if !ok {
+		return "", false
+	}
+	return packageName.Name(), true
 }

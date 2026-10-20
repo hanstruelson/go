@@ -73,6 +73,10 @@ func corostart() {
 
 	defer coroexit(c)
 	c.f(c)
+	// The coroutine cannot be resumed after its function returns. Drop the
+	// callback environment now so its JIT owner can become collectible even if
+	// the caller keeps the completed coro handle.
+	c.f = nil
 }
 
 // coroexit is like coroswitch but closes the coro

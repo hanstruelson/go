@@ -8,17 +8,41 @@ typed addresses for capturable locals. The compiler emits code-free export
 metadata and a normal-linker manifest; the in-memory linker consumes selected
 object symbols and an explicit relocation subset. Unsupported object forms
 fail before publication.
-The current capture descriptor is still name-keyed and uses rendered type
-expressions for some runtime reconstruction; call-site binding IDs and the
-compiler type-graph protocol specified below are target design, not implemented
-ABI.
+When the source argument is a compile-time string, the compiler conservatively
+scans its Go tokens and omits capture bindings whose names do not occur as
+identifiers. Dynamic or lexically invalid source retains the full capture set.
+This avoids promoting unrelated locals, but it does not prove that code or
+values cannot escape; all modules still use owner-based GC lifetime tracking.
+Capture descriptors carry call-site-local slot IDs, and the owner resolves
+captured storage by ID. Runtime parsing still resolves free names by spelling,
+and rendered type expressions remain part of runtime type reconstruction;
+object-derived binding identity and the compiler type-graph protocol specified
+below are not implemented.
 
 The runtime uses a separate JIT PC index, GC-visible module owners, a
 pointer-free per-span owner side table, explicit pins for raw-address escape,
 sweep-queued retirement, reader draining, checked unmapping, and byte
 accounting. Reflect-created descriptors and dynamic itabs use owner-aware
-metadata and weak caches. Pointerful JIT globals are scanned while their owner
-is live. Finalizer and cleanup callback PCs are included in GC root scanning.
+metadata and weak caches. A reflected type that combines dependencies from
+multiple JIT modules promotes the full owner set from each dependency while
+the weak structural cache operation is in flight. Dynamic itab construction
+also keeps every owner from reflected interface and concrete descriptors live
+through weak-cache publication; incomplete owner metadata pins modules before
+continuing. Pointerful JIT globals are scanned while their owner is live.
+Finalizer and cleanup callback PCs are included in GC root scanning. Goroutine
+creator PCs keep their owner through a typed field on the goroutine record and
+through copied traceback-ancestor records, then release that edge when the
+goroutine record is destroyed.
+The standard reclamation path is a traced ownership graph: generated frames,
+closure environments, and goroutine entry records point to a GC-visible module
+owner; heap objects allocated with JIT types point to their type descriptor or
+owner through the per-span side table; reflected descriptors carry metadata
+for every source module; and the owner retains its mapped code and metadata.
+GC shades the owner before scanning a JIT-typed object, so its descriptor and
+pointer map remain available during that scan. This is LinkUnit-level lifetime
+management, not per-function reclamation. The owner edges are implemented for
+the listed runtime paths, while complete object/linker coverage and the
+source-to-invariant safety review remain open.
 Race, MSan, ASan, coverage, and non-Linux/amd64 execution fail closed.
 
 The architecture decisions and the remaining implementation gates are recorded
@@ -31,9 +55,10 @@ superseded design candidates, not current requirements. Current implementation
 limits include function-local defined-type and type-parameter captures, some
 generic type reconstruction, incomplete relocation and host-symbol coverage,
 conservative process-lifetime pins in several public profiling/tracing APIs,
-and compiler-emitted unnamed type identity across independently loaded JIT
-modules. The `Owned` and certified `Scoped` APIs, complete effect-summary
-generation, and the source-to-invariant proof are not implemented. The source
+and unsupported external linkname users that bypass the instrumented reflect
+type constructors. The `Owned` and certified `Scoped` APIs, complete
+effect-summary generation, and the
+source-to-invariant proof are not implemented. The source
 audit below records paths inspected; it is not proof that all external
 linkname, unsafe, or foreign callers obey the ownership contract. Do not treat
 prior narrow fixtures or this source description as evidence of production
@@ -48,13 +73,25 @@ not claim formal verification or exhaustive coverage of unsupported callers.
 | Invariant | Source path inspected | Current mechanism and remaining boundary |
 | --- | --- | --- |
 | Marked JIT-dependent heap objects retain their owner/type edge | `src/runtime/jitobject.go`: `jitSetHeapOwnerEdge`, `jitMarkSpanOwner`; `src/runtime/mgcmark.go`: `greyobject`, `shade`, `jitMarkOwnerAddr`; `src/runtime/mgcmark_greenteagc.go`; `src/runtime/mgcmark_nogreenteagc.go` | Side-table edges are shaded from ordinary/checkmark marking, Green Tea marking, pointer scanning, and write-barrier paths. This relies on generated Go heap pointers and the described supported allocation paths. |
+| User arena chunks keep dynamic type metadata mapped | `src/runtime/arena.go`: `userArenaChunkRef`, `userArena.alloc`, `userArena.free`, `userArena.refill`, `freeUserArenaChunk`; `src/runtime/mgc.go`: deferred fault-list drain; `src/runtime/jitobject.go`: `jitTypeNeedsOwner`, `jitOwnersForType`, `jitPinTypeOwners` | Experimental user arenas bypass `mallocgc`. Each chunk reference carries the traced source-owner set for JIT-dependent types with complete metadata; the set follows the chunk through reuse/fault queues. `Arena.Free` faults chunks with JIT owners instead of putting them on the reusable list, and the GC's deferred fault drain keeps those owners alive until each chunk is non-scannable. Oversized allocations fall back to `mallocgc` and use its per-object edge. Incomplete descriptor metadata still pins as the fail-closed path. |
+| Captured caller storage and type owners follow the module owner | `src/cmd/compile/publicinternal/noder/writer.go`: `jitCaptureExpr`; `src/jit/capture.go`: `CaptureValue`, `Capture.validate`; `src/jit/snippet.go`: capture binding records; `src/runtime/jitmodule.go`: `JITCaptureBinding`, `JITModuleOwner.captures`, `JITModuleOwner.typeOwners`, `JITCaptureAddressOnCurrentStack`, `JITCaptureAddr`; `src/runtime/jitobject.go`: `jitOwnersForType` | The compiler passes typed addresses and call-site-local slot IDs for captured locals. Runtime free-name resolution selects a descriptor by source spelling, then generated code retrieves storage by its ID. Each record also carries the exact static type descriptor; registration adds source JIT owners referenced by that descriptor before publishing the new owner. The JIT front end checks used captures before linking, and module registration rechecks them before owner publication; neither accepts an address in the current goroutine's stack. The owner stores accepted records in a scanned slice, so a live code handle or closure keeps captured storage and its static type dependencies reachable. Correct heap pointer maps and unsupported foreign storage remain outside this check. |
+| Captured interface implementations survive linker dead-code elimination | `src/cmd/compile/publicinternal/reflectdata/reflect.go`: `MarkIfaceTypeMethodsUsed`; `src/cmd/compile/publicinternal/walk/expr.go`: `markJITCaptureInterfaceMethods`; `src/cmd/compile/publicinternal/noder/writer.go`: `recordJITCaptureInterfaceMethods`; `src/cmd/publicinternal/obj/objfile.go`: versioned JIT scope block; `src/cmd/link/publicinternal/ld/deadcode.go`: typed roots and JIT dispatch closure; `src/cmd/link/publicinternal/ld/jitmanifest.go`; `src/jit/metadata.go` | The captured value's exact interface method set emits ordinary typed `R_USEIFACEMETHOD` roots at the Eval caller. Since Eval source can form anonymous interfaces after linking, the linker conservatively retains every method on every linker-reachable type in a JIT-enabled executable and adds implementation packages to the runtime manifest. This closes dispatch over the static executable's reachable type set, at the cost of retaining extra method code. Dynamically loaded types outside that link remain outside this catalog. |
 | Reused allocation slots cannot inherit a stale owner edge | `src/runtime/malloc.go`: `mallocgc`, `jitFinishHeapAllocation`; `src/runtime/jitobject.go`: `jitClearHeapObjectOwner`; `src/runtime/mheap.go`: `freeSpanLocked`, span initialization | Allocation installs or clears the side-table slot; freeing a span releases its pointer-free table. Unusual allocator modes and unsupported build modes remain fail-closed or unverified. |
 | External writable JIT globals are roots only while their module owner is live | `src/runtime/jitindex.go`: `jitScanGlobals`; `src/runtime/jitmodule.go`: global bitmap validation and publication; `src/runtime/mgc.go`: mark-done integration | Validated pointer maps are scanned under an index lease only after the owner is independently marked. Mutation after the scan relies on the ordinary termination/write-barrier protocol. |
-| Runtime-held callback PCs retain their code owner | `src/runtime/jitobject.go`: `jitMarkFuncvalOwner`, `jitMarkCleanupOwners`; `src/runtime/mfinal.go`; `src/runtime/mcleanup.go` | Finalizer and cleanup callback function values are included in root scans. Other runtime or foreign structures that encode PCs as integers require pinning or a separate owner-bearing representation. |
+| Runtime-held callback PCs retain their code owner | `src/jit/snippet.go`: `rewriteSnippetOwnerCapture`; `src/cmd/compile/publicinternal/walk/closure.go`: `walkMethodValue`; `src/runtime/time.go`: `timer.f`, `timer.arg`; `src/time/sleep.go`: `AfterFunc`, `goFunc`; `src/runtime/coro.go`: `coro.f`; `src/runtime/panic.go`: `_defer.fn`; `src/runtime/proc.go`: `newproc1`; `src/runtime/runtime2.go`: `g.jitStartOwner`; `src/runtime/mgcmark.go`: `scanstack`, `gcScanFinalizer`, `gcScanCleanup`; `src/runtime/jitobject.go`: `jitMarkFuncvalOwner`, `jitMarkCleanupOwners`; `src/runtime/mfinal.go`; `src/runtime/mcleanup.go`; `src/runtime/syscall_windows.go`: `cbs` | Each Eval-created function literal defers `runtime.KeepAlive(owner)`, making the module owner part of its GC-scanned closure environment. Heap timers retain `AfterFunc` callbacks in the scanned `timer.arg` interface (the runtime timer function itself is the static `time.goFunc`); coroutine and deferred-call records likewise retain closure environments through ordinary typed function-value pointers. A completed coroutine clears its callback field before switching back, allowing the callback owner to die even if the caller retains the coro handle. Method-value environments use a JIT-local type descriptor whose heap allocation gets an owner edge. A goroutine also stores a typed owner edge for its initial function PC for its full lifetime, covering function values whose code word is not in the funcval pointer map. Finalizer and cleanup callback PCs are explicitly marked because their runtime root records preserve raw funcval code words. Unclassified/indirect effects, unsafe access, and foreign calls pin the whole module; ordinary Go-heap callback retention remains collectible through owner-carrying closures. The Windows `syscall.NewCallback` registry stores function-value pointers in scanned global records, so owner-carrying environments should remain reachable there too, but JIT execution is unsupported on Windows and that path still needs platform-specific review. Other runtime or foreign structures that encode PCs as integers require pinning or an owner-bearing representation. |
+| Goroutine traceback PCs retain only the owners they need | `src/runtime/runtime2.go`: `g.jitGopcOwner`, `ancestorInfo.jitGopcOwner`, `ancestorInfo.jitPCOwners`; `src/runtime/proc.go`: `newproc1`, `gdestroy`, `saveAncestors`; `src/runtime/jitindex.go`: `jitOwnersForLiveStack`; `src/runtime/traceback.go`: `printcreatedby`, `printAncestorTraceback` | The integer `gopc` is paired with a typed owner edge while the goroutine may report its creator. Copied ancestor records carry the same edge and typed owners for each JIT PC in their saved stack snapshot. Traceback explicitly keeps these owner slices alive through lookup and symbol reads. Destroying the goroutine clears its direct and copied-owner edges, so captured stack snapshots do not permanently pin unrelated modules. |
 | PC/module metadata is not freed while an index reader uses it | `src/runtime/jitindex.go`: `jitIndexReadEnter`, `jitPublishIndex`, `unpublishJITModule`; `src/runtime/symtab.go`: `findfunc`; `src/runtime/jitretire.go`: `jitRetire` | Immutable snapshots use two reader epochs; tombstones are checked before metadata dereference, and retirement waits for the prior epoch. `findfunc` returns an ownerless `funcInfo` after its lease, so only in-tree paths that pin the module or execute on an owner-bearing JIT stack are supported. Arbitrary external/linkname retention is not covered. |
 | Owner retirement waits for sweep and index readers before unmapping | `src/runtime/mheap.go`: `_KindSpecialJIT` and `freeSpecial`; `src/runtime/mgcsweep.go`: sweep-generation completion; `src/runtime/jitretire.go`; `src/runtime/jitmemory_linux_amd64.go` | Sweep queues a pointer-free control-page record; the reaper waits for the recorded sweep generation, unpublishes the module, drains readers, frees runtime tables, and only then unmaps/debits. Failed teardown remains charged and queued for retry. OS failure recovery and shutdown behavior still require dedicated verification. |
-| Raw PC APIs do not silently export an unowned reclaimable address | `src/runtime/symtab.go`: `FuncForPC`, `CallersFrames`; `src/runtime/jitindex.go`: `PinJITModule`, `pinJITStack`, `pinAllJITModules`; `src/reflect/value.go`: pointer/address export paths | Known compatibility paths pin before returning raw PCs or metadata handles. This is conservative and can retain modules for process life; an exhaustive inventory of external linkname users is impossible from this tree. |
-| Dynamic reflection caches do not strongly root reclaimable types | `src/runtime/jitmodule.go`: weak structural type/itab caches and pruning; `src/runtime/iface.go`; `src/reflect/type.go`, `src/reflect/map.go` | Dynamic caches use owner-local typed cells or weak values with copied keys; some reflect-created composites are globally canonicalized. Compiler-emitted unnamed descriptors across separate JIT modules are not generally interned, and every future cache must follow the policy. |
+| Mapping errors remain visible and accounting stays exact | `src/jit/image_map_linux_amd64.go`: `mapImageNearImports`; `src/runtime/jitmemory_linux_amd64.go`: `JITMapMemory`, `jitDiscardUnpublishedMapping` | Only `EEXIST` advances the PC-relative address search; other syscall errors are returned. A failed `mmap` releases its reservation, and a successful mapping that fails validation releases its reservation only after checked rollback. If rollback itself fails, mapped bytes remain charged and the runtime fails closed. Address-space and OS resource exhaustion still produce an Eval error. |
+| Raw PC APIs do not silently export an unowned reclaimable address | `src/jit/snippet.go`: `Code.PC`, `CodePC`, `Code.Pin`, `Pin.PC`; `src/jit/effect.go`; `src/cmd/compile/publicinternal/gc/jit_effects.go`: `ir.IsFuncPCIntrinsic`; `src/runtime/traceback.go`: `callers`, `gcallers`; `src/runtime/symtab.go`: `FuncForPC`, `CallersFrames`, `Func.Entry`; `src/runtime/jitindex.go`: `PinJITModule`, `jitOwnersForLiveStack`, `pinJITStack`, `pinAllJITModules`; `src/runtime/mprof.go`, `src/runtime/cpuprof.go`, `src/runtime/trace.go`, `src/runtime/tracestack.go`; `src/runtime/runtime1.go`: `reflect_addReflectOff`; `src/reflect/value.go`: `Pointer`, `UnsafePointer`, `UnsafeAddr`; `src/runtime/mheap.go`: debug finalizer context | New `Code.PC` returns an owner-bearing `CodePC`; callers must keep it live while using its address, or use `Code.Pin` when the raw integer must outlive Go references. `callers` pins every JIT owner named by its returned `[]uintptr`; `FuncForPC`/`CallersFrames` and `reflect.Value` raw-address exports pin before returning metadata or addresses. Compiler `FuncPCABI` intrinsics and snippet calls to those intrinsics are classified as raw code-pointer exposure, so the containing module is pinned before such an integer can escape. Memory and goroutine profiles pin only owners present in captured stacks before those stacks can resume. Block/mutex profiles, CPU profiling, and execution tracing still pin current and future JIT modules while their asynchronous raw-PC stores are active. Internal `gcallers` snapshots retained by goroutine ancestry carry typed owner slices; other asynchronous profiles and traces use `pinAllJITModules`. `reflect_addReflectOff` and debug finalizer context pin because non-GC tables retain raw addresses. These are process-lifetime pins: legacy `[]uintptr` and uintptr/pointer APIs have no release signal, so the runtime cannot know when callers discard the address. External linkname and foreign storage remain outside the in-tree inventory and require the explicit pin/registration contract. |
+| Cross-module JIT references either retain the source module or are rejected | `src/jit/object_link_linux_amd64.go`: `resolveImport`; `src/jit/link_linux_amd64.go`: host/runtime import resolution; `src/runtime/jitmodule.go`: `JITModuleOwner.typeOwners`; generated function-value owner environments | Direct relocations resolve against the selected host manifest or process-lifetime runtime symbols; the in-memory linker does not resolve a direct call into another JIT image, so such an import fails before publication. Cross-module dynamic type aliases retain source module owners in `typeOwners`; cross-module function values carry their module owner in the closure environment and active call frame. Any future direct JIT-to-JIT relocation support must add an owner dependency before it is enabled. |
+| Reflect and runtime type caches do not strongly root reclaimable descriptors | `src/runtime/jitmodule.go`: `JITReflectTypeCache`, `JITRegisterReflectType`, cache pruning; `src/runtime/iface.go`: `jitGetitab`, `typeAssert`, `interfaceSwitch`; `src/reflect/type.go`: `PointerTo`, `ChanOf`, `FuncOf`, `StructOf`, `ArrayOf`, `SliceOf`, `funcLayout`; `src/reflect/value.go`: `Value.Call`, `callMethod`; `src/reflect/map.go`: `MapOf` | Dynamic reflect descriptors carry side-table metadata for every source owner and local offsets. The process-wide structural table uses copied, pointer-free keys and weak values; owner-local itab entries also hold weak values, while a live itab's scanned type/interface pointers retain their owners. Dynamic types bypass the generationless assertion/switch caches and reflect's process-wide pointer-keyed constructor/layout caches. Constructors weakly catalog candidates even when initially built from static inputs, so later JIT canonicalization can reuse them without retaining them. Static results may use strong process caches. `funcLayout` does not cache JIT-dependent frame layouts or their `sync.Pool` closures; reflective calls allocate and clear those scratch frames directly so the process-wide pool registry cannot retain their type owners. Incomplete owner metadata pins modules before publication; complete cache and allocator-path review remains open. |
+| Unnamed compiler types are interned across static, live JIT, and cached reflect descriptors | `src/jit/metadata.go`: ambiguous display names defer to runtime; `src/jit/image_map_linux_amd64.go`: staged type discovery and direct relocation rewrite; `src/runtime/jitmodule.go`: identity guard, `JITCanonicalizeTypes`, `RegisterJITModule`, weak reflect candidate promotion, `JITModuleOwner.typeOwners`, `typeDescriptors`; `src/runtime/type.go`: `jitTypesEqual`, `resolveTypeOff`; `src/runtime/jitindex.go`: `jitLiveModuleOwners`; `src/reflect/type.go`, `src/reflect/map.go`: candidate cataloging | The loader compares actual unnamed descriptors recursively, including field and method package paths, tags, embedding, layout, and nested types; named types remain pointer-identity atoms. It rebases near canonical descriptors when direct PC-relative relocations require it, then registration retains each earlier JIT owner or reflected type's source owners. `resolveTypeOff` keeps the source descriptor live through canonical alias lookup. Reflect candidate publication and JIT module publication share one identity guard. Explicit host aliases remain supported; focused verification of the new path remains outstanding. |
+
+The identity guard is validated by pointer identity against the one active
+guard, so copying the exported guard value cannot authorize a second release
+or an unrelated registration. The guard is cleared before the mutex is
+released.
 
 The audit found no remaining in-tree `jitIndexReadLeave` call that dereferences
 the encoded lease as a snapshot pointer. It also checked the heap-dump reader,
@@ -641,8 +678,9 @@ the existing link pipeline, not a second archive-discovery mechanism.
 
 Carry linker roots in the compiler object, not in a runtime-only metadata
 string and not in a sidecar file. Extend the versioned `goobj` format with a
-`JITScope` block and bump its magic/schema in lockstep with the compiler and
-linker. Each Go package object that has at least one file importing `jit`
+`JITScope` block and bump the object magic/schema in lockstep with the
+compiler and linker. A given object version has one JITScope encoding: package
+count, method count, package roots, and method names. Each Go package object that has at least one file importing `jit`
 records the sorted unique resolved import paths visible in those files. The
 runtime `BuildMetadata.Files` record remains the per-file source of aliases and
 scope; the object block is only the linker root union. The object reader
@@ -716,10 +754,10 @@ results.
 | Call-site identity | Direct `jit.Eval` calls are rewritten with compiler-emitted package, file, and capture descriptors. | The direct path no longer guesses from runtime filenames; indirect calls remain on the legacy fallback. |
 | Export import | The in-process request accepts package export records and `noder` validates target header, export version, and pkgbits fingerprint before using the existing decoder. | This is the correct code-free package type-checking path. Build-time extraction may read the chosen archive; no archive belongs in the runtime snapshot. |
 | Link root point | `cmd/link` runs `loadlib`, `inittasks`, then `deadcode`; the dead-code pass has an explicit initial-root phase. `sym.Library` retains `Imports`, and loader symbols carry package identity. | A compiler-produced root record can be consumed before dead-code elimination. The linker can traverse its already-resolved library graph and root symbols for only Eval-visible packages plus their implementation dependencies. |
-| Host binding | `gc/jitmeta.go` writes a versioned JITScope block; the linker roots each Eval caller package and imported package dependency closure before dead-code elimination, then emits a relocation-backed manifest for selected reachable package symbols. Runtime lookup indexes package/name/ABI identities. | This replaces source-generated references as the sole retention mechanism and binds to linker-selected addresses. Exact structural ABI hashes and type aliases are present; broad symbol identity and package closure coverage remain incomplete. |
+| Host binding | The compiler writes package and interface-method roots in the versioned JITScope block; the linker roots each Eval caller package and imported package dependency closure before dead-code elimination, then emits a relocation-backed manifest for selected reachable package symbols. Runtime lookup indexes package/name/ABI identities. | This replaces source-generated references as the sole retention mechanism and binds to linker-selected addresses. Exact structural ABI hashes and type aliases are present; broad symbol identity and package closure coverage remain incomplete. |
 | Runtime module publication | `runtime.moduledata` carries text, function/PC tables, data/BSS ranges and GC masks, types, itabs, and module links. JIT registration carries compiler type metadata for pointerful writable globals, range-based type offset lookup, and an owner-conditional global scan. | Pointerful globals and dynamic type metadata use owner edges; on-demand type masks fail closed. The current change adds a scan at publication during concurrent mark to cover a newly published module missed by an earlier index shard. |
-| Runtime type caches | Static `typelinksinit` and `moduleToTypelinks` remain static-module paths. Dynamic itabs use owner-local weak caches; reflect-created layouts use a process-wide weak-value structural cache with pointer-free keys; host type-assertion caches bypass JIT descriptors. | This avoids strong process-lifetime roots. Canonical identity for compiler-emitted unnamed descriptors across separate JIT modules is not implemented and remains a language-correctness gap. |
-| Plugin comparison | The inspected `runtime.plugin_lastmoduleinit` validates the loaded module, updates module/type state, and adds itabs under the itab lock; it does not itself call `stopTheWorld` and the plugin API has no unload operation. | Plugin code is a source of data-layout and validation patterns, not proof of a JIT publication or reclamation protocol. The JIT runtime contract needs its own audit. |
+| Runtime type caches | Static `typelinksinit` and `moduleToTypelinks` remain static-module paths. Dynamic itabs use owner-local weak caches; reflect-created layouts use a process-wide weak-value structural cache with pointer-free keys; host type-assertion caches bypass JIT descriptors. | This avoids strong process-lifetime roots. `JITCanonicalizeTypes` searches static typelinks, live JIT descriptors, and live reflect descriptors already present in the weak cache. |
+| Plugin comparison | `plugin.Open` calls `runtime.JITBeginTypeIdentityUpdate` after `dlopen` and releases it after `runtime.plugin_lastmoduleinit` publishes the new active module slice and typemaps; JIT runtime lookup uses `activeModules`. | Plugin type publication cannot race JIT canonicalization or module-table scans. Plugin code remains a source of data-layout and validation patterns, not proof of a JIT reclamation protocol. |
 | Target linker | The current custom object linker is a hand-maintained Linux/amd64 subset with explicit rejection paths. Normal `cmd/link` owns mature object loading, ABI, relocation, type, GC, pcln, and moduledata algorithms but has no incremental in-memory module API. | The long-lived design should factor reusable linker/runtime builders where practical and keep one explicit target backend. It must not claim universal relocation support from a selected fixture matrix. |
 | Trust boundary | `Eval` executes generated Go code in the host process with its imports, filesystem/network permissions, and runtime access. Go has no safe in-process mechanism to terminate arbitrary runaway code. | Document Eval as trusted code. Adversarial code needs an OS/process sandbox; compile limits alone do not sandbox execution. |
 
@@ -821,7 +859,7 @@ allocation-free, exactly once, and never dereferences the swept owner.
 | Mutable JIT package state | Compiler object data symbols plus `AuxGotype`; runtime-created state uses typed heap allocation | Pointerful writable image globals carry their exact type descriptor and are scanned while their owner is marked. Runtime-created state uses typed heap objects reached from the owner. |
 | Dynamic types and itabs | Compiler/runtime type builder | GC heap ABI cells with precise maps and owner/dependency fields. Name, text, and GC program payloads can live in the external mapping while the cell's owner is live. |
 | Cleanup/control record | Runtime JIT loader before publication | The mapping's RW/NX control page contains a pointer-free `jitRetireRecord` with generation, metadata and mapping ranges, weak-handle/pin-slot identifiers, and sweep/retry state. A separate `specialJIT` fixalloc record stores only that control-page address. A lock-free retirement stack links control records; no record points back to `jitOwner` or its Go children. Reader counts live in the two-epoch index protocol. The whole reservation is unmapped last. |
-| Type/reflection caches | Runtime and reflect dynamic-type paths | Owner-local weak itab entries and a process-wide weak-value cache for reflect-created structural types. Static host types retain existing cache paths. Cross-module canonicalization of compiler-emitted unnamed descriptors remains unfinished. |
+| Type/reflection caches | Runtime and reflect dynamic-type paths | Owner-local weak itab entries and a process-wide weak-value cache for reflect-created structural types. Static host types retain existing cache paths. Compiler-emitted unnamed descriptors are compared against static, live JIT, and cached reflect descriptors during image loading. |
 | Long-lived profile/trace locations | Runtime profiler, traceback, and trace producers | Detached CodeLoc (module ID, generation, text offset) and copied symbol/file/line data. Handles promising live code carry an owner; legacy raw-PC APIs pin the generation until process exit. |
 
 Object-local goobj SymRef values and cmd/link LoaderSym IDs are transient
@@ -839,7 +877,7 @@ type identity, and final-link relocations.
 | JIT-created local captured by an escaping closure | Escape analysis promotes it to typed heap storage. `mallocgc` associates allocations whose descriptor is JIT-backed or JIT-dependent in the per-span owner side table; the marker shades that edge while the object is live. |
 | JIT-defined type or reflect.Type | Image descriptors remain in the module mapping and are retained when a typed pointer reaches them. Reflect-created descriptors are Go heap objects with side metadata that retains all source owners. Named Eval type identity is generation-scoped; unsupported identity cases fail closed. |
 | Interface and itab | Scanned interface fields that point to image descriptors shade their owners. Dynamic itabs are scanned heap objects whose descriptor pointers retain the relevant owners, and they are cached weakly under an owner rather than in the process-wide strong table. |
-| Pointer to a JIT-created object or backing store | Normal Go allocation layout remains unchanged. A pointer-free per-span slot records the additional owner/type edge; allocation fallback pins if that edge cannot be installed. |
+| Pointer to a JIT-created object or backing store | Normal Go allocation layout remains unchanged. A pointer-free per-span slot records the additional owner/type edge; allocation fallback pins if that edge cannot be installed. JIT-dependent zero-sized objects receive tracked storage rather than the shared `zerobase`, which cannot represent per-object owners. |
 | String or slice backed by image constants | A scanned string data pointer into the image retains its owner. Slice backing arrays allocated with JIT-dependent descriptors get a side-table edge. Any API that converts such a pointer into an untracked raw address pins. |
 | Map or channel with JIT-defined types | No map/channel header ABI field is added. The live dynamic type descriptor, interface contents, typed backing allocations, and JIT closures carry the necessary edges; each path still requires runtime cache and GC-scan audit. |
 | Host package function/global | Resolve through the linker-emitted manifest to the exact executable symbol or storage address. |
@@ -911,16 +949,14 @@ bucket, followed by full structural equality; hash collisions cannot merge
 types. The key includes a schema/toolchain fingerprint and target ABI so a
 descriptor from another runtime layout is rejected.
 
-The canonicalizer first resolves an equal static identity from the static
-catalog. Otherwise it interns a GC-heap ABI type cell in a weak-value table
-whose copied key contains no descriptor, name, or mapping pointer. The cell
-has a traced owner/dependency edge and exact ABI layout/GC map. While the cell
-is live, all equivalent unnamed types resolve to that cell; when no value,
-code unit, or reflected Type owns it, the weak entry may disappear and a later
-construction may create a new cell. This is sound because no live Go value
-can observe the old identity after its last owning reference is gone. A
-dynamic named type never aliases another Eval generation. A type that embeds
-or refers to dynamic named types retains every contributing owner.
+The current canonicalizer compares actual descriptors and reuses an equal
+identity from static typelinks, a live JIT module, or a promoted reflect
+candidate. A descriptor with no existing match remains in its image and is
+owned by the module. Reflected descriptors use heap metadata side edges for
+their source owners; the weak catalog key contains no descriptor, name, or
+mapping pointer and never roots the descriptor. A dynamic named type never
+aliases another Eval generation. A type that embeds or refers to dynamic
+named types retains every contributing owner.
 
 All reflection constructors must use the same decision path. Constructors
 whose inputs are static descriptors may use the existing process-lifetime
@@ -930,11 +966,14 @@ reflect-created descriptors retain their source owners through per-span
 metadata. Dynamic itabs use owner-local weak entries. JIT dynamic descriptors
 are kept out of `ptrMap`, `lookupCache`, `funcLookupCache`,
 `structLookupCache`, `layoutCache`, `reflectOffs`, and the process-wide
-`itabTable`. The implementation currently canonicalizes reflect-created
-composites, but it does not canonicalize equal unnamed type descriptors
-emitted by two separately loaded JIT modules. That leaves interface type
-identity and `reflect.Type` equality across those modules unresolved; the
-complete linker type-interning step below is still required.
+`itabTable`. The source now compares staged JIT descriptors against static
+typelinks, live JIT module descriptors, and weakly cataloged reflect-created
+descriptors. Reflect constructors use the same identity guard and return an
+existing static or JIT descriptor when one matches. Registration keeps any
+earlier JIT owners or reflected descriptor dependencies alive. Plugin loading
+uses the same guard while publishing module typelinks, and JIT runtime symbol
+lookup reads the atomically published module snapshot. These paths still need
+focused verification and a broader cache audit.
 
 This catalog intentionally includes type metadata, not duplicate package
 object code. It is a prerequisite for general package interoperability, not
@@ -948,8 +987,8 @@ Route dynamic type operations away from process-global strong caches:
 - keep itab and reflection construction caches on the owning module;
 - make cross-module inline caches store typed references, so a cached target
   owner is a real dependency, or use generation IDs and resolve under a lease;
-- keep dynamic type canonicalization in weak GC handles keyed by structural
-  identity, while named Eval types use generation plus declaration ordinal;
+- keep reflect candidate keys pointer-free and weak-valued, while named Eval
+  types use generation plus declaration ordinal;
 - do not add dynamic descriptors to pinnedTypemaps, moduleToTypelinks,
   reflectOffs, or append-only reflection caches without a removable or weak
   path;
@@ -1115,8 +1154,12 @@ on-demand type masks fail closed. Reflect-created type descriptors carry all
 source module owners and resolve their local name/type/text offsets through
 descriptor-local metadata. Their structural cache is process-wide with weak
 values and pointer-free keys; dynamic itabs use owner-local weak values. Equal
-unnamed descriptors emitted by separate JIT modules still are not interned to
-a single Go type identity. The covered GC/cache fixtures pass; a complete
+unnamed descriptors emitted by separate JIT modules are now structurally
+interned against static, live module, and cached reflect descriptors when all
+direct references can be rewritten consistently. Public reflect type
+constructors catalog their candidates weakly and check existing static/JIT
+descriptors before publishing a JIT-backed result. Focused verification of the
+new path remains outstanding; a complete
 audit of runtime caches and type-dependent allocation paths remains open.
 The linker roots the Eval caller package and imported package dependency
 closure and emits a relocation-backed manifest; its symbol and relocation
@@ -1258,7 +1301,7 @@ This table lists exercised fixtures, not all language/runtime behavior:
 | GOT | Compiler object relocation fixture plus mapped GOT pointer slot | GOTPCREL displacement and pointer initialization |
 | Host package reuse | `fmt` and shared `jitcounter` package state | `misc/jit-compile` integration test |
 | Lexical capture types | Concrete generic values, imported named types added from a different file's export metadata, maps, anonymous structs with tags, anonymous interfaces, instantiated named generics with nested imported arguments; function-local named type rejection | Runtime `reflect.Type` to source reconstruction; unsupported identities fail closed |
-| Runtime type identity | Builtin/composite runtime types, reflected composites, local interface types, and cross-module itabs | Owner-aware descriptors and weak dynamic caches; these covered fixtures pass, with broader canonicalization still open |
+| Runtime type identity | Builtin/composite runtime types, reflected composites, local interface types, and cross-module itabs | Cross-module descriptor matching and owner dependencies are now present in source; focused verification and broader cache coverage remain |
 | Close lifecycle | Active-run guard, rejection of runs after close, idempotent close | Prevents unmapping during a tracked call; escaped goroutines and callbacks remain the caller's responsibility |
 
 This matrix is not a claim that every relocation emitted by every Go
@@ -1295,10 +1338,10 @@ forms outside its declared Linux/amd64 Go-object subset.
    and sorted immutable indexes. Pointerful writable globals use compiler type
    maps. Dynamic interface pairs use owner-local weak caches; reflect-created
    composites use a process-wide weak structural cache and avoid generationless
-   host cache insertion. Compiler-emitted unnamed descriptors are not yet
-   canonicalized across JIT modules. Covered cache fixtures pass. Finish type
-   identity, package closure, and emitted relocation coverage before broad
-   support.
+   host cache insertion. Compiler-emitted unnamed descriptors are structurally
+   canonicalized against static and live JIT modules, with owner dependencies
+   retained for cross-module aliases. Reflect-synthesized heap types and all
+   relocation forms still need coverage before broad support.
 6. **GC lifetime: partial.** Owner edges cover entry frames, source function
    literals, typed pointers into mappings, dynamic type/itab values, reflected
    type descriptors, and pointerful package globals. The runtime queues
@@ -1306,7 +1349,13 @@ forms outside its declared Linux/amd64 Go-object subset.
    capture covers a supported subset; unrepresentable generic types, unsafe/foreign
    escapes, all runtime object layouts, and a source-complete cache audit remain
    open.
-   Unsupported paths must continue to pin or fail closed.
+   Unsupported paths must continue to pin or fail closed. The whole LinkUnit
+   is the reclamation unit by design: one surviving callback or type keeps the
+   complete image alive. The next GC-lifetime gate is to finish the
+   source-to-invariant reference inventory and close every owner edge or
+   explicit pin/rejection path described in “Owner graph”; per-function/type
+   reclamation is optional optimization work after that safety contract is
+   complete.
 7. **Conformance and portability: subset verified; production gates remain.**
    The current Linux/amd64 tests and low-GC run pass for the declared subset;
    the full runtime suite is blocked only by sandbox network and ptrace tests.
@@ -1375,17 +1424,44 @@ alive. This is deliberate coarse retention, not an untracked leak: it has a
 single owner, a single accounting charge, and a documented lifetime. Do not
 try to unmap individual functions from a published image.
 
-Keep owner IDs, relocations, PC-index entries, type cells, and cleanup records
-unit-scoped from the start. That permits a later finer-grained linker to emit
-multiple units per Eval, with separate page-aligned mappings and runtime
-metadata. Such splitting must model direct-call dependencies, function values,
-methods/itabs, type methods and equality/hash code, dictionaries, constants,
-and all PC readers. A live unit strongly retains each unit it calls or whose
-metadata it uses. A dynamic type surviving independently retains its type
-metadata and any code units its methods require. Fine-grained units reduce
-retained bytes; they are not required for correctness if module-level budgets
-and deterministic limit errors are enforced. Do not describe whole-image
-retention as per-function unloading.
+Whole-image retention is the intended correctness contract: the owner keeps
+the complete Eval image, and the runtime retires that image once no reference
+to its owner remains. Reclaiming individual functions or types is an optional
+space optimization, not a prerequisite. The required next memory-management
+gate is proving that the owner graph accounts for every way code, data, type
+metadata, or runtime metadata can remain in use.
+
+This is tracing, not a manual reference count. Each Go-visible reference must
+lead through a GC-traced owner edge: for example, a closure environment, active
+frame, goroutine entry, JIT-dependent heap object's side-table metadata,
+reflected descriptor, or cross-module dependency. Indexes and caches that
+must not keep an Eval alive use weak entries or are owner-local. Metadata that
+outlives the code but need not execute is copied or detached. A raw PC or
+unsafe address that cannot carry a traced edge must be covered by an explicit
+pin until its caller releases it, or rejected; an unknown escape must never be
+treated as absent.
+
+The current representation already has the right coarse unit:
+`jit.mappedImage` owns one mapping and one runtime owner, `JITModuleOwner`
+contains the image-wide mapping, globals, and type mappings, and
+`jitHeapObjectMetadata` records source module owners. The next implementation
+step is therefore to finish the reference inventory and source-to-invariant
+audit, then close each missing edge or make its escape path pin/fail closed.
+The inventory must cover function values and callbacks, active and new
+goroutines, captured storage, dynamic descriptors and itabs, JIT-typed heap
+objects and backing storage, globals, reflection/runtime caches, profiling,
+traceback and panic records, raw PCs, cross-module dependencies, and foreign
+or unsafe storage. For every path, record whether it has a traced owner edge,
+is weak/non-owning, is copied, or is explicitly pinned/rejected.
+
+Acceptance for this gate: after every traced reference and explicit pin to an
+Eval is gone, the owner becomes collectible; the weak index no longer roots
+it; cleanup waits for the required sweep generation and PC-index readers,
+removes owner-scoped metadata, then unmaps and debits the complete image
+exactly once. A callback, type value, goroutine, heap object, or handle that
+still needs any part of that Eval must keep the entire image mapped. Unknown
+paths remain pinned or fail closed. Splitting code/type lifetimes can be
+considered later without changing this correctness contract.
 
 ### Function values, frames, callbacks, and captures
 
@@ -1773,12 +1849,12 @@ not claim that the current code implements the full ABI.
 
 | Topic | Selected contract | Current implementation boundary |
 | --- | --- | --- |
-| Which values are supplied? | Every binding visible at a direct call site is supplied before the runtime source is known. The runtime parser then selects the free names actually referenced. | `jitEvalCaptures` in `src/cmd/compile/publicinternal/noder/writer.go` enumerates visible bindings; `src/jit/snippet.go` currently indexes them by source name. |
-| What is a binding? | A source name plus a call-site-local binding ID and slot, kind, exact type identity, and typed address/value/descriptor. Name is a lookup spelling, not identity. | No binding ID is serialized yet; same-spelling hidden outer bindings are correctly unavailable under ordinary lexical lookup. |
+| Which values are supplied? | Every binding visible at a direct call site is supplied before the runtime source is known. The runtime parser then selects the free names actually referenced. | `jitEvalCaptures` in `src/cmd/compile/publicinternal/noder/writer.go` enumerates visible bindings; `src/jit/snippet.go` resolves free-name spellings to descriptors and emits owner accesses by binding ID. |
+| What is a binding? | A source name plus a call-site-local binding ID and slot, kind, exact type identity, and typed address/value/descriptor. Name is a lookup spelling, not identity. | A 1-based call-site-local slot ID is serialized and used for owner address lookup after free names are resolved by spelling. Value records now carry their static runtime type descriptor, but IDs are not derived from compiler object identity and the compiler type graph is not serialized as stable node IDs. Same-spelling hidden outer bindings remain unavailable under ordinary lexical lookup. |
 | What scope does it see? | A direct call sees its own lexical scope. A wrapper sees its own direct call site. A function-value call sees package/file scope only. | `src/jit/eval.go` has direct-call and package-scope entrypoints; the fallback does not capture locals. |
 | What happens to declarations/results? | The body runs once as a void function body. New local declarations do not persist; captured assignments are visible to the caller. The returned `Code` is a lifetime handle, not an Eval result value. | This is the current API shape; expression results and persistent Eval declarations are outside this API. |
-| How are types identified? | Compiler type-graph and descriptor IDs are authoritative, including local named types and generic constraints/instantiations. Captured interfaces also root every concrete implementor, its descriptor, itab requirements, method symbols, and wrappers in the closed executable through the linker's interface-method fixpoint. Printed type syntax is never an identity key. | `src/jit/capture.go` records a runtime `reflect.Type`, while `src/jit/capture_type.go` reconstructs source syntax; `writer.go` rejects some local/type-parameter cases. Capture type roots and the interface-method seed are not yet in JIT scope metadata. |
-| How are unknown effects handled? | Per-symbol summaries are transitive. `Unknown` rejects Auto; Manual pinning is explicit and protects mapping lifetime only. Scoped may fall back to Auto only for Auto-safe effects. | The source metadata has no emitted per-symbol effect records yet; summary emission, call-graph closure, and runtime enforcement remain unimplemented. |
+| How are types identified? | Compiler type-graph and descriptor IDs are authoritative, including local named types and generic constraints/instantiations. Captured interfaces also root every concrete implementor, its descriptor, itab requirements, method symbols, and wrappers in the closed executable through the linker's interface-method fixpoint. Printed type syntax is never an identity key. | Captures pass the exact static `reflect.Type` descriptor to the new module owner, which retains any source JIT owners through `jitOwnersForType`. Captured interfaces now emit typed signature roots into the linker fixpoint; visible interface types additionally contribute conservative method-name roots for runtime assertions. Compiler graph IDs and the complete concrete-target catalog remain open. |
+| How are unknown effects handled? | Per-symbol summaries are transitive. `Unknown` must never permit reclamation; the eventual Auto policy rejects it, while explicit Manual pinning protects mapping lifetime only. Scoped may use Auto only for Auto-safe effects. | Go compiler objects carry direct per-text effects, including unsafe use, foreign/code-PC calls, callback-capable parameters, arbitrary function-value calls, and typed interface dispatch. The in-process compiler also returns the union of source-IR effects, so generated helper symbols do not obscure whether dynamic source contains an unknown indirect call. The linker propagates host effects through direct-call relocation closure and marks missing records and unclassified targets Unknown. A source interface call is reclaimable only if the compiler certifies there are no unknown indirect effects and every same-name linked host method candidate has a safe transitive summary; missing or unsafe candidates pin. Interface dispatch inside a host callee remains Unknown until its full target set is represented. Other snippets with unknown or pin-required source/host effects stay pinned. Owner-carrying Go function values keep a module alive while a retained callback remains reachable. Auto/Manual/Scoped policy selection and a complete raw-storage/escape certificate remain open. |
 
 The implementation sequence below is therefore work to realize a decided
 contract, not a request to rediscover these semantics. The safety proof and
@@ -2050,8 +2126,8 @@ address pin the corresponding module.
 The source audit has covered the in-tree marking, allocation/reuse, cleanup,
 index-reader, raw-PC, and cache paths listed above. Remaining work is to turn
 that inspection into a complete source-to-invariant proof and close the actual
-implementation gaps: compiler-emitted unnamed type interning across modules,
-all supported relocation and host-symbol forms, generic captures whose runtime
+implementation gaps: bidirectional reflect/JIT identity and all supported
+relocation and host-symbol forms, generic captures whose runtime
 type names cannot be reconstructed safely, function-local defined types, and
 complete effect summaries. The runtime source
 inspection does not certify arbitrary `linkname`, unsafe, or foreign use.
@@ -2072,17 +2148,17 @@ cache must be classified before use.
 | `pinnedTypemaps`, `moduleToTypelinks`, `activeModules`, `firstmoduledata.next` | Static/plugin modules only. JIT modules do not enter process-lifetime collections; dynamic resolution is owner-relative. |
 | `runtime.reflectOffs` and negative reflect offsets | JIT uses owner-relative offsets with generation/range checks. Reflect-created types that depend on JIT types are owner-bearing. No JIT pointer enters the global strong offset map. |
 | Per-M `pcvalue` cache | Bypass JIT PCs; never cache generationless JIT PC/table values. |
-| `reflect.ptrMap`, `lookupCache` (`ArrayOf`, `ChanOf`, `MapOf`, `SliceOf`), `funcLookupCache`, `structLookupCache`, `layoutCache` | Existing global path only for static types. Dynamic lookup uses owner-local construction/layout caches, then the global weak structural canonicalizer for Go type identity. Dynamic `structLookupCache` entries never enter its append-only strong slices. |
-| Dynamic type canonicalization | Pointer-free structural key plus a weak value (`weak.Pointer` to the GC type cell). A live cell carries its owner/dependency edges; the global key never holds a type pointer. Entries include the canonical cell's generation. `Reclaim` prunes nil weak values, and retirement removes keys for that generation. |
-| Dynamic itab canonicalization | Same weak-value/pointer-free-key policy, keyed by interface and concrete type identities. A live cell references its type cells and owners. Its generation index lets `Reclaim` and retirement delete stale keys without retaining the cell. |
+| `reflect.ptrMap`, `lookupCache` (`ArrayOf`, `ChanOf`, `MapOf`, `SliceOf`), `funcLookupCache`, `structLookupCache`, `layoutCache` | A result backed by a reclaimable JIT module bypasses reflect's process-wide strong caches. Static results and ownerless reflect composites may use the existing caches. Public reflect constructors also publish candidates to the runtime's weak catalog; `initFuncTypes` does not retain a JIT-backed result. |
+| Dynamic type canonicalization | `runtime.jitReflectTypes` stores copied structural keys and weak descriptor values. Image loading compares unnamed descriptors against static typelinks, live JIT module descriptors, and promoted reflect candidates. Registration stores local-to-canonical mappings and strong owner dependencies on the new module. The weak table prunes dead reflect descriptors; it does not root their owners. |
+| Dynamic itab canonicalization | Each `JITModuleOwner` keeps weak handles keyed by raw interface/type addresses. A live itab's typed `Inter` and `Type` pointers keep all required owners alive; the owner-local cache prunes dead entries and does not root them. |
 | JIT module symbol registry | No global strong owner root. Cross-Eval references require owner-bearing `Code`/type handles and a dependency edge before publication; no lookup by bare PC or bare JIT symbol name. |
 
-Weak-cache keys contain copied structural bytes and generation-tagged type
-identities, never string views or pointers into executable metadata. The
-reaper deletes key-index entries for its generation only after the unit is
-unreachable; `Reclaim` also removes entries whose weak values have cleared.
-If a weak value can still be promoted to a strong type cell, that cell's owner
-edge keeps the generation live and its key remains canonical.
+Reflect weak-cache keys contain copied structural bytes and generation-tagged
+identities for named JIT inputs, never string views or pointers into executable
+metadata. A promoted reflected descriptor carries any source-owner metadata;
+the weak cache itself does not keep it or its owners alive. JIT-to-JIT type
+dependencies live on the newer module owner and disappear when that owner is
+collected.
 
 Named types declared in Eval are function-local and have identity
 `(callSiteID, evalID, declarationOrdinal)`; repeating source creates a
@@ -2090,9 +2166,11 @@ distinct named type. This checkout has no public `reflect.TypeByName` API; do
 not add one as part of this work. If the JIT API offers name lookup, it returns
 an owner-bearing type handle and searches only explicitly live generations.
 Unnamed types use Go structural identity: reuse a matching static descriptor,
-otherwise intern by a canonical structural key in the weak table. A live type
-cell retains its helper LinkUnit; once no value or code owner uses it, the weak
-table cannot keep it alive.
+otherwise use an existing static, live JIT, or weakly cataloged reflect
+descriptor when structural matching succeeds. JIT module mappings retain the
+owner that stores a canonical descriptor; reflected descriptors retain the
+owners of JIT-dependent inputs. Once those real references disappear, the weak
+reflect catalog cannot keep the descriptor or its owner alive.
 
 #### 5. Lifecycle: transactional publication and exactly-once retirement
 
@@ -2241,11 +2319,15 @@ foreign location. `MayAllocateArena` and `Unknown` reject Auto. The effect
 schema also distinguishes `MayStoreOwnerlessAddress` and
 `MayEscapeJITMetadata`; either rejects Auto unless it is covered by a pin.
 The normal build emits a versioned effect record for each host-manifest symbol
-and computes transitive summaries over the resolved call graph, including
-strongly connected components. Interface and indirect calls use the union of
-all possible targets in the executable's Eval-visible closure. Assembly,
-cgo, linkname, runtime entry points without a verified summary, and unresolved
-indirect targets are `Unknown` unless they have an explicit reviewed summary.
+and computes transitive summaries over the resolved direct-call graph,
+including strongly connected components. The current Eval compiler
+distinguishes typed interface dispatch from arbitrary function-value calls.
+When no unknown indirect effect remains, it checks every linked same-name
+method candidate; absent or unsafe candidates keep the module pinned. Host
+interface dispatch and other indirect calls remain `Unknown` until their full
+target sets are represented. Assembly, cgo, linkname, runtime entry points
+without a verified summary, and unresolved indirect targets are `Unknown`
+unless they have an explicit reviewed summary.
 `Auto` rejects an unknown or ownerless escape before publication. `Manual`
 may pin the complete Eval image when the remaining risk is an untracked
 code/metadata address; it does not legalize invalid Go pointers, memory
@@ -2296,7 +2378,7 @@ fixture results recorded above; those results do not close every audit item.
 | Why does the runtime need PCs and module metadata? | `runtime.findfunc` calls `findmoduledatap`, which walks the static `moduledata.next` chain. The result drives PC-to-function lookup, stack maps, traceback, panic/defer, preemption, profiling, and symbolization. `funcInfo` currently contains only `*_func` and `*moduledata`; `FuncForPC` can return a pointer into that metadata. | Keep JIT ranges in a separate immutable generation index. Extend internal `funcInfo` and exported wrappers with an owner or copied metadata. Inventory and convert every `findfunc` reader; STW by itself cannot protect readers such as signal-time profiling. |
 | What is a PC lifetime problem? | A PC is an address, often stored as `uintptr`; it has no GC edge and no observable last-use. Public raw-PC surfaces include `Caller`, `Callers`, `CallersFrames.Frame.PC`, `Func.Entry`, function-valued `reflect.Value.Pointer`/`UnsafePointer`, and profile/stack records such as `MemProfileRecord`, `BlockProfileRecord`, `MutexProfileRecord`, and `StackRecord`. | New APIs return owner-bearing `CodePC`/function handles. Compatibility APIs that return JIT PCs install a permanent generation pin. Internal profiles/traces use generation-relative `CodeLoc` plus copied strings so sampling does not pin code forever. |
 | Can `AddCleanup` be the destructor? | `runtime.AddCleanup` is asynchronous, arbitrarily delayed, not guaranteed before process exit, can be blocked by user cleanup, and can be prevented by references from its callback/argument. It runs through shared cleanup machinery. | No. Unreachable means eligible for retirement, not already unmapped. Use a dedicated runtime special and JIT queue. If no GC occurs, or at process exit before retirement, the external mapping remains mapped; it is not marked free. A completed GC plus JIT drain can reclaim eligible units. |
-| Do interface/type/reflection caches release dynamic metadata? | `runtime.itabTable` allocates itabs with `persistentalloc`; method slots are raw PCs. ABI type-assert and interface-switch caches store type/itab addresses as `uintptr`. `reflect.ptrMap`, `lookupCache`, `funcLookupCache`, `structLookupCache`, and `layoutCache` are global strong caches; the StructOf comment explicitly says it pins memory. | Use the static type catalog plus the canonical identity protocol below. Dynamic types and itabs bypass static global paths or use owner-local cells. The reflect-created type canonicalizer uses copied structural keys and weak values. Compiler-emitted unnamed JIT descriptors still need a linker/runtime interning protocol with owner dependencies. Add owner-aware type/name-offset resolution and never add JIT entries to module typelinks, `reflectOffs`, or the static module chain. |
+| Do interface/type/reflection caches release dynamic metadata? | `runtime.itabTable` allocates itabs with `persistentalloc`; method slots are raw PCs. ABI type-assert and interface-switch caches store type/itab addresses as `uintptr`. `reflect.ptrMap`, `lookupCache`, `funcLookupCache`, `structLookupCache`, and `layoutCache` are global strong caches; the StructOf comment explicitly says it pins memory. | Use the static type catalog plus the canonical identity protocol below. Dynamic types and itabs bypass static global paths or use owner-local cells. The reflect-created type canonicalizer uses copied structural keys and weak values. Compiler-emitted unnamed JIT descriptors now use staged matching and owner dependencies. Add owner-aware type/name-offset resolution and never add JIT entries to module typelinks, `reflectOffs`, or the static module chain. |
 | Can the current mapper participate in `GOMEMLIMIT`? | The current build and image tests exercise `runtime.JITMapMemory`/`JITMapping`: it charges the full mapping to `memstats.other_sys` and `gcController.mappedReady`, and only debits after checked `munmap`. Failure injection and budget pressure are not covered. | Keep the runtime token, add budget reservation and a reclaim-before-limit path, and retain a charged tombstone/control record after any failed teardown. Accounting alone does not guarantee reclamation or establish owner lifetime. |
 | What do `unsafe` and C references mean for ownership? | GC traces typed Go pointer fields, not integers containing addresses. A `runtime/cgo.Handle` roots the Go value stored in the handle table, but does not make an arbitrary code address safe. | Auto rejects unknown address storage or foreign retention. A Go callback passed through a rooted handle keeps its owner-bearing function value alive. A raw JIT PC stored by C or in an integer needs `Pin` until the foreign registration and all copied addresses are removed and quiesced. `runtime.Pinner` pins Go heap objects, not executable mappings. |
 | Which package/import context does Eval receive? | Go imports are file-scoped. The package path is package-wide, but an alias imported in a different source file is not in scope at this call site. | Parse a statement/function body with the containing package path, the imports from the file that contains the Eval call, package declarations and type information, and explicit capture descriptors. The snippet has no `package` or `import` clause. Resolve names against the existing executable's host symbols; do not rebuild/import package archives at runtime. |
@@ -2460,10 +2542,11 @@ descriptor-local reflection offsets, bypasses for
 generationless host type-assertion caches, a separate generation index,
 sweep-triggered retirement, a reaper, raw-PC pin slots, byte accounting, and
 typed GC roots for pointerful writable image globals. Equal unnamed type
-descriptors emitted by separate JIT modules still have no canonicalization
-protocol. The latest callback, cross-module itab, structural ABI identity,
-and concurrent-publication changes pass their focused JIT and integration
-fixtures. Generic capture reconstruction remains bounded as described above;
+descriptors emitted by separate JIT modules now use structural matching and
+owner dependencies; focused verification remains outstanding. The callback,
+cross-module itab, structural ABI identity, and concurrent-publication paths
+also have source-level coverage recorded above. Generic capture
+reconstruction remains bounded as described above;
 complete object relocation semantics, all runtime cache paths, and a
 source-to-invariant safety argument remain unfinished. The
 explicit Pin API keeps its owner rooted until `Pin.Release`; legacy raw-PC APIs

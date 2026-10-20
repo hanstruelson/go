@@ -35,6 +35,7 @@ import "C"
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -66,6 +67,15 @@ func open(name string) (*Plugin, error) {
 		pluginsMu.Unlock()
 		return nil, errors.New(`plugin.Open("` + name + `"): ` + C.GoString(cErr))
 	}
+	// Keep the runtime's type catalog stable while lastmoduleinit publishes
+	// moduledata and builds typemaps. JIT type interning uses the same guard, so
+	// it cannot publish a competing descriptor in that window.
+	identityGuard := runtime.JITBeginTypeIdentityUpdate()
+	defer func() {
+		if identityGuard != nil {
+			identityGuard.Release()
+		}
+	}()
 	// TODO(crawshaw): look for plugin note, confirm it is a Go plugin
 	// and it was built with the correct toolchain.
 	if len(name) > 3 && name[len(name)-3:] == ".so" {
@@ -75,6 +85,8 @@ func open(name string) (*Plugin, error) {
 		plugins = make(map[string]*Plugin)
 	}
 	pluginpath, syms, initTasks, errstr := lastmoduleinit()
+	identityGuard.Release()
+	identityGuard = nil
 	if errstr != "" {
 		plugins[filepath] = &Plugin{
 			pluginpath: pluginpath,

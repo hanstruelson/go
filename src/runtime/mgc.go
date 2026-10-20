@@ -1669,6 +1669,9 @@ func gcMarkTermination(stw worldStop) {
 	for _, lc := range faultList {
 		lc.mspan.setUserArenaChunkToFault()
 	}
+	// The fault records also hold JIT module owners for the old heap bits.
+	// Keep them live until every chunk is non-scannable.
+	KeepAlive(faultList)
 
 	// Enable huge pages on some metadata if we cross a heap threshold.
 	if gcController.heapGoal() > minHeapForMetadataHugePages {

@@ -67,6 +67,14 @@ func MapOf(key, elem Type) Type {
 	}
 
 	group := groupOf(key, elem)
+	var hasJITGroup bool
+	jitDeps, hasJITGroup = addJITReflectDependency(jitDeps, group.common())
+	if hasJITGroup && !jitDependent {
+		jitDependent = true
+		if cached := jitReflectTypeCache(Map, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Make a map type.
 	// Note: flag values must match those used in the TMAP case
@@ -129,7 +137,12 @@ func MapOf(key, elem Type) Type {
 		registerJITReflectType(&mt.Type, jitDeps, offsetBuilder)
 		return toRType(jitReflectTypeCache(Map, jitKey, jitDeps, &mt.Type))
 	}
-	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&mt.Type))
+	registerJITReflectType(&mt.Type, jitDeps, offsetBuilder)
+	canonical := jitReflectTypeCache(Map, jitKey, jitDeps, &mt.Type)
+	if hasJITType(canonical) {
+		return toRType(canonical)
+	}
+	ti, _ := lookupCache.LoadOrStore(ckey, toRType(canonical))
 	return ti.(Type)
 }
 
