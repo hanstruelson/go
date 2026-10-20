@@ -164,7 +164,19 @@ func unpackEface(i any) Value {
 }
 
 func jitPinTypeWithoutOwnerEdge(t *abi.Type, data unsafe.Pointer) {
-	if t == nil || (t.Size() != 0 && data != nil && (!t.IsDirectIface() || t.Pointers()) && !(t.Kind() == abi.Pointer && t.Elem().Size() == 0)) {
+	if t == nil {
+		return
+	}
+	// Direct interface values such as pointers and function values do not
+	// guarantee that their data word carries an owner edge. In particular, a
+	// dynamic pointer can point at ordinary host storage, and a function value
+	// stores its code PC in a uintptr word. The lightweight Value has no field
+	// in which to retain the descriptor, so pin these dynamic descriptors.
+	if runtime.JITTypeNeedsOwner(unsafe.Pointer(t)) && t.IsDirectIface() {
+		runtime.JITPinType(unsafe.Pointer(t))
+		return
+	}
+	if t.Size() != 0 && data != nil && (!t.IsDirectIface() || t.Pointers()) && !(t.Kind() == abi.Pointer && t.Elem().Size() == 0) {
 		return
 	}
 	runtime.JITPinType(unsafe.Pointer(t))
@@ -264,6 +276,11 @@ func (v Value) Elem() Value {
 		}
 		tt := (*ptrType)(unsafe.Pointer(v.typ()))
 		typ := tt.Elem
+		// reflectlite.Value has no owner field of its own. A pointer may refer
+		// to ordinary host storage even when its dynamic descriptor came from a
+		// reclaimable JIT image, so retain that descriptor before returning the
+		// derived value.
+		runtime.JITPinType(unsafe.Pointer(typ))
 		fl := v.flag&flagRO | flagIndir | flagAddr
 		fl |= flag(typ.Kind())
 		return Value{typ, ptr, fl}
@@ -424,6 +441,9 @@ func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Va
 	// if v.flag&flagMethod != 0 {
 	// 	v = makeMethodValue(context, v)
 	// }
+	// The destination descriptor becomes the type word of the returned Value,
+	// but reflectlite.Value cannot carry a separate owner edge.
+	runtime.JITPinType(unsafe.Pointer(dst))
 
 	switch {
 	case directlyAssignable(dst, v.typ()):
