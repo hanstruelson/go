@@ -13,6 +13,13 @@ import (
 
 var atExitFuncs []func()
 
+// inProcessLink and linkExit are reserved for the in-process linker path.
+// This branch currently invokes the command-line linker, so the flag remains
+// false while preserving the exit hook's ordinary linker behavior.
+var inProcessLink bool
+
+type linkExit struct{ code int }
+
 func AtExit(f func()) {
 	atExitFuncs = append(atExitFuncs, f)
 }

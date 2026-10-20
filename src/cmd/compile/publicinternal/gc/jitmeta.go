@@ -455,7 +455,7 @@ func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.F
 					declarations = append(declarations, jitmeta.Declaration{
 						File: filename, Names: []string{spec.Name.Name}, Kind: "type", Source: source, Generic: generic,
 					})
-					if !generic {
+					if !generic && !isConstraintOnlyASTType(spec.Type) {
 						addJITRef(&refs, jitmeta.Symbol{PackagePath: packagePath, Name: spec.Name.Name, Kind: "type"},
 							"__jit_runtime.TypeFor["+spec.Name.Name+"]()")
 					}
@@ -556,7 +556,7 @@ func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias str
 		case *types2.Var:
 			addJITRef(&refs, jitmeta.Symbol{PackagePath: importPath, Name: name, Kind: "variable"}, "&"+alias+"."+name)
 		case *types2.TypeName:
-			if !isGenericGoType(obj.Type()) {
+			if !isGenericGoType(obj.Type()) && !isConstraintOnlyGoType(obj.Type()) && !isUnallocatableGoType(obj.Type()) {
 				addJITRef(&refs, jitmeta.Symbol{PackagePath: importPath, Name: name, Kind: "type"},
 					"__jit_runtime.TypeFor["+alias+"."+name+"]()")
 			}
@@ -595,6 +595,59 @@ func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias str
 func isGenericGoType(typ types2.Type) bool {
 	named, ok := types2.Unalias(typ).(*types2.Named)
 	return ok && named.TypeParams().Len() != 0
+}
+
+func isConstraintOnlyGoType(typ types2.Type) bool {
+	interfaceType, ok := types2.Unalias(typ).Underlying().(*types2.Interface)
+	return ok && !interfaceType.IsMethodSet()
+}
+
+func isUnallocatableGoType(typ types2.Type) bool {
+	typ = types2.Unalias(typ)
+	if named, ok := typ.(*types2.Named); ok {
+		if object := named.Obj(); object.Name() == "nih" && object.Pkg() != nil && object.Pkg().Path() == "publicinternal/runtime/sys" {
+			return true
+		}
+		typ = named.Underlying()
+	}
+	switch underlying := typ.(type) {
+	case *types2.Array:
+		return isUnallocatableGoType(underlying.Elem())
+	case *types2.Struct:
+		for index := 0; index < underlying.NumFields(); index++ {
+			if isUnallocatableGoType(underlying.Field(index).Type()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isConstraintOnlyASTType(expression ast.Expr) bool {
+	interfaceType, ok := expression.(*ast.InterfaceType)
+	if !ok {
+		return false
+	}
+	for _, field := range interfaceType.Methods.List {
+		if len(field.Names) != 0 {
+			continue
+		}
+		switch term := field.Type.(type) {
+		case *ast.BinaryExpr:
+			if term.Op == token.OR {
+				return true
+			}
+		case *ast.UnaryExpr:
+			if term.Op == token.TILDE {
+				return true
+			}
+		case *ast.Ident:
+			if term.Name == "comparable" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func localReceiver(fields *ast.FieldList) (string, bool) {
@@ -646,12 +699,18 @@ func makeJITRegistrationSource(
 	if jitLiteral == "" || runtimeAlias == "" {
 		return noder.SourceFile{}, fmt.Errorf("jit metadata has no runtime package import")
 	}
+	usedImports := map[string]bool{runtimeAlias: true}
+	for _, ref := range refs {
+		if alias := aliases[ref.symbol.PackagePath]; alias != "" {
+			usedImports[alias] = true
+		}
+	}
 	var source strings.Builder
 	fmt.Fprintf(&source, "package %s\n\nimport (\n", packageName)
 	for _, importPath := range importPaths {
 		alias := aliases[importPath]
 		literal := sourceImports[importPath]
-		if alias == "" || literal == "" {
+		if alias == "" || literal == "" || !usedImports[alias] {
 			continue
 		}
 		fmt.Fprintf(&source, "%s %s\n", alias, strconv.Quote(literal))
