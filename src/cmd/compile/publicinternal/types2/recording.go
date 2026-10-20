@@ -162,6 +162,9 @@ func (check *Checker) recordDef(id *syntax.Name, obj Object) {
 func (check *Checker) recordUse(id *syntax.Name, obj Object) {
 	assert(id != nil)
 	assert(obj != nil)
+	if m := check.jitUses; m != nil {
+		m[id] = obj
+	}
 	if m := check.Uses; m != nil {
 		m[id] = obj
 	}

@@ -218,6 +218,7 @@ type mheap struct {
 	cachealloc                 fixalloc // allocator for mcache
 	specialfinalizeralloc      fixalloc // allocator for specialfinalizer
 	specialCleanupAlloc        fixalloc // allocator for specialCleanup
+	specialJITAlloc            fixalloc // allocator for specialJIT
 	specialCheckFinalizerAlloc fixalloc // allocator for specialCheckFinalizer
 	specialTinyBlockAlloc      fixalloc // allocator for specialTinyBlock
 	specialprofilealloc        fixalloc // allocator for specialprofile
@@ -513,6 +514,12 @@ type mspan struct {
 	specials              *special      // linked list of special records sorted by offset.
 	userArenaChunkFree    addrRange     // interval for managing chunk allocation
 	largeType             *_type        // malloc header for large objects.
+	// jitOwnerSlots contains one unscanned owner address for each object slot
+	// in this span. It is allocated only after the span receives a JIT-typed
+	// object. GC marking consults the slot when it marks that object, so the
+	// object's runtime type and code remain mapped for exactly the object's
+	// traced lifetime without changing the user-visible allocation layout.
+	jitOwnerSlots unsafe.Pointer
 }
 
 func (s *mspan) base() uintptr {
@@ -784,6 +791,7 @@ func (h *mheap) init() {
 	h.cachealloc.init(unsafe.Sizeof(mcache{}), nil, nil, &memstats.mcache_sys)
 	h.specialfinalizeralloc.init(unsafe.Sizeof(specialfinalizer{}), nil, nil, &memstats.other_sys)
 	h.specialCleanupAlloc.init(unsafe.Sizeof(specialCleanup{}), nil, nil, &memstats.other_sys)
+	h.specialJITAlloc.init(unsafe.Sizeof(specialJIT{}), nil, nil, &memstats.other_sys)
 	h.specialCheckFinalizerAlloc.init(unsafe.Sizeof(specialCheckFinalizer{}), nil, nil, &memstats.other_sys)
 	h.specialTinyBlockAlloc.init(unsafe.Sizeof(specialTinyBlock{}), nil, nil, &memstats.other_sys)
 	h.specialprofilealloc.init(unsafe.Sizeof(specialprofile{}), nil, nil, &memstats.other_sys)
@@ -1720,6 +1728,7 @@ func (h *mheap) freeManual(s *mspan, typ spanAllocType) {
 
 func (h *mheap) freeSpanLocked(s *mspan, typ spanAllocType) {
 	assertLockHeld(&h.lock)
+	jitFreeSpanOwnerSlots(s)
 
 	switch s.state.get() {
 	case mSpanManual:
@@ -1826,6 +1835,8 @@ func (span *mspan) init(base uintptr, npages uintptr) {
 	span.allocBits = nil
 	span.gcmarkBits = nil
 	span.pinnerBits = nil
+	atomic.StorepNoWB(unsafe.Pointer(&span.largeType), nil)
+	atomic.StorepNoWB(unsafe.Pointer(&span.jitOwnerSlots), nil)
 	span.state.set(mSpanDead)
 	lockInit(&span.speciallock, lockRankMspanSpecial)
 }
@@ -1960,6 +1971,8 @@ const (
 	// _KindSpecialSecret is a special used to mark an object
 	// as needing zeroing immediately upon freeing.
 	_KindSpecialSecret = 10
+	// _KindSpecialJIT tracks a GC owner for an external executable mapping.
+	_KindSpecialJIT = 11
 )
 
 type special struct {
@@ -2095,8 +2108,8 @@ type specialfinalizer struct {
 	special special
 	fn      *funcval // May be a heap pointer.
 	nret    uintptr
-	fint    *_type   // May be a heap pointer, but always live.
-	ot      *ptrtype // May be a heap pointer, but always live.
+	fint    *_type   // May be a heap or JIT mapping pointer.
+	ot      *ptrtype // May be a heap or JIT mapping pointer.
 }
 
 // Adds a finalizer to the object p. Returns true if it succeeded.
@@ -2110,22 +2123,17 @@ func addfinalizer(p unsafe.Pointer, f *funcval, nret uintptr, fint *_type, ot *p
 	s.fint = fint
 	s.ot = ot
 	if addspecial(p, &s.special, false) {
-		// This is responsible for maintaining the same
-		// GC-related invariants as markrootSpans in any
-		// situation where it's possible that markrootSpans
-		// has already run but mark termination hasn't yet.
+		// Finalizer specials and queued records are runtime-owned roots. Their
+		// scanner follows function PCs and dynamic type descriptors so JIT code
+		// stays mapped through finalizer execution and can be collected after
+		// the record is cleared.
+		// This is responsible for maintaining the same GC-related invariants as
+		// markrootSpans if it has already run in the current mark cycle.
 		if gcphase != _GCoff {
-			base, span, _ := findObject(uintptr(p), 0, 0)
+			_, span, _ := findObject(uintptr(p), 0, 0)
 			mp := acquirem()
 			gcw := &mp.p.ptr().gcw
-			// Mark everything reachable from the object
-			// so it's retained for the finalizer.
-			if !span.spanclass.noscan() {
-				scanObject(base, gcw)
-			}
-			// Mark the finalizer itself, since the
-			// special isn't part of the GC'd heap.
-			scanblock(uintptr(unsafe.Pointer(&s.fn)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
+			gcScanFinalizer(s, span, gcw)
 			releasem(mp)
 		}
 		return true
@@ -2224,6 +2232,12 @@ func setCleanupContext(ptr unsafe.Pointer, ptrType *_type, createPC, funcPC uint
 	s.createPC = createPC
 	s.funcPC = funcPC
 	s.ptrType = ptrType
+	// Debug finalizer records retain raw PCs and a type descriptor until the
+	// object is checked or its special is cleared. These legacy fields cannot
+	// carry a GC owner edge, so pin any JIT generations they reference.
+	JITPinAddress(createPC)
+	JITPinAddress(funcPC)
+	JITPinAddress(uintptr(unsafe.Pointer(ptrType)))
 
 	mp := acquirem()
 	addspecial(ptr, &s.special, true)
@@ -2812,6 +2826,12 @@ func freeSpecial(s *special, p unsafe.Pointer, size uintptr) {
 		gcCleanups.enqueue(sc.cleanup)
 		lock(&mheap_.speciallock)
 		mheap_.specialCleanupAlloc.free(unsafe.Pointer(sc))
+		unlock(&mheap_.speciallock)
+	case _KindSpecialJIT:
+		sj := (*specialJIT)(unsafe.Pointer(s))
+		jitRetireEnqueue(sj.record)
+		lock(&mheap_.speciallock)
+		mheap_.specialJITAlloc.free(unsafe.Pointer(sj))
 		unlock(&mheap_.speciallock)
 	case _KindSpecialCheckFinalizer:
 		sc := (*specialCheckFinalizer)(unsafe.Pointer(s))

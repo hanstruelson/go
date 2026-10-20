@@ -5,16 +5,16 @@
 package ld
 
 import (
+	"cmd/link/publicinternal/loader"
+	"cmd/link/publicinternal/sym"
 	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/sys"
-	"cmd/link/publicinternal/loader"
-	"cmd/link/publicinternal/sym"
 	"cmp"
 	"fmt"
+	"path/filepath"
 	"publicinternal/abi"
 	"publicinternal/buildcfg"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -479,6 +479,11 @@ func (state *pclntab) generatePctab(ctxt *Link, funcs []loader.Sym) {
 	// Walk the functions, finding offset to store each pcdata.
 	seen := make(map[loader.Sym]struct{})
 	saveOffset := func(pcSym loader.Sym) {
+		// A zero auxiliary symbol denotes absent PC data. It is not a real
+		// symbol and must not be added to pctab's generated-symbol payload.
+		if pcSym == 0 {
+			return
+		}
 		if _, ok := seen[pcSym]; !ok {
 			datSize := ldr.SymSize(pcSym)
 			if datSize != 0 {
@@ -521,6 +526,9 @@ func (state *pclntab) generatePctab(ctxt *Link, funcs []loader.Sym) {
 		ldr := ctxt.loader
 		sb := ldr.MakeSymbolUpdater(s)
 		for sym := range seen {
+			if sym == 0 {
+				continue
+			}
 			sb.SetBytesAt(ldr.SymValue(sym), ldr.Data(sym))
 		}
 	}

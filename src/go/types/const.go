@@ -12,8 +12,8 @@ package types
 import (
 	"go/constant"
 	"go/token"
-	. "publicinternal/types/errors"
 	"math"
+	. "publicinternal/types/errors"
 )
 
 // overflow checks that the constant x is representable by its type.

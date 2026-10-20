@@ -11,6 +11,7 @@ import (
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/publicinternal/bio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -31,12 +32,26 @@ type Request struct {
 	PackagePath string
 	Files       []noder.SourceFile
 	Options     []string
-	// PackageArchives supplies compiler archives by resolved import path.
-	// ImportMap translates source import paths to those resolved paths.
-	PackageArchives map[string][]byte
-	ImportMap       map[string]string
+	// ArchFeaturesJSON carries the target feature snapshot recorded for the
+	// executable that will load this object. An empty value uses the compiler
+	// process defaults.
+	ArchFeaturesJSON string
+	// PackageExports supplies code-free Go export records by resolved import
+	// path. A non-nil map is a closed-world importer: packages absent from it
+	// are not read from disk or GOROOT. ImportMap translates source import paths
+	// to those resolved paths.
+	PackageExports map[string]base.PackageExportData
+	ImportMap      map[string]string
+	// JITCallSiteFile supplies the original host file scope when this request
+	// compiles nested runtime Eval source in a synthetic file.
+	JITCallSiteFile string
 	objectOutput    *bio.Writer
+	archFeatures    *ir.ArchFeatures
 }
+
+// PackageExportData is the compiler's in-memory package import record. It
+// contains Go export data and target identity, never imported object code.
+type PackageExportData = base.PackageExportData
 
 // Result contains the compiler object archive and diagnostics emitted while
 // compiling the request.
@@ -80,6 +95,13 @@ func Compile(req Request) (result Result, err error) {
 	}
 	if err := validateRequestOptions(req.Options); err != nil {
 		return result, err
+	}
+	if req.ArchFeaturesJSON != "" {
+		var features ir.ArchFeatures
+		if err := json.Unmarshal([]byte(req.ArchFeaturesJSON), &features); err != nil {
+			return result, fmt.Errorf("invalid architecture feature snapshot: %w", err)
+		}
+		req.archFeatures = &features
 	}
 
 	sourceFiles, err := requestSourceFiles(req.Files)

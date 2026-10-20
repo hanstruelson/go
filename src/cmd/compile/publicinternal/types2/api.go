@@ -170,6 +170,18 @@ type Config struct {
 	// for unused imports.
 	DisableUnusedImportCheck bool
 
+	// AllowUnusedImport reports whether an otherwise unused import at pos may
+	// be retained for a compiler-defined runtime import scope. The callback is
+	// consulted only for named imports; blank imports keep their usual Go
+	// initialization-only semantics.
+	AllowUnusedImport func(pos syntax.Pos, importPath string) bool
+
+	// JITCall reports whether callee is the runtime-evaluation function at pos.
+	// When it returns true, variables visible at that call are considered used:
+	// dynamically parsed source may name them even when the static Go source
+	// contains no identifier reference to them.
+	JITCall func(pos syntax.Pos, callee Object) bool
+
 	// If a non-empty ErrorURL format string is provided, it is used
 	// to format an error URL link that is appended to the first line
 	// of an error message. ErrorURL must be a format string containing

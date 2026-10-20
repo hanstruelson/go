@@ -9,6 +9,19 @@ import (
 	"flag"
 )
 
+// PackageExportData is the compiler-facing, code-free import record used by
+// in-process compilation. ObjectHeader contains the target object header and
+// any package export headers; Data is the unified Go export payload only.
+// Package archives and object code are deliberately not part of this type.
+type PackageExportData struct {
+	PackagePath       string
+	PackageName       string
+	ObjectHeader      string
+	ExportDataVersion uint32
+	Fingerprint       [8]byte
+	Data              []byte
+}
+
 // A CountFlag is a counting integer flag.
 // It accepts -name=value to set the value directly,
 // but it also accepts -name with no =value to increment the count.
@@ -113,12 +126,14 @@ type CmdFlags struct {
 			Patterns map[string][]string
 			Files    map[string]string
 		}
-		ImportDirs   []string                 // appended to by -I
-		ImportMap    map[string]string        // set by -importcfg
-		PackageFile  map[string]string        // set by -importcfg; nil means not in use
-		PackageData  map[string][]byte        // in-memory package archives supplied by a compile request
-		CoverageInfo *covcmd.CoverFixupConfig // set by -coveragecfg
-		SpectreIndex bool                     // set by -spectre=index or -spectre=all
+		ImportDirs      []string                     // appended to by -I
+		ImportMap       map[string]string            // set by -importcfg
+		PackageFile     map[string]string            // set by -importcfg; nil means not in use
+		PackageExports  map[string]PackageExportData // code-free package exports supplied by an in-process compile request
+		JITImportFiles  map[string]bool              // source files whose imports are visible to runtime Eval
+		JITCallSiteFile string                       // host source file inherited by runtime-compiled Eval calls
+		CoverageInfo    *covcmd.CoverFixupConfig     // set by -coveragecfg
+		SpectreIndex    bool                         // set by -spectre=index or -spectre=all
 		// Whether we are adding any sort of code instrumentation, such as
 		// when the race detector is enabled.
 		Instrumenting bool

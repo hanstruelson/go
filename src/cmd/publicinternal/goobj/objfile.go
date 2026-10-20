@@ -29,7 +29,7 @@ import (
 // New object file format.
 //
 //    Header struct {
-//       Magic       [...]byte   // "\x00go120ld"
+//       Magic       [...]byte   // "\x00go121ld"
 //       Fingerprint [8]byte
 //       Flags       uint32
 //       Offsets     [...]uint32 // byte offset of each block below
@@ -103,8 +103,10 @@ import (
 //    RefNames [...]struct { // referenced symbol names
 //       Sym  symRef
 //       Name string
-//       // TODO: include ABI version as well?
+//       ABI  uint16
 //    }
+//
+//    JITScope [...]ImportedPkg // packages whose code may be needed by runtime Eval
 //
 // string is encoded as is a uint32 length followed by a uint32 offset
 // that points to the corresponding string bytes.
@@ -202,6 +204,7 @@ const (
 	BlkAux
 	BlkData
 	BlkRefName
+	BlkJITScope
 	BlkEnd
 	NBlk
 )
@@ -215,13 +218,20 @@ type Header struct {
 	Offsets     [NBlk]uint32
 }
 
-const Magic = "\x00go120ld"
+const (
+	LegacyMagic = "\x00go120ld"
+	Magic       = "\x00go121ld"
+)
 
 func (h *Header) Write(w *Writer) {
 	w.RawString(h.Magic)
 	w.Bytes(h.Fingerprint[:])
 	w.Uint32(h.Flags)
-	for _, x := range h.Offsets {
+	n := len(h.Offsets)
+	if h.Magic == LegacyMagic {
+		n-- // the legacy format has no JITScope block
+	}
+	for _, x := range h.Offsets[:n] {
 		w.Uint32(x)
 	}
 }
@@ -229,7 +239,7 @@ func (h *Header) Write(w *Writer) {
 func (h *Header) Read(r *Reader) error {
 	b := r.BytesAt(0, len(Magic))
 	h.Magic = string(b)
-	if h.Magic != Magic {
+	if h.Magic != Magic && h.Magic != LegacyMagic {
 		return errors.New("wrong magic, not a Go object file")
 	}
 	off := uint32(len(h.Magic))
@@ -237,15 +247,26 @@ func (h *Header) Read(r *Reader) error {
 	off += 8
 	h.Flags = r.uint32At(off)
 	off += 4
-	for i := range h.Offsets {
+	n := len(h.Offsets)
+	if h.Magic == LegacyMagic {
+		n-- // the legacy end offset becomes both JITScope and End
+	}
+	for i := 0; i < n; i++ {
 		h.Offsets[i] = r.uint32At(off)
 		off += 4
+	}
+	if h.Magic == LegacyMagic {
+		h.Offsets[BlkEnd] = h.Offsets[BlkJITScope]
 	}
 	return nil
 }
 
 func (h *Header) Size() int {
-	return len(h.Magic) + len(h.Fingerprint) + 4 + 4*len(h.Offsets)
+	n := len(h.Offsets)
+	if h.Magic == LegacyMagic {
+		n--
+	}
+	return len(h.Magic) + len(h.Fingerprint) + 4 + 4*n
 }
 
 // Autolib
@@ -514,10 +535,14 @@ const huge = (1<<31 - 1) / RelocSize
 //	RefName struct {
 //	   Sym  symRef
 //	   Name string
+//	   ABI  uint16 // absent in LegacyMagic objects
 //	}
 type RefName [RefNameSize]byte
 
-const RefNameSize = 8 + stringRefSize
+const (
+	LegacyRefNameSize = 8 + stringRefSize
+	RefNameSize       = LegacyRefNameSize + 2
+)
 
 func (n *RefName) Sym() SymRef {
 	return SymRef{binary.LittleEndian.Uint32(n[:]), binary.LittleEndian.Uint32(n[4:])}
@@ -526,6 +551,12 @@ func (n *RefName) Name(r *Reader) string {
 	len := binary.LittleEndian.Uint32(n[8:])
 	off := binary.LittleEndian.Uint32(n[12:])
 	return r.StringAt(off, len)
+}
+func (n *RefName) ABI(r *Reader) uint16 {
+	if r.h.Magic == LegacyMagic {
+		return 0
+	}
+	return binary.LittleEndian.Uint16(n[16:])
 }
 
 func (n *RefName) SetSym(x SymRef) {
@@ -536,6 +567,7 @@ func (n *RefName) SetName(x string, w *Writer) {
 	binary.LittleEndian.PutUint32(n[8:], uint32(len(x)))
 	binary.LittleEndian.PutUint32(n[12:], w.stringOff(x))
 }
+func (n *RefName) SetABI(abi uint16) { binary.LittleEndian.PutUint16(n[16:], abi) }
 
 func (n *RefName) Write(w *Writer) { w.Bytes(n[:]) }
 
@@ -876,14 +908,62 @@ func (r *Reader) DataString(i uint32) string {
 
 // NRefName returns the number of referenced symbol names.
 func (r *Reader) NRefName() int {
-	return int(r.h.Offsets[BlkRefName+1]-r.h.Offsets[BlkRefName]) / RefNameSize
+	return int(r.h.Offsets[BlkRefName+1]-r.h.Offsets[BlkRefName]) / r.refNameSize()
+}
+
+func (r *Reader) refNameSize() int {
+	if r.h.Magic == LegacyMagic {
+		return LegacyRefNameSize
+	}
+	return RefNameSize
 }
 
 // RefName returns a pointer to the i-th referenced symbol name.
 // Note: here i is not a local symbol index, just a counter.
 func (r *Reader) RefName(i int) *RefName {
-	off := r.h.Offsets[BlkRefName] + uint32(i*RefNameSize)
+	off := r.h.Offsets[BlkRefName] + uint32(i*r.refNameSize())
 	return (*RefName)(unsafe.Pointer(&r.b[off]))
+}
+
+// JITScope returns the sorted package roots needed by runtime Eval in this
+// object. Source-file visibility remains in compiler metadata; this linker
+// root set may also include imports referenced by same-package declarations.
+// An empty block means that this object does not enable Eval.
+func (r *Reader) JITScope() ([]ImportedPkg, error) {
+	start, end := r.h.Offsets[BlkJITScope], r.h.Offsets[BlkJITScope+1]
+	if end < start || (end-start)%importedPkgSize != 0 {
+		return nil, errors.New("malformed JITScope block")
+	}
+	if start == end {
+		return nil, nil
+	}
+	n := int((end - start) / importedPkgSize)
+	if n > 1<<16 {
+		return nil, errors.New("JITScope contains too many package roots")
+	}
+	packages := make([]ImportedPkg, n)
+	for i := range packages {
+		off := start + uint32(i*importedPkgSize)
+		packages[i].Pkg = r.StringRef(off)
+		copy(packages[i].Fingerprint[:], r.BytesAt(off+stringRefSize, len(packages[i].Fingerprint)))
+		if packages[i].Pkg == "" || (i > 0 && packages[i-1].Pkg >= packages[i].Pkg) {
+			return nil, errors.New("JITScope package paths are empty, duplicated, or unsorted")
+		}
+	}
+	imports := make(map[string]FingerprintType)
+	for _, imported := range r.Autolib() {
+		if previous, ok := imports[imported.Pkg]; ok && previous != imported.Fingerprint {
+			return nil, fmt.Errorf("conflicting autolib fingerprints for package %q", imported.Pkg)
+		}
+		imports[imported.Pkg] = imported.Fingerprint
+	}
+	for _, pkg := range packages {
+		fingerprint, ok := imports[pkg.Pkg]
+		if !ok || fingerprint != pkg.Fingerprint {
+			return nil, fmt.Errorf("JITScope package %q does not match an object import fingerprint", pkg.Pkg)
+		}
+	}
+	return packages, nil
 }
 
 // ReadOnly returns whether r.BytesAt returns read-only bytes.

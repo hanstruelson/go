@@ -8,6 +8,7 @@ import (
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"strconv"
+	"sync"
 )
 
 type Pkg struct {
@@ -18,6 +19,7 @@ type Pkg struct {
 	Prefix  string // escaped path for use in symbol table
 	Syms    map[string]*Sym
 	Pathsym *obj.LSym
+	symsMu  sync.RWMutex
 
 	Direct bool // imported directly
 	Local  bool // package being compiled in this compiler context
@@ -62,6 +64,15 @@ func (pkg *Pkg) LookupOK(name string) (s *Sym, existed bool) {
 	if pkg == nil {
 		return &Sym{Name: name}, false
 	}
+	pkg.symsMu.RLock()
+	if s := pkg.Syms[name]; s != nil {
+		pkg.symsMu.RUnlock()
+		return s, true
+	}
+	pkg.symsMu.RUnlock()
+
+	pkg.symsMu.Lock()
+	defer pkg.symsMu.Unlock()
 	if s := pkg.Syms[name]; s != nil {
 		return s, true
 	}
@@ -78,10 +89,22 @@ func (pkg *Pkg) LookupBytes(name []byte) *Sym {
 	if pkg == nil {
 		return &Sym{Name: string(name)}
 	}
+	pkg.symsMu.RLock()
+	if s := pkg.Syms[string(name)]; s != nil {
+		pkg.symsMu.RUnlock()
+		return s
+	}
+	pkg.symsMu.RUnlock()
+
+	pkg.symsMu.Lock()
+	defer pkg.symsMu.Unlock()
 	if s := pkg.Syms[string(name)]; s != nil {
 		return s
 	}
-	return pkg.Lookup(string(name))
+	key := string(name)
+	s := &Sym{Name: key, Pkg: pkg}
+	pkg.Syms[key] = s
+	return s
 }
 
 // LookupNum looks up the symbol starting with prefix and ending with

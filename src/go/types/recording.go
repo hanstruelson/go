@@ -165,6 +165,9 @@ func (check *Checker) recordDef(id *ast.Ident, obj Object) {
 func (check *Checker) recordUse(id *ast.Ident, obj Object) {
 	assert(id != nil)
 	assert(obj != nil)
+	if m := check.jitUses; m != nil {
+		m[id] = obj
+	}
 	if m := check.Uses; m != nil {
 		m[id] = obj
 	}

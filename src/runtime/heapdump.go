@@ -14,6 +14,7 @@ package runtime
 import (
 	"publicinternal/abi"
 	"publicinternal/goarch"
+	"publicinternal/runtime/atomic"
 	"publicinternal/runtime/gc"
 	"unsafe"
 )
@@ -458,6 +459,34 @@ func dumproots() {
 	dumpint(uint64(firstmoduledata.bss))
 	dumpmemrange(unsafe.Pointer(firstmoduledata.bss), firstmoduledata.ebss-firstmoduledata.bss)
 	dumpfields(firstmoduledata.gcbssmask)
+
+	// JIT package globals live outside the static module chain. Dump each
+	// pointer-bearing range with the exact type bitmap used by markroot.
+	index := jitIndexReadEnter()
+	if jitIndexPointer(index) != 0 {
+		entries := jitIndexEntries((*jitModuleIndex)(unsafe.Pointer(jitIndexPointer(index))))
+		for i := range entries {
+			entry := &entries[i]
+			if atomic.Loaduintptr(&entry.owner) == 0 || entry.weakHandle == 0 {
+				continue
+			}
+			ownerAddress := (*atomic.Uintptr)(unsafe.Pointer(entry.weakHandle)).Load()
+			if ownerAddress == 0 {
+				continue
+			}
+			owner := (*JITModuleOwner)(unsafe.Pointer(ownerAddress))
+			for _, root := range owner.globals {
+				dumpint(tagData)
+				dumpint(uint64(root.address))
+				dumpmemrange(unsafe.Pointer(root.address), root.ptrBytes)
+				dumpfields(bitvector{n: int32(root.ptrBytes / goarch.PtrSize), bytedata: (*uint8)(root.mask)})
+			}
+			KeepAlive(owner)
+		}
+		jitIndexReadLeave(index)
+	} else {
+		jitIndexReadLeave(index)
+	}
 
 	// mspan.types
 	for _, s := range mheap_.allspans {

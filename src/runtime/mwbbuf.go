@@ -242,6 +242,7 @@ func wbBufFlush1(pp *p) {
 		}
 		obj, span, objIndex := findObject(ptr, 0, 0)
 		if obj == 0 {
+			jitMarkOwnerAddr(ptr, gcw)
 			continue
 		}
 		// TODO: Consider making two passes where the first

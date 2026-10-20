@@ -4,21 +4,66 @@
 
 // Package jit provides runtime Go source parsing and compilation, serialized
 // package and link metadata, and an in-memory amd64 Linux object linker. Eval
-// compiles a statement body in the importing file's package/import context,
-// links its imports to already-loaded package symbols, registers runtime PC
-// and GC metadata, executes it, and returns a Code handle for explicit unload.
-// See doc/jit-in-memory-linker-plan.md for current target and linker limits.
+// compiles a uniquely named function with the importing package's identity,
+// links its imports to already-loaded package symbols, captures visible local
+// variables at direct compiler-rewritten call sites, registers runtime PC
+// file/line and GC metadata, executes it, and returns a Code handle for
+// explicit unload. See doc/jit-in-memory-linker-plan.md for the supported
+// capture subset and remaining linker/runtime limits.
 package jit
 
 import (
+	"context"
 	"fmt"
 	"go/token"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"cmd/compile/publicinternal/jitmeta"
 	"cmd/compile/publicinternal/syntax"
 )
+
+// MemoryLimitError reports a JIT allocation rejected by the configured byte
+// limit. Runtime and executable mappings remain charged until they are
+// successfully released.
+type MemoryLimitError = runtime.JITMemoryLimitError
+
+// SetMemoryLimit configures the budget for executable mappings, per-module
+// runtime tables, published JIT module indexes, and GC owner side tables. Zero
+// means unlimited. Lowering the limit does not invalidate live modules; future
+// allocations trigger a collection and fail if live or pinned modules still
+// exceed it.
+func SetMemoryLimit(bytes uint64) { runtime.SetJITMemoryLimit(bytes) }
+
+// MemoryStats returns the currently charged JIT mapping, runtime table, and
+// owner side-table bytes and the configured limit. It includes temporary
+// index snapshots while readers drain, but excludes Go heap objects retained
+// by JIT owners.
+func MemoryStats() (used, limit uint64) { return runtime.JITMemoryStats() }
+
+// Reclaim runs a complete garbage collection and waits for all JIT modules
+// whose owners became unreachable to finish reader draining and unmapping.
+// Live and pinned modules remain charged. Cancellation stops waiting but does
+// not cancel safe retirement already queued by the runtime.
+func Reclaim(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("jit: Reclaim requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	runtime.GC()
+	runtime.JITPruneCaches()
+	for !runtime.JITWaitForRetirements(10e6) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+	return nil
+}
 
 // File is a syntax tree produced by the compiler's parser.
 type File = syntax.File

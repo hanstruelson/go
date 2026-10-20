@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"debug/pe"
 	"fmt"
-	"publicinternal/testenv"
 	"os"
 	"path/filepath"
+	"publicinternal/testenv"
 	"runtime"
 	"strings"
 	"testing"
@@ -467,7 +467,8 @@ func d()
 	if err := os.WriteFile(filepath.Join(tmpDir, "x.go"), []byte(main), 0644); err != nil {
 		t.Fatalf("failed to write main: %v\n", err)
 	}
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-ldflags=-linkmode=internal")
+	output := filepath.Join(tmpDir, "riscvtramp")
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-ldflags=-linkmode=internal", "-o", output)
 	cmd.Dir = tmpDir
 	cmd.Env = append(os.Environ(), "GOARCH=riscv64", "GOOS=linux")
 	out, err := cmd.CombinedOutput()
@@ -476,7 +477,7 @@ func d()
 	}
 
 	// Check what trampolines exist.
-	cmd = testenv.Command(t, testenv.GoToolPath(t), "tool", "nm", filepath.Join(tmpDir, "riscvtramp"))
+	cmd = testenv.Command(t, testenv.GoToolPath(t), "tool", "nm", output)
 	cmd.Env = append(os.Environ(), "GOARCH=riscv64", "GOOS=linux")
 	out, err = cmd.CombinedOutput()
 	if err != nil {

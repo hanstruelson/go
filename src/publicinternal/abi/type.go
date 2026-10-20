@@ -126,6 +126,13 @@ const (
 	// This flag is just a cached computation of Size_ == PtrBytes == goarch.PtrSize.
 	TFlagDirectIface TFlag = 1 << 5
 
+	// TFlagJITDependent marks a reflect-created type descriptor that contains
+	// or depends on a type descriptor stored in a reclaimable JIT mapping. It
+	// keeps such descriptors out of reflect's process-global type caches and
+	// lets the runtime attach a live type descriptor to allocations using it.
+	// Compiler-emitted type descriptors never set this bit.
+	TFlagJITDependent TFlag = 1 << 6
+
 	// Leaving this breadcrumb behind for dlv. It should not be used, and no
 	// Kind should be big enough to set this bit.
 	KindDirectIface Kind = 1 << 5

@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"math/bits"
 	"publicinternal/abi"
 	"publicinternal/cpu"
 	"publicinternal/goarch"
@@ -13,7 +14,6 @@ import (
 	"publicinternal/runtime/atomic"
 	"publicinternal/runtime/gc"
 	"publicinternal/runtime/sys"
-	"math/bits"
 	"unsafe"
 )
 
@@ -1397,9 +1397,12 @@ func (r *stackObjectRecord) gcdata() (uintptr, *byte) {
 			break
 		}
 	}
-	// If you get a panic here due to a nil mod,
-	// you may have made a copy of a stackObjectRecord.
-	// You must use the original pointer.
+	if mod == nil {
+		mod = jitLookupGofunc(ptr)
+	}
+	if mod == nil {
+		throw("runtime: stack object metadata is outside module tables")
+	}
 	res := mod.rodata + uintptr(r.gcdataoff)
 	return uintptr(r.ptrBytes), (*byte)(unsafe.Pointer(res))
 }

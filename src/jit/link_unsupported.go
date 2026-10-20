@@ -6,7 +6,10 @@
 
 package jit
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 func loadLinkedSnippet(_ *Metadata, _ CompiledPackage) (*mappedImage, error) {
 	return nil, fmt.Errorf("jit: runtime linking currently requires linux/amd64")
@@ -18,3 +21,9 @@ func closeMappedImage(_ *mappedImage) error {
 
 func callEntry(uintptr)            { panic("jit: runtime entry calls require linux/amd64") }
 func callEntryInt(uintptr) uintptr { panic("jit: runtime entry calls require linux/amd64") }
+func callEntryOwned(uintptr, *runtime.JITModuleOwner) {
+	panic("jit: runtime entry calls require linux/amd64")
+}
+func callEntryOwnedInt(uintptr, *runtime.JITModuleOwner) uintptr {
+	panic("jit: runtime entry calls require linux/amd64")
+}

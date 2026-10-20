@@ -17,11 +17,11 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"publicinternal/abi"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"publicinternal/abi"
 	"slices"
 	"sort"
 	"strings"
@@ -212,6 +212,13 @@ func WriteObjFile(ctxt *Link, b *bio.Writer) {
 	h.Offsets[goobj.BlkRefName] = w.Offset()
 	w.refNames()
 
+	// Linker roots for runtime Eval. Paths are sorted by the compiler so the
+	// object representation is deterministic.
+	h.Offsets[goobj.BlkJITScope] = w.Offset()
+	for _, pkg := range ctxt.JITScope {
+		pkg.Write(w.Writer)
+	}
+
 	h.Offsets[goobj.BlkEnd] = w.Offset()
 
 	// Fix up block offsets in the header
@@ -298,6 +305,9 @@ func (w *writer) StringTable() {
 	for _, p := range w.ctxt.Imports {
 		w.AddString(p.Pkg)
 	}
+	for _, pkg := range w.ctxt.JITScope {
+		w.AddString(pkg.Pkg)
+	}
 	for _, pkg := range w.pkglist {
 		w.AddString(pkg)
 	}
@@ -310,7 +320,7 @@ func (w *writer) StringTable() {
 		// TODO: this includes references of indexed symbols from other packages,
 		// for which the linker doesn't need the name. Consider moving them to
 		// a separate block (for tools only).
-		if w.ctxt.Flag_noRefName && s.PkgIdx < goobj.PkgIdxSpecial {
+		if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 && s.PkgIdx < goobj.PkgIdxSpecial {
 			// Don't include them if Flag_noRefName
 			return
 		}
@@ -682,7 +692,7 @@ func (w *writer) refFlags() {
 // Emits names of referenced indexed symbols, used by tools (objdump, nm)
 // only.
 func (w *writer) refNames() {
-	if w.ctxt.Flag_noRefName {
+	if w.ctxt.Flag_noRefName && len(w.ctxt.JITScope) == 0 {
 		return
 	}
 	seen := make(map[*LSym]bool)
@@ -701,6 +711,7 @@ func (w *writer) refNames() {
 		o := &w.tmpRefName
 		o.SetSym(symref)
 		o.SetName(rs.Name, w.Writer)
+		o.SetABI(uint16(rs.ABI()))
 		o.Write(w.Writer)
 	})
 	// TODO: output in sorted order?

@@ -1195,15 +1195,19 @@ type Link struct {
 	Pathname             string
 	Pkgpath              string // the current package's import path
 
-	hashmu          sync.Mutex       // protects hash, funchash
-	hash            sync.Map         // name(string) -> sym(*syncOnce) mapping
-	funchash        sync.Map         // name(string) -> sym(*syncOnce) mapping for ABIInternal syms
-	statichash      map[string]*LSym // name -> sym mapping for static syms
-	PosTable        src.PosTable
-	InlTree         InlTree // global inlining tree used by gc/inl.go
-	DwFixups        *DwarfFixupTable
-	DwTextCount     int
-	Imports         []goobj.ImportedPkg
+	hashmu      sync.Mutex       // protects hash, funchash
+	hash        sync.Map         // name(string) -> sym(*syncOnce) mapping
+	funchash    sync.Map         // name(string) -> sym(*syncOnce) mapping for ABIInternal syms
+	statichash  map[string]*LSym // name -> sym mapping for static syms
+	PosTable    src.PosTable
+	InlTree     InlTree // global inlining tree used by gc/inl.go
+	DwFixups    *DwarfFixupTable
+	DwTextCount int
+	Imports     []goobj.ImportedPkg
+	// JITScope lists imported Go packages whose symbols may be needed by
+	// runtime Eval, including imports used by package declarations and generic
+	// bodies. Per-file identifier visibility is carried in JIT build metadata.
+	JITScope        []goobj.ImportedPkg
 	DiagFunc        func(string, ...any)
 	DiagFlush       func()
 	DebugInfo       func(ctxt *Link, fn *LSym, info *LSym, curfn Func) ([]dwarf.Scope, dwarf.InlCalls)

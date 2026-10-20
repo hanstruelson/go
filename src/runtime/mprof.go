@@ -442,6 +442,8 @@ func mProf_Malloc(mp *m, p unsafe.Pointer, size uintptr) {
 	// reserved for delayed inline expansion with frame pointer unwinding.
 	nstk := callers(3, mp.profStack[:debug.profstackdepth+2])
 	index := (mProfCycle.read() + 2) % uint32(len(memRecord{}.future))
+	// callers pins the JIT modules represented by this stack before returning
+	// these raw PCs to the profile bucket.
 
 	b := stkbucket(memProfile, size, mp.profStack[:nstk], true)
 	mr := b.mp()
@@ -481,6 +483,10 @@ var blockprofilerate uint64 // in CPU ticks
 // To include every blocking event in the profile, pass rate = 1.
 // To turn off profiling entirely, pass rate <= 0.
 func SetBlockProfileRate(rate int) {
+	if rate > 0 {
+		// Block profile buckets retain raw PCs after their goroutines finish.
+		pinAllJITModules()
+	}
 	var r int64
 	if rate <= 0 {
 		r = 0 // disable profiling
@@ -819,6 +825,10 @@ var mutexprofilerate uint64 // fraction sampled
 func SetMutexProfileFraction(rate int) int {
 	if rate < 0 {
 		return int(mutexprofilerate)
+	}
+	if rate > 0 {
+		// Mutex profile buckets retain raw PCs after their stacks unwind.
+		pinAllJITModules()
 	}
 	old := mutexprofilerate
 	atomic.Store64(&mutexprofilerate, uint64(rate))
@@ -1241,6 +1251,9 @@ func pprof_goroutineProfileWithLabels(p []profilerecord.StackRecord, labels []un
 
 // labels may be nil. If labels is non-nil, it must have the same length as p.
 func goroutineProfileWithLabels(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
+	// StackRecord exposes raw PCs and can outlive the captured goroutines.
+	// Pin all modules before stopping the world to take the snapshot.
+	pinAllJITModules()
 	if labels != nil && len(labels) != len(p) {
 		labels = nil
 	}
@@ -1255,6 +1268,8 @@ func pprof_goroutineLeakProfileWithLabels(p []profilerecord.StackRecord, labels 
 
 // labels may be nil. If labels is non-nil, it must have the same length as p.
 func goroutineLeakProfileWithLabels(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
+	// Leak profiles retain raw PCs beyond the captured goroutine stacks.
+	pinAllJITModules()
 	if labels != nil && len(labels) != len(p) {
 		labels = nil
 	}

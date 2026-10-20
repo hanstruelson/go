@@ -131,7 +131,7 @@ func IsExported(t Type) bool {
 }
 
 func ResolveReflectName(s string) {
-	resolveReflectName(newName(s, "", false, false))
+	resolveReflectName(newName(s, "", false, false), nil)
 }
 
 type Buffer struct {

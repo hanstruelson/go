@@ -239,6 +239,9 @@ func markroot(gcw *gcWork, i uint32, flushBgCredit bool) int64 {
 		for fb := allfin; fb != nil; fb = fb.alllink {
 			cnt := uintptr(atomic.Load(&fb.cnt))
 			scanblock(uintptr(unsafe.Pointer(&fb.fin[0])), cnt*unsafe.Sizeof(fb.fin[0]), &finptrmask[0], gcw, nil)
+			for j := uintptr(0); j < cnt; j++ {
+				jitMarkFuncvalOwner(fb.fin[j].fn, gcw)
+			}
 		}
 
 	case i == fixedRootFreeGStacks:
@@ -252,6 +255,9 @@ func markroot(gcw *gcWork, i uint32, flushBgCredit bool) int64 {
 			// All cleanup queueing happens during sweep.
 			n := uintptr(atomic.Load(&cb.n))
 			scanblock(uintptr(unsafe.Pointer(&cb.cleanups[0])), n*unsafe.Sizeof(cleanupFn{}), &cleanupBlockPtrMask[0], gcw, nil)
+			for j := uintptr(0); j < n; j++ {
+				jitMarkCleanupOwners(&cb.cleanups[j], gcw)
+			}
 		}
 
 	case work.baseSpans <= i && i < work.baseStacks:
@@ -474,6 +480,7 @@ func gcScanFinalizer(spf *specialfinalizer, s *mspan, gcw *gcWork) {
 
 	// A finalizer can be set for an inner byte of an object, find object beginning.
 	p := s.base() + spf.special.offset/s.elemsize*s.elemsize
+	jitMarkSpanOwner(s, s.objIndex(p), gcw)
 
 	// Mark everything that can be reached from
 	// the object (but *not* the object itself or
@@ -484,12 +491,16 @@ func gcScanFinalizer(spf *specialfinalizer, s *mspan, gcw *gcWork) {
 
 	// The special itself is also a root.
 	scanblock(uintptr(unsafe.Pointer(&spf.fn)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
+	scanblock(uintptr(unsafe.Pointer(&spf.fint)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
+	scanblock(uintptr(unsafe.Pointer(&spf.ot)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
+	jitMarkFuncvalOwner(spf.fn, gcw)
 }
 
 // gcScanCleanup scans the relevant parts of a cleanup special as a root.
 func gcScanCleanup(spc *specialCleanup, gcw *gcWork) {
 	// The special itself is a root.
 	scanblock(uintptr(unsafe.Pointer(&spc.cleanup)), unsafe.Sizeof(cleanupFn{}), &cleanupFnPtrMask[0], gcw, nil)
+	jitMarkCleanupOwners(&spc.cleanup, gcw)
 }
 
 // gcAssistAlloc performs GC work to make gp's assist debt positive.
@@ -1515,6 +1526,8 @@ func scanblock(b0, n0 uintptr, ptrmask *uint8, gcw *gcWork, stk *stackScanState)
 						if !tryDeferToSpanScan(p, gcw) {
 							if obj, span, objIndex := findObject(p, b, i); obj != 0 {
 								greyobject(obj, b, i, span, gcw, objIndex)
+							} else {
+								jitMarkOwnerAddr(p, gcw)
 							}
 						}
 					}
@@ -1606,9 +1619,10 @@ func scanConservative(b, n uintptr, ptrmask *uint8, gcw *gcWork, state *stackSca
 			continue
 		}
 
-		// Check if val points to a heap span.
+		// Check if val points to a heap span or external JIT mapping.
 		span := spanOfHeap(val)
 		if span == nil {
+			jitMarkOwnerAddr(val, gcw)
 			continue
 		}
 
@@ -1639,8 +1653,37 @@ func shade(b uintptr) {
 	if !tryDeferToSpanScan(b, gcw) {
 		if obj, span, objIndex := findObject(b, 0, 0); obj != 0 {
 			greyobject(obj, 0, 0, span, gcw, objIndex)
+		} else {
+			jitMarkOwnerAddr(b, gcw)
 		}
 	}
+}
+
+// jitMarkOwnerAddr treats a typed pointer into a generated module as a GC
+// edge to its owner. The owner retains the external mapping; mapping bytes
+// themselves are never scanned as Go heap memory.
+//
+//go:nowritebarrier
+//go:nosplit
+func jitMarkOwnerAddr(address uintptr, gcw *gcWork) bool {
+	owner, found, lease := jitOwnerForMappedAddressLease(address)
+	if !found {
+		return false
+	}
+	if owner == nil {
+		jitIndexReadLeave(lease)
+		return true
+	}
+	ownerAddr := uintptr(unsafe.Pointer(owner))
+	obj, span, objIndex := findObject(ownerAddr, 0, 0)
+	if obj != 0 {
+		// This edge originates outside the Go heap. Mark the owner directly
+		// instead of using the span-deferred optimization: the owner carries the
+		// only GC-visible reference that keeps the external mapping alive.
+		greyobject(obj, 0, 0, span, gcw, objIndex)
+	}
+	jitIndexReadLeave(lease)
+	return true
 }
 
 // obj is the start of an object with mark mbits.
@@ -1686,6 +1729,10 @@ func greyobject(obj, base, off uintptr, span *mspan, gcw *gcWork, objIndex uintp
 			atomic.Or8(&arena.pageMarks[pageIdx], pageMask)
 		}
 	}
+	// A heap object whose type descriptor lives in a JIT mapping carries an
+	// owner edge in span metadata. Mark it before queueing this object's fields
+	// so its type and GC bitmap remain mapped while scanObject reads them.
+	jitMarkSpanOwner(span, objIndex, gcw)
 
 	// If this is a noscan object, fast-track it to black
 	// instead of greying it.

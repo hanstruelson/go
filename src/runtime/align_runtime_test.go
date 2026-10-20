@@ -46,4 +46,11 @@ var AtomicVariables = []unsafe.Pointer{
 	unsafe.Pointer(&sched),
 	unsafe.Pointer(&ticks),
 	unsafe.Pointer(&work),
+	unsafe.Pointer(&jitModuleGeneration),
+	unsafe.Pointer(&jitSweepSequence),
+	unsafe.Pointer(&jitSweepCompleted),
+	unsafe.Pointer(&jitRetirePending),
+	unsafe.Pointer(&jitReflectTypeIdentity),
+	unsafe.Pointer(&jitMemoryLimit),
+	unsafe.Pointer(&jitMemoryUsed),
 }

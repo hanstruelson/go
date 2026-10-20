@@ -282,6 +282,30 @@ func processResults(fset *token.FileSet, id, fixArchive string, results []result
 	return
 }
 
+// isJITEvalFunction recognizes the public jit.Eval API. Vet uses this hook so
+// locals referenced only by source passed to Eval are not reported unused.
+func isJITEvalFunction(function *types.Func) bool {
+	if function == nil || function.Name() != "Eval" || function.Pkg() == nil || function.Pkg().Name() != "jit" {
+		return false
+	}
+	path := function.Pkg().Path()
+	if path != "jit" && !strings.HasSuffix(path, "/jit") {
+		return false
+	}
+	signature, ok := function.Type().(*types.Signature)
+	if !ok || signature.Recv() != nil || signature.Variadic() || signature.Params().Len() != 1 || signature.Results().Len() != 2 ||
+		!types.Identical(signature.Params().At(0).Type(), types.Typ[types.String]) ||
+		!types.Identical(signature.Results().At(1).Type(), types.Universe.Lookup("error").Type()) {
+		return false
+	}
+	codePointer, ok := signature.Results().At(0).Type().(*types.Pointer)
+	if !ok {
+		return false
+	}
+	codeType, ok := codePointer.Elem().(*types.Named)
+	return ok && codeType.Obj().Name() == "Code" && codeType.Obj().Pkg() == function.Pkg()
+}
+
 func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]result, error) {
 	// Load, parse, typecheck.
 	var files []*ast.File
@@ -323,6 +347,10 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 		Importer:  importer,
 		Sizes:     types.SizesFor("gc", build.Default.GOARCH),
 		GoVersion: cfg.GoVersion,
+		JITCall: func(_ token.Pos, callee types.Object) bool {
+			function, ok := callee.(*types.Func)
+			return ok && isJITEvalFunction(function)
+		},
 	}
 	info := &types.Info{
 		Types:        make(map[ast.Expr]types.TypeAndValue),

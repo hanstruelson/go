@@ -6,6 +6,7 @@ package jit
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"cmd/publicinternal/archive"
@@ -26,6 +27,8 @@ type GoObject struct {
 type ObjectSymbol struct {
 	Name        string
 	Ref         goobj.SymRef
+	Gotype      goobj.SymRef
+	HasGotype   bool
 	ABI         uint16
 	Type        uint8
 	Flags       uint8
@@ -45,8 +48,14 @@ type ObjectFunctionMetadata struct {
 	StartLine    int32
 	FuncID       uint8
 	FuncFlag     uint8
+	InlineTree   []goobj.InlTreeNode
 	PCSP         []byte
 	PCSPRef      goobj.SymRef
+	PCFile       []byte
+	PCFileRef    goobj.SymRef
+	PCLine       []byte
+	PCLineRef    goobj.SymRef
+	Files        []string
 	PCData       [][]byte
 	PCDataRefs   []goobj.SymRef
 	FuncData     [][]byte
@@ -117,20 +126,56 @@ func (o GoObject) Symbols() ([]ObjectSymbol, error) {
 			aux := o.Reader.Aux(index, auxIndex)
 			ref := aux.Sym()
 			switch aux.Type() {
+			case goobj.AuxGotype:
+				if out.HasGotype {
+					return nil, fmt.Errorf("jit: Go object %q symbol %q has duplicate Go type metadata", o.Name, out.Name)
+				}
+				if ref.PkgIdx != goobj.PkgIdxInvalid {
+					out.Gotype = ref
+					out.HasGotype = true
+				}
 			case goobj.AuxFuncInfo:
 				data, err := o.dataForReference(ref)
 				if err != nil {
 					return nil, fmt.Errorf("jit: read func info for %s: %w", out.Name, err)
 				}
-				if len(data) < 16 {
+				if len(data) < 20 {
 					return nil, fmt.Errorf("jit: malformed func info for %s", out.Name)
 				}
-				fi := (*goobj.FuncInfo)(nil)
+				fi := new(goobj.FuncInfo)
 				out.Function.ArgsSize = fi.ReadArgs(data)
 				out.Function.LocalsSize = fi.ReadLocals(data)
 				out.Function.FuncID = uint8(fi.ReadFuncID(data))
 				out.Function.FuncFlag = uint8(fi.ReadFuncFlag(data))
 				out.Function.StartLine = fi.ReadStartLine(data)
+				lengths := fi.ReadFuncInfoLengths(data)
+				filesEnd := uint64(lengths.FileOff) + uint64(lengths.NumFile)*4
+				if lengths.NumFile > maxImageEntries || filesEnd+4 > uint64(len(data)) {
+					return nil, fmt.Errorf("jit: malformed file list in func info for %s", out.Name)
+				}
+				inlineCount := binary.LittleEndian.Uint32(data[filesEnd:])
+				inlineEnd := filesEnd + 4 + uint64(inlineCount)*24
+				if inlineCount > maxImageEntries || inlineEnd > uint64(len(data)) {
+					return nil, fmt.Errorf("jit: malformed inline tree in func info for %s", out.Name)
+				}
+				// PCFile stores raw CUFileIndex values, which are indexes into the
+				// object's complete file table. Keep that index space intact: a
+				// compact list of only FuncInfo's referenced files makes valid
+				// source indexes point at the wrong path during runtime traceback.
+				out.Function.Files = make([]string, o.Reader.NFile())
+				for i := range out.Function.Files {
+					out.Function.Files[i] = o.Reader.File(i)
+				}
+				for i := uint32(0); i < lengths.NumFile; i++ {
+					fileIndex := fi.ReadFile(data, lengths.FileOff, i)
+					if int(fileIndex) >= o.Reader.NFile() {
+						return nil, fmt.Errorf("jit: func info for %s references missing file %d", out.Name, fileIndex)
+					}
+				}
+				out.Function.InlineTree = make([]goobj.InlTreeNode, inlineCount)
+				for i := range out.Function.InlineTree {
+					out.Function.InlineTree[i] = fi.ReadInlTree(data, uint32(filesEnd+4), uint32(i))
+				}
 			case goobj.AuxPcsp:
 				data, err := o.dataForReference(ref)
 				if err != nil {
@@ -138,6 +183,20 @@ func (o GoObject) Symbols() ([]ObjectSymbol, error) {
 				}
 				out.Function.PCSP = data
 				out.Function.PCSPRef = ref
+			case goobj.AuxPcfile:
+				data, err := o.dataForReference(ref)
+				if err != nil {
+					return nil, fmt.Errorf("jit: read pcfile for %s: %w", out.Name, err)
+				}
+				out.Function.PCFile = data
+				out.Function.PCFileRef = ref
+			case goobj.AuxPcline:
+				data, err := o.dataForReference(ref)
+				if err != nil {
+					return nil, fmt.Errorf("jit: read pcline for %s: %w", out.Name, err)
+				}
+				out.Function.PCLine = data
+				out.Function.PCLineRef = ref
 			case goobj.AuxPcdata:
 				data, err := o.dataForReference(ref)
 				if err != nil {
@@ -268,7 +327,7 @@ func (o GoObject) ResolveReference(ref goobj.SymRef) (ObjectReference, error) {
 		for i := 0; i < o.Reader.NRefName(); i++ {
 			name := o.Reader.RefName(i)
 			if name.Sym() == ref {
-				result.Name = name.Name(o.Reader)
+				result.Name, result.ABI = name.Name(o.Reader), name.ABI(o.Reader)
 				return result, nil
 			}
 		}

@@ -1014,6 +1014,8 @@ func mcommoninit(mp *m, id int64) {
 	// g0 stack won't make sense for user (and is not necessary unwindable).
 	if gp != gp.m.g0 {
 		callers(1, mp.createstack[:])
+		// callers pins any generated modules represented in this persistent
+		// thread-creation stack before returning its raw PCs.
 	}
 
 	lock(&sched.lock)
@@ -5505,6 +5507,10 @@ func saveAncestors(callergp *g) *[]ancestorInfo {
 
 	var pcs [tracebackInnerFrames]uintptr
 	npcs := gcallers(callergp, 0, pcs[:])
+	// Ancestor records retain raw PCs after the caller's stack has returned.
+	// Preserve any JIT modules they name before copying those integers into the
+	// new goroutine's long-lived ancestry record.
+	pinJITStack(pcs[:npcs])
 	ipcs := make([]uintptr, npcs)
 	copy(ipcs, pcs[:])
 	ancestors[0] = ancestorInfo{

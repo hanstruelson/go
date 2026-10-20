@@ -1178,6 +1178,10 @@ func callers(skip int, pcbuf []uintptr) int {
 		u.initAt(pc, sp, 0, gp, unwindSilentErrors)
 		n = tracebackPCs(&u, skip, pcbuf)
 	})
+	// callers is an externally linkable raw-PC producer. Its uintptr results
+	// cannot keep a generated module alive through the GC, even if the caller
+	// never asks CallersFrames or FuncForPC to interpret them.
+	pinJITStack(pcbuf[:n])
 	return n
 }
 

@@ -165,6 +165,13 @@ type Config struct {
 	// error found.
 	Error func(err error)
 
+	// JITCall reports whether callee is a runtime-evaluation function at pos.
+	// When it returns true, variables visible at that call are considered used:
+	// dynamically parsed source may name them even when the static Go source
+	// contains no identifier reference to them. This hook is intended for Go
+	// toolchains that provide runtime evaluation as a compiler extension.
+	JITCall func(pos token.Pos, callee Object) bool
+
 	// An importer is used to import packages referred to from
 	// import declarations.
 	// If the installed importer implements ImporterFrom, the type

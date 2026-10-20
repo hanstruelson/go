@@ -27,23 +27,17 @@ func (o *testTypeName) Type() *Type   { return nil }
 // printed in fmtTypeID as well, so package-local names use Pkg.Prefix
 // (import path) instead of Pkg.Name. Regression test for that mistake.
 func TestFormatInterfaceUnexportedMethodUsesGoModeForSignature(t *testing.T) {
-	oldPtr, oldReg, oldMax := PtrSize, RegSize, MaxWidth
-	t.Cleanup(func() {
-		PtrSize, RegSize, MaxWidth = oldPtr, oldReg, oldMax
-	})
-	localPkg := NewPkgInstance("main", "main")
+	context := NewContext(8, 8, 1<<50)
+	localPkg := NewPkgInstanceFor(context, "main", "main")
 	localPkg.Local = true
-	PtrSize = 8
-	RegSize = 8
-	MaxWidth = 1 << 50
 
-	lib := NewPkgInstance("example.com/lib", "lib")
+	lib := NewPkgInstanceFor(context, "example.com/lib", "lib")
 	namedT := NewNamed(&testTypeName{sym: lib.Lookup("T")})
 	// Underlying must not rely on Types[…]; InitTypes is not run in this package's tests.
-	namedT.SetUnderlying(NewStruct(nil))
+	namedT.SetUnderlying(NewStructIn(context, nil))
 
-	sig := NewSignature(nil, nil, []*Field{NewField(src.NoXPos, nil, namedT)})
-	iface := NewInterface([]*Field{NewField(src.NoXPos, localPkg.Lookup("unexported"), sig)})
+	sig := NewSignatureIn(context, nil, nil, []*Field{NewField(src.NoXPos, nil, namedT)})
+	iface := NewInterfaceIn(context, []*Field{NewField(src.NoXPos, localPkg.Lookup("unexported"), sig)})
 	CalcSize(iface) // populate interface method set for printing (expandiface)
 
 	var buf bytes.Buffer
@@ -61,16 +55,10 @@ func TestFormatInterfaceUnexportedMethodUsesGoModeForSignature(t *testing.T) {
 }
 
 func TestCopyTFlagFrom(t *testing.T) {
-	oldPtr, oldReg, oldMax := PtrSize, RegSize, MaxWidth
-	t.Cleanup(func() {
-		PtrSize, RegSize, MaxWidth = oldPtr, oldReg, oldMax
-	})
-	PtrSize = 8
-	RegSize = 8
-	MaxWidth = 1 << 50
+	context := NewContext(8, 8, 1<<50)
 
-	src := NewStruct(nil)
-	dst := NewStruct(nil)
+	src := NewStructIn(context, nil)
+	dst := NewStructIn(context, nil)
 	CalcSize(src)
 	CalcSize(dst)
 	src.SetMethodsComputed(true)

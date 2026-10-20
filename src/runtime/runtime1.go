@@ -749,6 +749,17 @@ func reflectlite_resolveTypeOff(rtype unsafe.Pointer, off int32) unsafe.Pointer 
 //
 //go:linkname reflect_addReflectOff reflect.addReflectOff
 func reflect_addReflectOff(ptr unsafe.Pointer) int32 {
+	// The linkname API cannot associate an offset with a reflected descriptor's
+	// lifetime. If a caller gives it an address in a reclaimable JIT image,
+	// preserve the historical process-lifetime semantics by pinning that image.
+	// The reflect package uses descriptor-local offsets for its own JIT types.
+	if owner, found := jitOwnerForMappedAddress(uintptr(ptr)); found {
+		if owner == nil {
+			throw("runtime: reflect offset refers to a retired JIT mapping")
+		}
+		PinJITModule(owner)
+		KeepAlive(owner)
+	}
 	reflectOffsLock()
 	if reflectOffs.m == nil {
 		reflectOffs.m = make(map[int32]unsafe.Pointer)

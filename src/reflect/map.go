@@ -32,6 +32,14 @@ func MapOf(key, elem Type) Type {
 	etyp := elem.common()
 	key = toType(ktyp)
 	elem = toType(etyp)
+	jitDependent := hasJITType(ktyp) || hasJITType(etyp)
+	jitDeps := []*abi.Type{ktyp, etyp}
+	jitKey := jitReflectCacheKey(0, jitDeps, "")
+	if jitDependent {
+		if cached := jitReflectTypeCache(Map, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	if ktyp.Equal == nil {
 		panic("reflect.MapOf: invalid key type " + stringFor(ktyp))
@@ -39,8 +47,10 @@ func MapOf(key, elem Type) Type {
 
 	// Look in cache.
 	ckey := cacheKey{Map, ktyp, etyp, 0}
-	if mt, ok := lookupCache.Load(ckey); ok {
-		return mt.(Type)
+	if !jitDependent {
+		if mt, ok := lookupCache.Load(ckey); ok {
+			return mt.(Type)
+		}
 	}
 
 	// Look in known types.
@@ -48,6 +58,9 @@ func MapOf(key, elem Type) Type {
 	for _, tt := range typesByString(s) {
 		mt := (*abi.MapType)(unsafe.Pointer(tt))
 		if mt.Key == ktyp && mt.Elem == etyp {
+			if jitDependent {
+				return toRType(tt)
+			}
 			ti, _ := lookupCache.LoadOrStore(ckey, toRType(tt))
 			return ti.(Type)
 		}
@@ -60,8 +73,16 @@ func MapOf(key, elem Type) Type {
 	// in ../cmd/compile/publicinternal/reflectdata/reflect.go:writeType.
 	var imap any = (map[unsafe.Pointer]unsafe.Pointer)(nil)
 	mt := **(**abi.MapType)(unsafe.Pointer(&imap))
-	mt.Str = resolveReflectName(newName(s, "", false, false))
+	var jitOffsets jitReflectOffsetBuilder
+	var offsetBuilder *jitReflectOffsetBuilder
+	if jitDependent {
+		offsetBuilder = &jitOffsets
+	}
+	mt.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
 	mt.TFlag = abi.TFlagDirectIface
+	if jitDependent {
+		mt.TFlag |= abi.TFlagJITDependent
+	}
 	mt.Hash = fnv1(etyp.Hash, 'm', byte(ktyp.Hash>>24), byte(ktyp.Hash>>16), byte(ktyp.Hash>>8), byte(ktyp.Hash))
 	mt.Key = ktyp
 	mt.Elem = etyp
@@ -104,6 +125,10 @@ func MapOf(key, elem Type) Type {
 	}
 	mt.PtrToThis = 0
 
+	if jitDependent {
+		registerJITReflectType(&mt.Type, jitDeps, offsetBuilder)
+		return toRType(jitReflectTypeCache(Map, jitKey, jitDeps, &mt.Type))
+	}
 	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&mt.Type))
 	return ti.(Type)
 }

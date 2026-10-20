@@ -31,14 +31,14 @@
 package ld
 
 import (
-	"cmd/publicinternal/obj"
-	"cmd/publicinternal/objabi"
 	"cmd/link/publicinternal/loader"
 	"cmd/link/publicinternal/sym"
+	"cmd/publicinternal/obj"
+	"cmd/publicinternal/objabi"
 	"debug/elf"
 	"fmt"
-	"publicinternal/buildcfg"
 	"path/filepath"
+	"publicinternal/buildcfg"
 	"strings"
 )
 
@@ -490,6 +490,11 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 		symgcbits   = groupSym("runtime.gcbits.*", sym.SGCBITS)
 		symgcmask   = groupSym("runtime.gcmask.*", sym.SGCMASK)
 	)
+	if len(ctxt.jitPackages) != 0 {
+		if err := ctxt.buildJITManifest(); err != nil {
+			ctxt.Errorf(0, "cannot build JIT symbol manifest: %v", err)
+		}
+	}
 
 	// assign specific types so that they sort together.
 	// within a type they sort by size, so the .* symbols

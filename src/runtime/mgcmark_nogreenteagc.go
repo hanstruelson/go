@@ -23,6 +23,11 @@ func (s *mspan) markBitsForBase() markBits {
 }
 
 func tryDeferToSpanScan(p uintptr, gcw *gcWork) bool {
+	// Keep this external-pointer check ahead of findObject in callers. Mapped
+	// code may reuse an address range whose old heap-arena metadata is stale.
+	if jitMarkOwnerAddr(p, gcw) {
+		return true
+	}
 	return false
 }
 
@@ -222,8 +227,10 @@ func scanObject(b uintptr, gcw *gcWork) {
 			// just allocated and hence will be marked by
 			// allocation itself.
 			if !tryDeferToSpanScan(obj, gcw) {
-				if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
-					greyobject(obj, b, addr-b, span, gcw, objIndex)
+				if heapObj, span, objIndex := findObject(obj, b, addr-b); heapObj != 0 {
+					greyobject(heapObj, b, addr-b, span, gcw, objIndex)
+				} else {
+					jitMarkOwnerAddr(obj, gcw)
 				}
 			}
 		}

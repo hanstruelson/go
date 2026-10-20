@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 )
 
 // ModuleImage is the versioned, pointer-free contract between the JIT linker
@@ -29,6 +30,8 @@ type ModuleImage struct {
 	Sections    []ImageSection
 	Symbols     []ImageSymbol
 	Functions   []ImageFunctionMetadata
+	GlobalRoots []ImageGlobalRoot
+	TypeAliases []ImageTypeAlias
 	Imports     []ImageImport
 	Relocations []ImageRelocation
 	Entry       uint32 // index into Symbols; must name a function in Text
@@ -37,10 +40,22 @@ type ModuleImage struct {
 // mappedImage owns the process mappings associated with one validated module
 // image. Target-specific loaders populate it after relocation and protection.
 type mappedImage struct {
-	sections      [][]byte
-	mapping       []byte
-	entry         uintptr
-	runtimeModule uintptr
+	sections       [][]byte
+	mapping        []byte
+	symbols        []uintptr
+	imports        []uintptr
+	runtimeMapping jitMemoryMapping
+	entry          uintptr
+	control        uintptr
+	runtimeOwner   *runtime.JITModuleOwner
+	ownerAware     bool
+	pinnedReason   string
+}
+
+type jitMemoryMapping interface {
+	Base() uintptr
+	Protect(address, size uintptr, protection uint32) error
+	Unmap() error
 }
 
 type ImageSectionKind uint8
@@ -82,11 +97,13 @@ const (
 )
 
 // ImageSymbol identifies a local definition. Offset is relative to Section.
-// ABIHash is a stable compiler/type identity, not a process address.
+// ABIHash is a structural type identity when available; it is never a process
+// address.
 type ImageSymbol struct {
 	PackagePath string
 	Name        string
 	Kind        ImageSymbolKind
+	GCTracked   bool
 	Section     uint32
 	Offset      uint64
 	Size        uint64
@@ -102,16 +119,41 @@ type ImageFunctionMetadata struct {
 	FuncID    uint8
 	FuncFlag  uint8
 	PCSP      []byte
-	PCData    [][]byte
-	FuncData  [][]byte
+	PCFile    []byte
+	PCLine    []byte
+	// Files is the complete CU-indexed file table used by PCFile.
+	Files    []string
+	PCData   [][]byte
+	FuncData [][]byte
+}
+
+// ImageGlobalRoot describes one writable Go global and the Go type whose GC
+// pointer map describes it. The type can be defined in this image or resolved
+// from the host process. The runtime uses the descriptor to scan this global
+// while its owning module is live.
+type ImageGlobalRoot struct {
+	DataSymbol uint32
+	TypeSymbol uint32
+	TypeImport bool
+}
+
+// ImageTypeAlias maps a local module-relative type descriptor to the
+// canonical host descriptor used for Go type identity. The local descriptor
+// stays in the image so all its relative offsets remain module-relative.
+type ImageTypeAlias struct {
+	Symbol uint32
+	Import uint32
 }
 
 // ImageImport identifies a host symbol that must be resolved before mapping.
-// The loader matches all fields; a package/name match alone is insufficient.
+// Package fingerprints bind the imported export closure to the host build;
+// ABIHash records the linked host type shape when reflection exposes it. The
+// Go object reference also carries its package/name and calling ABI.
 type ImageImport struct {
 	PackagePath string
 	Name        string
 	Kind        ImageSymbolKind
+	ABI         uint16
 	ABIHash     [16]byte
 }
 
@@ -119,11 +161,13 @@ type ImageRelocationKind uint16
 
 const (
 	RelocAMD64Abs64 ImageRelocationKind = iota + 1
+	RelocAMD64Abs32
 	RelocAMD64PC32
 	RelocAMD64PLT32
 	RelocAMD64GOTPCREL
 	RelocAMD64GOTPCRELX
 	RelocAMD64Addroff32
+	RelocAMD64TLSLE32
 )
 
 // ImageRelocation patches Offset in Section. TargetImport selects Imports;
@@ -139,7 +183,7 @@ type ImageRelocation struct {
 }
 
 const (
-	moduleImageVersion = 2
+	moduleImageVersion = 8
 	maxModuleImageSize = 256 << 20
 	maxImageSections   = 64
 	maxImageEntries    = 1 << 20
@@ -186,6 +230,11 @@ func MarshalModuleImage(m ModuleImage) ([]byte, error) {
 		w.str(s.PackagePath)
 		w.str(s.Name)
 		w.u8(uint8(s.Kind))
+		if s.GCTracked {
+			w.u8(1)
+		} else {
+			w.u8(0)
+		}
 		w.u32(s.Section)
 		w.u64(s.Offset)
 		w.u64(s.Size)
@@ -199,6 +248,12 @@ func MarshalModuleImage(m ModuleImage) ([]byte, error) {
 		w.u8(f.FuncID)
 		w.u8(f.FuncFlag)
 		w.bytes(f.PCSP)
+		w.bytes(f.PCFile)
+		w.bytes(f.PCLine)
+		w.count(len(f.Files))
+		for _, file := range f.Files {
+			w.str(file)
+		}
 		w.count(len(f.PCData))
 		for _, data := range f.PCData {
 			w.bytes(data)
@@ -208,11 +263,27 @@ func MarshalModuleImage(m ModuleImage) ([]byte, error) {
 			w.bytes(data)
 		}
 	}
+	w.count(len(m.GlobalRoots))
+	for _, root := range m.GlobalRoots {
+		w.u32(root.DataSymbol)
+		w.u32(root.TypeSymbol)
+		if root.TypeImport {
+			w.u8(1)
+		} else {
+			w.u8(0)
+		}
+	}
+	w.count(len(m.TypeAliases))
+	for _, alias := range m.TypeAliases {
+		w.u32(alias.Symbol)
+		w.u32(alias.Import)
+	}
 	w.count(len(m.Imports))
 	for _, s := range m.Imports {
 		w.str(s.PackagePath)
 		w.str(s.Name)
 		w.u8(uint8(s.Kind))
+		w.u16(s.ABI)
 		w.raw(s.ABIHash[:])
 	}
 	w.count(len(m.Relocations))
@@ -278,6 +349,9 @@ func UnmarshalModuleImage(data []byte) (ModuleImage, error) {
 		align := r.u32()
 		memSize := r.u64()
 		flags := r.u8()
+		if flags&^uint8(7) != 0 {
+			r.err = errors.New("jit: invalid module section flags")
+		}
 		data := r.bytes()
 		m.Sections = append(m.Sections, ImageSection{
 			Kind: kind, Align: align, MemSize: memSize, Data: data,
@@ -285,9 +359,14 @@ func UnmarshalModuleImage(data []byte) (ModuleImage, error) {
 		})
 	}
 	for n := r.count(maxImageEntries); n > 0; n-- {
+		packagePath, name, kind := r.str(), r.str(), ImageSymbolKind(r.u8())
+		gcTracked := r.u8()
+		if gcTracked > 1 {
+			r.err = errors.New("jit: invalid module symbol GC flags")
+		}
 		s := ImageSymbol{
-			PackagePath: r.str(), Name: r.str(), Kind: ImageSymbolKind(r.u8()),
-			Section: r.u32(), Offset: r.u64(), Size: r.u64(),
+			PackagePath: packagePath, Name: name, Kind: kind,
+			GCTracked: gcTracked != 0, Section: r.u32(), Offset: r.u64(), Size: r.u64(),
 		}
 		r.fixed(s.ABIHash[:])
 		m.Symbols = append(m.Symbols, s)
@@ -296,6 +375,10 @@ func UnmarshalModuleImage(data []byte) (ModuleImage, error) {
 		f := ImageFunctionMetadata{
 			Symbol: r.u32(), ArgsSize: r.u32(), StartLine: int32(r.u32()),
 			FuncID: r.u8(), FuncFlag: r.u8(), PCSP: r.bytes(),
+			PCFile: r.bytes(), PCLine: r.bytes(),
+		}
+		for count := r.count(maxImageEntries); count > 0; count-- {
+			f.Files = append(f.Files, r.str())
 		}
 		for count := r.count(maxImageEntries); count > 0; count-- {
 			f.PCData = append(f.PCData, r.bytes())
@@ -306,7 +389,20 @@ func UnmarshalModuleImage(data []byte) (ModuleImage, error) {
 		m.Functions = append(m.Functions, f)
 	}
 	for n := r.count(maxImageEntries); n > 0; n-- {
+		dataSymbol, typeSymbol, typeImport := r.u32(), r.u32(), r.u8()
+		if typeImport > 1 {
+			r.err = errors.New("jit: invalid module global root flags")
+		}
+		m.GlobalRoots = append(m.GlobalRoots, ImageGlobalRoot{
+			DataSymbol: dataSymbol, TypeSymbol: typeSymbol, TypeImport: typeImport != 0,
+		})
+	}
+	for n := r.count(maxImageEntries); n > 0; n-- {
+		m.TypeAliases = append(m.TypeAliases, ImageTypeAlias{Symbol: r.u32(), Import: r.u32()})
+	}
+	for n := r.count(maxImageEntries); n > 0; n-- {
 		s := ImageImport{PackagePath: r.str(), Name: r.str(), Kind: ImageSymbolKind(r.u8())}
+		s.ABI = r.u16()
 		r.fixed(s.ABIHash[:])
 		m.Imports = append(m.Imports, s)
 	}
@@ -341,7 +437,7 @@ func validateModuleImage(m ModuleImage) error {
 	if len(m.Sections) == 0 || len(m.Sections) > maxImageSections || len(m.Symbols) == 0 {
 		return errors.New("jit: invalid module image section or symbol count")
 	}
-	if len(m.Symbols) > maxImageEntries || len(m.Functions) > maxImageEntries || len(m.Imports) > maxImageEntries || len(m.Relocations) > maxImageEntries {
+	if len(m.Symbols) > maxImageEntries || len(m.Functions) > maxImageEntries || len(m.GlobalRoots) > maxImageEntries || len(m.TypeAliases) > maxImageEntries || len(m.Imports) > maxImageEntries || len(m.Relocations) > maxImageEntries {
 		return errors.New("jit: too many module image entries")
 	}
 	if int(m.Entry) >= len(m.Symbols) || m.Symbols[m.Entry].Kind != ImageFunction {
@@ -355,9 +451,27 @@ func validateModuleImage(m ModuleImage) error {
 		return errors.New("jit: module image entry is not in readable executable text")
 	}
 	var totalMemSize uint64
+	seenSectionKinds := make(map[ImageSectionKind]bool, len(m.Sections))
+	typeRegionStarted, typeRegionEnded, writableSeen := false, false, false
 	for i, s := range m.Sections {
 		if s.Kind < ImageText || s.Kind > ImageInitTasks || !isPowerOfTwo(s.Align) || s.Align > 1<<16 {
 			return fmt.Errorf("jit: invalid module image section %d", i)
+		}
+		if seenSectionKinds[s.Kind] {
+			return fmt.Errorf("jit: duplicate module image section kind %d", s.Kind)
+		}
+		seenSectionKinds[s.Kind] = true
+		typeRegion := s.Kind == ImageReadOnly || s.Kind == ImageTypes || s.Kind == ImageITabs
+		if typeRegion {
+			if typeRegionEnded || writableSeen {
+				return fmt.Errorf("jit: type metadata section %d is not in the read-only metadata region", i)
+			}
+			typeRegionStarted = true
+		} else if typeRegionStarted {
+			typeRegionEnded = true
+		}
+		if s.Kind == ImageData || s.Kind == ImageBSS {
+			writableSeen = true
 		}
 		if s.MemSize < uint64(len(s.Data)) || s.MemSize > maxModuleImageSize || s.MemSize == 0 {
 			return fmt.Errorf("jit: invalid module image section size %d", i)
@@ -368,6 +482,20 @@ func validateModuleImage(m ModuleImage) error {
 		totalMemSize += s.MemSize
 		if s.Execute && (s.Write || s.Kind != ImageText) {
 			return fmt.Errorf("jit: invalid executable section permissions at %d", i)
+		}
+		switch s.Kind {
+		case ImageText:
+			if !s.Read || !s.Execute || s.Write {
+				return fmt.Errorf("jit: text section %d must be readable and executable, but not writable", i)
+			}
+		case ImageData, ImageBSS:
+			if !s.Read || !s.Write || s.Execute {
+				return fmt.Errorf("jit: data section %d must be readable and writable, but not executable", i)
+			}
+		default:
+			if !s.Read || s.Write || s.Execute {
+				return fmt.Errorf("jit: metadata section %d must be read-only", i)
+			}
 		}
 		if s.Kind == ImageBSS && len(s.Data) != 0 {
 			return fmt.Errorf("jit: BSS section %d contains file data", i)
@@ -389,16 +517,40 @@ func validateModuleImage(m ModuleImage) error {
 		}
 	}
 	seenFunctions := make(map[uint32]bool, len(m.Functions))
-	for _, f := range m.Functions {
+	var previousFunctionEnd uint64
+	for i, f := range m.Functions {
 		if int(f.Symbol) >= len(m.Symbols) || m.Symbols[f.Symbol].Kind != ImageFunction || seenFunctions[f.Symbol] {
 			return errors.New("jit: invalid or duplicate function metadata symbol")
 		}
 		seenFunctions[f.Symbol] = true
+		symbol := m.Symbols[f.Symbol]
+		if symbol.Section >= uint32(len(m.Sections)) || m.Sections[symbol.Section].Kind != ImageText || symbol.Size == 0 ||
+			symbol.Offset > uint64(^uint32(0)) || symbol.Size > uint64(^uint32(0)) {
+			return errors.New("jit: function metadata refers to an invalid text range")
+		}
+		if i != 0 && symbol.Offset < previousFunctionEnd {
+			return errors.New("jit: function metadata ranges overlap or are out of order")
+		}
+		previousFunctionEnd = symbol.Offset + symbol.Size
 		if len(f.PCSP) == 0 || len(f.PCData) < 2 || len(f.FuncData) < 2 || len(f.FuncData) > 255 {
 			return errors.New("jit: incomplete function stack metadata")
 		}
 		if len(f.PCSP) > maxModuleImageSize {
 			return errors.New("jit: pcsp table exceeds image limit")
+		}
+		if len(f.PCFile) > maxModuleImageSize || len(f.PCLine) > maxModuleImageSize {
+			return errors.New("jit: source PC table exceeds image limit")
+		}
+		if (len(f.PCFile) == 0) != (len(f.PCLine) == 0) || (len(f.PCFile) != 0 && len(f.Files) == 0) {
+			return errors.New("jit: incomplete source location metadata")
+		}
+		if len(f.Files) > maxImageEntries {
+			return errors.New("jit: too many function source files")
+		}
+		for _, file := range f.Files {
+			if len(file) > maxImageString || bytes.IndexByte([]byte(file), 0) >= 0 {
+				return errors.New("jit: invalid function source file")
+			}
 		}
 		for _, data := range f.PCData {
 			if len(data) > maxModuleImageSize {
@@ -410,6 +562,64 @@ func validateModuleImage(m ModuleImage) error {
 				return errors.New("jit: funcdata table exceeds image limit")
 			}
 		}
+	}
+	for index, symbol := range m.Symbols {
+		if symbol.Kind == ImageFunction && !seenFunctions[uint32(index)] {
+			return fmt.Errorf("jit: text function %q has no runtime metadata", symbol.Name)
+		}
+	}
+	seenGlobalRoots := make(map[uint32]bool, len(m.GlobalRoots))
+	for _, root := range m.GlobalRoots {
+		if int(root.DataSymbol) >= len(m.Symbols) || m.Symbols[root.DataSymbol].Kind != ImageVariable {
+			return errors.New("jit: global root refers to an invalid data symbol")
+		}
+		data := m.Symbols[root.DataSymbol]
+		section := m.Sections[data.Section]
+		if !section.Write || (section.Kind != ImageData && section.Kind != ImageBSS) || data.Size == 0 {
+			return errors.New("jit: global root does not describe writable Go data")
+		}
+		if !data.GCTracked {
+			return errors.New("jit: global root is attached to a pointer-free Go global")
+		}
+		if seenGlobalRoots[root.DataSymbol] {
+			return errors.New("jit: duplicate global root metadata")
+		}
+		seenGlobalRoots[root.DataSymbol] = true
+		if root.TypeImport {
+			if int(root.TypeSymbol) >= len(m.Imports) || m.Imports[root.TypeSymbol].Kind != ImageType {
+				return errors.New("jit: global root refers to an invalid imported Go type")
+			}
+		} else if int(root.TypeSymbol) >= len(m.Symbols) || m.Symbols[root.TypeSymbol].Kind != ImageType {
+			return errors.New("jit: global root refers to an invalid local Go type")
+		}
+	}
+	for index, symbol := range m.Symbols {
+		if symbol.Kind != ImageVariable || symbol.Section >= uint32(len(m.Sections)) {
+			continue
+		}
+		section := m.Sections[symbol.Section]
+		if symbol.GCTracked && (!section.Write || (section.Kind != ImageData && section.Kind != ImageBSS)) {
+			return fmt.Errorf("jit: GC-tracked symbol %q is not writable Go data", symbol.Name)
+		}
+		if symbol.GCTracked && !seenGlobalRoots[uint32(index)] {
+			return fmt.Errorf("jit: writable Go global %q has no GC root metadata", symbol.Name)
+		}
+		if !symbol.GCTracked && seenGlobalRoots[uint32(index)] {
+			return fmt.Errorf("jit: pointer-free symbol %q has unexpected GC root metadata", symbol.Name)
+		}
+	}
+	seenTypeAliases := make(map[uint32]bool, len(m.TypeAliases))
+	for _, alias := range m.TypeAliases {
+		if int(alias.Symbol) >= len(m.Symbols) || m.Symbols[alias.Symbol].Kind != ImageType {
+			return errors.New("jit: type alias refers to an invalid local type symbol")
+		}
+		if int(alias.Import) >= len(m.Imports) || m.Imports[alias.Import].Kind != ImageType {
+			return errors.New("jit: type alias refers to an invalid host type import")
+		}
+		if seenTypeAliases[alias.Symbol] {
+			return errors.New("jit: duplicate canonical type alias")
+		}
+		seenTypeAliases[alias.Symbol] = true
 	}
 	for i, s := range m.Imports {
 		if s.PackagePath == "" || s.Name == "" || len(s.PackagePath) > maxImageString || len(s.Name) > maxImageString || s.Kind < ImageFunction || s.Kind > ImageITable {
@@ -424,12 +634,18 @@ func validateModuleImage(m ModuleImage) error {
 		if !ok || r.Offset > m.Sections[r.Section].MemSize || uint64(width) > m.Sections[r.Section].MemSize-r.Offset {
 			return fmt.Errorf("jit: invalid relocation %d", i)
 		}
-		limit := len(m.Symbols)
-		if r.TargetImport {
-			limit = len(m.Imports)
-		}
-		if int(r.Target) >= limit {
-			return fmt.Errorf("jit: relocation %d has invalid target", i)
+		if r.Kind == RelocAMD64TLSLE32 {
+			if r.TargetImport || r.Target != ^uint32(0) {
+				return fmt.Errorf("jit: TLS relocation %d must not name an image symbol", i)
+			}
+		} else {
+			limit := len(m.Symbols)
+			if r.TargetImport {
+				limit = len(m.Imports)
+			}
+			if int(r.Target) >= limit {
+				return fmt.Errorf("jit: relocation %d has invalid target", i)
+			}
 		}
 	}
 	return nil
@@ -439,7 +655,9 @@ func imageRelocationWidth(kind ImageRelocationKind) (uint64, bool) {
 	switch kind {
 	case RelocAMD64Abs64:
 		return 8, true
-	case RelocAMD64PC32, RelocAMD64PLT32, RelocAMD64GOTPCREL, RelocAMD64GOTPCRELX, RelocAMD64Addroff32:
+	case RelocAMD64Abs32:
+		return 4, true
+	case RelocAMD64PC32, RelocAMD64PLT32, RelocAMD64GOTPCREL, RelocAMD64GOTPCRELX, RelocAMD64Addroff32, RelocAMD64TLSLE32:
 		return 4, true
 	default:
 		return 0, false

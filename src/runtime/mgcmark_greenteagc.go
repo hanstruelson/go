@@ -262,6 +262,13 @@ func gcUsesSpanInlineMarkBits(size uintptr) bool {
 // tryDeferToSpanScan tries to queue p on the span it points to, if it
 // points to a small object span (gcUsesSpanQueue size).
 func tryDeferToSpanScan(p uintptr, gcw *gcWork) bool {
+	// JIT mappings may occupy an address range whose heap-arena inline-mark
+	// bitmap still describes a prior heap span. Resolve external owner edges
+	// before consulting that bitmap, or a mapped pointer can be mistaken for a
+	// heap object and lose the only live reference to its owner.
+	if jitMarkOwnerAddr(p, gcw) {
+		return true
+	}
 	if useCheckmark {
 		return false
 	}
@@ -288,6 +295,7 @@ func tryDeferToSpanScan(p uintptr, gcw *gcWork) bool {
 		return true
 	}
 	atomic.Or8(&q.marks[idx], mask)
+	jitMarkSpanOwner(spanOfHeap(base), uintptr(objIndex), gcw)
 
 	// Fast-track noscan objects.
 	if q.class.noscan() {
@@ -862,6 +870,7 @@ func scanSpan(p objptr, gcw *gcWork) {
 		}
 		atomic.Or8(bytep, mask)
 		gcw.bytesMarked += uint64(elemsize)
+		jitMarkSpanOwner(spanOfHeap(spanBase), uintptr(objIndex), gcw)
 		if debug.gctrace > 1 {
 			gcw.stats[spanclass.sizeclass()].sparseObjsScanned++
 		}
@@ -885,6 +894,17 @@ func scanSpan(p objptr, gcw *gcWork) {
 		return
 	}
 	gcw.bytesMarked += uint64(objsMarked) * uint64(elemsize)
+	span := spanOfHeap(spanBase)
+	for word, marked := range toScan {
+		for marked != 0 {
+			bit := sys.TrailingZeros64(uint64(marked))
+			marked &^= 1 << bit
+			objIndex := uintptr(word*64 + bit)
+			if objIndex < uintptr(nelems) {
+				jitMarkSpanOwner(span, objIndex, gcw)
+			}
+		}
+	}
 
 	// Check if we have enough density to make a dartboard scan
 	// worthwhile. If not, just do what scanobject does, but
@@ -921,8 +941,10 @@ func scanSpan(p objptr, gcw *gcWork) {
 	// Process all the pointers we just got.
 	for _, p := range gcw.ptrBuf[:nptrs] {
 		if !tryDeferToSpanScan(p, gcw) {
-			if obj, span, objIndex := findObject(p, 0, 0); obj != 0 {
-				greyobject(obj, 0, 0, span, gcw, objIndex)
+			if heapObj, span, objIndex := findObject(p, 0, 0); heapObj != 0 {
+				greyobject(heapObj, 0, 0, span, gcw, objIndex)
+			} else {
+				jitMarkOwnerAddr(p, gcw)
 			}
 		}
 	}
@@ -1005,8 +1027,10 @@ func scanObjectSmall(spanBase, b, objSize uintptr, gcw *gcWork) {
 			continue
 		}
 		if !tryDeferToSpanScan(p, gcw) {
-			if obj, span, objIndex := findObject(p, 0, 0); obj != 0 {
-				greyobject(obj, 0, 0, span, gcw, objIndex)
+			if heapObj, span, objIndex := findObject(p, 0, 0); heapObj != 0 {
+				greyobject(heapObj, 0, 0, span, gcw, objIndex)
+			} else {
+				jitMarkOwnerAddr(p, gcw)
 			}
 		}
 	}
@@ -1053,8 +1077,10 @@ func scanObjectsSmall(base, objSize uintptr, elems uint16, gcw *gcWork, scans *g
 			continue
 		}
 		if !tryDeferToSpanScan(p, gcw) {
-			if obj, span, objIndex := findObject(p, 0, 0); obj != 0 {
-				greyobject(obj, 0, 0, span, gcw, objIndex)
+			if heapObj, span, objIndex := findObject(p, 0, 0); heapObj != 0 {
+				greyobject(heapObj, 0, 0, span, gcw, objIndex)
+			} else {
+				jitMarkOwnerAddr(p, gcw)
 			}
 		}
 	}
@@ -1266,8 +1292,10 @@ func scanObject(b uintptr, gcw *gcWork) {
 			// just allocated and hence will be marked by
 			// allocation itself.
 			if !tryDeferToSpanScan(obj, gcw) {
-				if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
-					greyobject(obj, b, addr-b, span, gcw, objIndex)
+				if heapObj, span, objIndex := findObject(obj, b, addr-b); heapObj != 0 {
+					greyobject(heapObj, b, addr-b, span, gcw, objIndex)
+				} else {
+					jitMarkOwnerAddr(obj, gcw)
 				}
 			}
 		}

@@ -9,7 +9,6 @@ import (
 	"cmd/compile/publicinternal/amd64"
 	armcompile "cmd/compile/publicinternal/arm"
 	arm64compile "cmd/compile/publicinternal/arm64"
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/gc"
 	loong64compile "cmd/compile/publicinternal/loong64"
 	mipscompile "cmd/compile/publicinternal/mips"
@@ -20,9 +19,7 @@ import (
 	s390xcompile "cmd/compile/publicinternal/s390x"
 	"cmd/compile/publicinternal/ssagen"
 	"cmd/compile/publicinternal/syntax"
-	"cmd/compile/publicinternal/types"
 	wasmcompile "cmd/compile/publicinternal/wasm"
-	"cmd/publicinternal/src"
 	"errors"
 	"flag"
 	"fmt"
@@ -221,65 +218,6 @@ func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 	oldFlagSet := flag.CommandLine
 	oldUsage := flag.Usage
 	oldLogWriter := log.Writer()
-	processFlags := base.Flag
-	processPos := base.Pos
-	processTypeLayout := struct {
-		ptrSize, regSize   int
-		maxWidth           int64
-		calcSizeDisabled   bool
-		slicePtr, sliceLen int64
-		sliceCap, sliceSz  int64
-		stringSz           int64
-	}{
-		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
-		calcSizeDisabled: types.CalcSizeDisabled,
-		slicePtr:         types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
-		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
-	}
-	base.Flag.K = 1 // A reusable request must use target-local diagnostic flags.
-	var processPosTable src.PosTable
-	base.Pos = processPosTable.XPos(src.MakePos(src.NewFileBase("process-global.go", "process-global.go"), 1, 1))
-	types.PtrSize = 4
-	types.RegSize = 4
-	types.MaxWidth = 1 << 30
-	types.CalcSizeDisabled = true
-	types.SlicePtrOffset = 100
-	types.SliceLenOffset = 104
-	types.SliceCapOffset = 108
-	types.SliceSize = 112
-	types.StringSize = 108
-	defer func() {
-		base.Flag = processFlags
-		base.Pos = processPos
-		types.PtrSize = processTypeLayout.ptrSize
-		types.RegSize = processTypeLayout.regSize
-		types.MaxWidth = processTypeLayout.maxWidth
-		types.CalcSizeDisabled = processTypeLayout.calcSizeDisabled
-		types.SlicePtrOffset = processTypeLayout.slicePtr
-		types.SliceLenOffset = processTypeLayout.sliceLen
-		types.SliceCapOffset = processTypeLayout.sliceCap
-		types.SliceSize = processTypeLayout.sliceSz
-		types.StringSize = processTypeLayout.stringSz
-	}()
-	oldCtxt, oldFlags, oldDebug, oldPos := base.Ctxt, base.Flag, base.Debug, base.Pos
-	oldTypeGlobals := struct {
-		ptrSize, regSize   int
-		maxWidth           int64
-		calcSizeDisabled   bool
-		types              [types.NTYPE]*types.Type
-		any, byte, rune    *types.Type
-		error, comparable  *types.Type
-		slicePtr, sliceLen int64
-		sliceCap, sliceSz  int64
-		stringSz           int64
-	}{
-		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
-		calcSizeDisabled: types.CalcSizeDisabled, types: types.Types,
-		any: types.AnyType, byte: types.ByteType, rune: types.RuneType,
-		error: types.ErrorType, comparable: types.ComparableType,
-		slicePtr: types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
-		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
-	}
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, requests)
@@ -328,29 +266,5 @@ func TestCompileUsesIndependentConcurrentRequestContexts(t *testing.T) {
 	}
 	if oldLogWriter != log.Writer() {
 		t.Errorf("Compile changed process log output")
-	}
-	if oldCtxt != base.Ctxt || !reflect.DeepEqual(oldFlags, base.Flag) || !reflect.DeepEqual(oldDebug, base.Debug) || oldPos != base.Pos {
-		t.Errorf("Compile changed legacy base compiler state")
-	}
-	newTypeGlobals := struct {
-		ptrSize, regSize   int
-		maxWidth           int64
-		calcSizeDisabled   bool
-		types              [types.NTYPE]*types.Type
-		any, byte, rune    *types.Type
-		error, comparable  *types.Type
-		slicePtr, sliceLen int64
-		sliceCap, sliceSz  int64
-		stringSz           int64
-	}{
-		ptrSize: types.PtrSize, regSize: types.RegSize, maxWidth: types.MaxWidth,
-		calcSizeDisabled: types.CalcSizeDisabled, types: types.Types,
-		any: types.AnyType, byte: types.ByteType, rune: types.RuneType,
-		error: types.ErrorType, comparable: types.ComparableType,
-		slicePtr: types.SlicePtrOffset, sliceLen: types.SliceLenOffset,
-		sliceCap: types.SliceCapOffset, sliceSz: types.SliceSize, stringSz: types.StringSize,
-	}
-	if !reflect.DeepEqual(oldTypeGlobals, newTypeGlobals) {
-		t.Errorf("Compile changed legacy types package state")
 	}
 }

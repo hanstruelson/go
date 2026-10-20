@@ -342,7 +342,8 @@ func Callers(skip int, pc []uintptr) int {
 	if len(pc) == 0 {
 		return 0
 	}
-	return callers(skip, pc)
+	n := callers(skip, pc)
+	return n
 }
 
 var defaultGOROOT string // set by cmd/link

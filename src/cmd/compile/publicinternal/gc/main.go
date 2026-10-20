@@ -156,6 +156,9 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		arch.TargetArch = buildcfg.GOARCH
 	}
 	arch.TargetFeatures = targetArchFeatures(arch.TargetArch, request == nil || arch.TargetArch == buildcfg.GOARCH)
+	if request != nil && request.archFeatures != nil {
+		arch.TargetFeatures = *request.archFeatures
+	}
 	archInit(arch)
 	if arch.InitError != nil {
 		if reusable {
@@ -240,7 +243,8 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		}
 		target.Flags = options.Flags
 		target.Flags.LowerO = outputPath
-		target.Flags.Cfg.PackageData = request.PackageArchives
+		target.Flags.Cfg.PackageExports = request.PackageExports
+		target.Flags.Cfg.JITCallSiteFile = request.JITCallSiteFile
 		if request.ImportMap != nil {
 			target.Flags.Cfg.ImportMap = request.ImportMap
 		}
@@ -404,6 +408,10 @@ func mainWithConfig(archInit func(*ssagen.ArchInfo), sourceFiles []noder.SourceF
 		}
 	} else {
 		frontend = noder.LoadPackageFromSourceFiles(sourceFiles, target, timer)
+	}
+	if err := finalizeJITScope(target); err != nil {
+		target.Diagnostics.ErrorfAt(target.AutoPos, 0, "jit linker roots: %v", err)
+		target.Diagnostics.ErrorExit()
 	}
 	if request != nil {
 		frontend.ObjectOutput = request.objectOutput

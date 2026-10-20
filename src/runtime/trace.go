@@ -326,6 +326,9 @@ func StartTrace() error {
 	// Hold traceAdvanceSema across trace start, since we'll want it on
 	// the other side of tracing being enabled globally.
 	semacquire(&traceAdvanceSema)
+	// Trace buffers retain raw PCs asynchronously. Pin current and future JIT
+	// modules before tracing can begin emitting events.
+	pinAllJITModules()
 
 	// Initialize CPU profile -> trace ingestion.
 	traceInitReadCPU()

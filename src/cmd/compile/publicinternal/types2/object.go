@@ -115,6 +115,11 @@ func (obj *object) Parent() *Scope { return obj.parent }
 // Pos returns the declaration position of the object's identifier.
 func (obj *object) Pos() syntax.Pos { return obj.pos }
 
+// ScopePos returns the position at which obj enters scope. For local
+// variables and constants, this is after their initializer; local types enter
+// scope at their declaration name.
+func (obj *object) ScopePos() syntax.Pos { return obj.scopePos_ }
+
 // Pkg returns the package to which the object belongs.
 // The result is nil for labels and objects in the Universe scope.
 func (obj *object) Pkg() *Package { return obj.pkg }
@@ -337,6 +342,10 @@ func (kind VarKind) String() string {
 
 // Kind reports what kind of variable v is.
 func (v *Var) Kind() VarKind { return v.kind }
+
+// ScopePos returns the position at which v enters scope. For local variables
+// this is after the declaration's initializer, matching the Go specification.
+func (v *Var) ScopePos() syntax.Pos { return v.scopePos() }
 
 // SetKind sets the kind of the variable.
 // It should be used only immediately after [NewVar] or [NewParam].

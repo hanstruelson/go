@@ -133,6 +133,9 @@ type activeSweep struct {
 	// The rest of the bits are a counter, indicating the
 	// number of outstanding concurrent sweepers.
 	state atomic.Uint32
+	// generation is the monotonic JIT sweep sequence associated with state.
+	// It changes only while the world is stopped in reset.
+	generation uint64
 }
 
 // begin registers a new sweeper. Returns a sweepLocker
@@ -149,10 +152,10 @@ func (a *activeSweep) begin() sweepLocker {
 	for {
 		state := a.state.Load()
 		if state&sweepDrainedMask != 0 {
-			return sweepLocker{mheap_.sweepgen, false}
+			return sweepLocker{mheap_.sweepgen, a.generation, false}
 		}
 		if a.state.CompareAndSwap(state, state+1) {
-			return sweepLocker{mheap_.sweepgen, true}
+			return sweepLocker{mheap_.sweepgen, a.generation, true}
 		}
 	}
 }
@@ -160,7 +163,7 @@ func (a *activeSweep) begin() sweepLocker {
 // end deregisters a sweeper. Must be called once for each time
 // begin is called if the sweepLocker is valid.
 func (a *activeSweep) end(sl sweepLocker) {
-	if sl.sweepGen != mheap_.sweepgen {
+	if sl.sweepGen != mheap_.sweepgen || sl.generation != a.generation {
 		throw("sweeper left outstanding across sweep generations")
 	}
 	for {
@@ -179,6 +182,7 @@ func (a *activeSweep) end(sl sweepLocker) {
 			}
 			// Now that sweeping is completely done, flush remaining cleanups.
 			gcCleanups.flush()
+			jitSweepComplete(sl.generation)
 			return
 		}
 	}
@@ -217,8 +221,12 @@ func (a *activeSweep) isDone() bool {
 // reset sets up the activeSweep for the next sweep cycle.
 //
 // The world must be stopped.
-func (a *activeSweep) reset() {
+func (a *activeSweep) reset(generation uint64) {
 	assertWorldStopped()
+	if generation == 0 {
+		throw("activeSweep reset with zero JIT generation")
+	}
+	a.generation = generation
 	a.state.Store(0)
 }
 
@@ -342,7 +350,9 @@ func bgsweep(c chan int) {
 type sweepLocker struct {
 	// sweepGen is the sweep generation of the heap.
 	sweepGen uint32
-	valid    bool
+	// generation is the non-wrapping sequence used by JIT retirement.
+	generation uint64
+	valid      bool
 }
 
 // sweepLocked represents sweep ownership of a span.

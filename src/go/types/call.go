@@ -246,6 +246,12 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		return predeclaredFuncs[id].kind
 	}
 
+	if check.conf.JITCall != nil {
+		if callee := check.calledObject(call.Fun); callee != nil && check.conf.JITCall(call.Pos(), callee) {
+			check.markVisibleVariablesUsed()
+		}
+	}
+
 	// ordinary function/method call
 	// signature may be generic
 	cgocall := x.mode() == cgofunc
@@ -350,6 +356,36 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 	}
 
 	return statement
+}
+
+// calledObject reports the declaration named by a direct call expression.
+// It is used by compiler extensions that need declaration identity; ordinary
+// call checking continues to use the resolved operand.
+func (check *Checker) calledObject(expr ast.Expr) Object {
+	switch expr := ast.Unparen(expr).(type) {
+	case *ast.Ident:
+		return check.jitUses[expr]
+	case *ast.SelectorExpr:
+		return check.jitUses[expr.Sel]
+	case *ast.IndexExpr:
+		return check.calledObject(expr.X)
+	case *ast.IndexListExpr:
+		return check.calledObject(expr.X)
+	default:
+		return nil
+	}
+}
+
+// markVisibleVariablesUsed suppresses the unused-variable diagnostic for
+// variables that runtime-evaluated source may resolve by name from this scope.
+func (check *Checker) markVisibleVariablesUsed() {
+	for scope := check.scope; scope != nil; scope = scope.Parent() {
+		for _, name := range scope.Names() {
+			if variable, ok := scope.Lookup(name).(*Var); ok && variable.pkg == check.pkg {
+				check.usedVars[variable] = true
+			}
+		}
+	}
 }
 
 // exprList evaluates a list of expressions and returns the corresponding operands.

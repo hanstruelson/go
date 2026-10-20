@@ -10,8 +10,8 @@ import (
 	"cmd/compile/publicinternal/syntax"
 	"fmt"
 	"go/constant"
-	. "publicinternal/types/errors"
 	"os"
+	. "publicinternal/types/errors"
 )
 
 // nopos indicates an unknown position
@@ -145,6 +145,7 @@ type Checker struct {
 	unionTypeSets map[*Union]*_TypeSet       // computed type sets for union types
 	usedVars      map[*Var]bool              // set of used variables
 	usedPkgNames  map[*PkgName]bool          // set of used package names
+	jitUses       map[*syntax.Name]Object    // identifier resolution needed by Config.JITCall
 	mono          monoGraph                  // graph for detecting non-monomorphizable instantiation loops
 
 	firstErr   error                    // first error encountered
@@ -244,7 +245,7 @@ func NewChecker(conf *Config, pkg *Package, info *Info) *Checker {
 	//
 	// (previously, pkg.goVersion was mutated here: go.dev/issue/61212)
 
-	return &Checker{
+	check := &Checker{
 		conf:         conf,
 		ctxt:         conf.Context,
 		pkg:          pkg,
@@ -254,6 +255,10 @@ func NewChecker(conf *Config, pkg *Package, info *Info) *Checker {
 		usedVars:     make(map[*Var]bool),
 		usedPkgNames: make(map[*PkgName]bool),
 	}
+	if conf.JITCall != nil {
+		check.jitUses = make(map[*syntax.Name]Object)
+	}
+	return check
 }
 
 // initFiles initializes the files-specific portion of checker.

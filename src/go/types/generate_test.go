@@ -15,9 +15,9 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"publicinternal/diff"
 	"os"
 	"path/filepath"
+	"publicinternal/diff"
 	"runtime"
 	"strings"
 	"testing"
@@ -98,6 +98,28 @@ func generate(t *testing.T, filename string, write bool) {
 }
 
 type action func(in *ast.File)
+
+func removeFuncDecl(f *ast.File, name string) {
+	decls := f.Decls[:0]
+	removedDocs := make(map[*ast.CommentGroup]bool)
+	for _, decl := range f.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			if fn.Doc != nil {
+				removedDocs[fn.Doc] = true
+			}
+			continue
+		}
+		decls = append(decls, decl)
+	}
+	f.Decls = decls
+	comments := f.Comments[:0]
+	for _, comment := range f.Comments {
+		if !removedDocs[comment] {
+			comments = append(comments, comment)
+		}
+	}
+	f.Comments = comments
+}
 
 var filemap = map[string]action{
 	"alias.go": fixTokenPos,
@@ -209,7 +231,11 @@ var filemap = map[string]action{
 		renameIdents(f, "syntax->ast")
 		fixAtPosCall(f)
 	},
-	"scope.go":       func(f *ast.File) { fixTokenPos(f); renameIdents(f, "InsertLazy->_InsertLazy") },
+	"scope.go": func(f *ast.File) {
+		fixTokenPos(f)
+		renameIdents(f, "InsertLazy->_InsertLazy")
+		removeFuncDecl(f, "Contains") // go/types defines its token.Pos version in scope2.go
+	},
 	"scope_test.go":  func(f *ast.File) { fixTokenPos(f) },
 	"selection.go":   nil,
 	"sizeof_test.go": nil,

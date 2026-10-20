@@ -5,7 +5,6 @@
 package noder
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -61,9 +60,6 @@ func islocalname(name string) bool {
 }
 
 func openPackage(target *ir.Package, path string) (*bio.Reader, error) {
-	if data, ok := target.Flags.Cfg.PackageData[path]; ok {
-		return bio.NewReaderFrom(bytes.NewReader(data), "embedded:"+path), nil
-	}
 	openFile := func(name string) (*bio.Reader, error) {
 		f, err := os.Open(name)
 		if err != nil {
@@ -223,19 +219,30 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 	pkg1.Direct = true
 	target.Imports = append(target.Imports, pkg1)
 
-	f, err := openPackage(target, path)
-	if err != nil {
-		return
+	var data string
+	sourceLabel := "embedded:" + path
+	var embedded *base.PackageExportData
+	if export, ok := target.Flags.Cfg.PackageExports[path]; ok {
+		data, err = readEmbeddedExportData(target, path, export)
+		embedded = &export
+	} else if target.Flags.Cfg.PackageExports != nil {
+		return nil, nil, fmt.Errorf("package %q is absent from the embedded export snapshot", path)
+	} else {
+		var f *bio.Reader
+		f, err = openPackage(target, path)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		sourceLabel = f.Name()
+		data, err = readExportData(f, target)
 	}
-	defer f.Close()
-
-	data, err := readExportData(f, target)
 	if err != nil {
 		return
 	}
 
 	if compileCtx.Target.Debug.Export != 0 {
-		compileCtx.Target.Diagnostics.Printf("importing %s (%s)\n", path, f.Name())
+		compileCtx.Target.Diagnostics.Printf("importing %s (%s)\n", path, sourceLabel)
 	}
 
 	pr := pkgbits.NewPkgDecoder(pkg1.Path, data)
@@ -243,9 +250,40 @@ func readImportFile(compileCtx *Context, path string, target *ir.Package, env *t
 	// Read package descriptors for both types2 and compiler backend.
 	readPackage(newPkgReader(compileCtx, pr), pkg1, false)
 	pkg2 = testimporter.ReadPackage(env, packages, pr)
+	if embedded != nil && (pkg2 == nil || pkg2.Name() != embedded.PackageName) {
+		name := "<missing>"
+		if pkg2 != nil {
+			name = pkg2.Name()
+		}
+		return nil, nil, fmt.Errorf("embedded package %q declares package name %q, record has %q", path, name, embedded.PackageName)
+	}
 
 	err = addFingerprint(target, path, data)
 	return
+}
+
+// readEmbeddedExportData validates and returns a code-free package export
+// record supplied by an in-process compile request. In that mode, imports are
+// closed over the snapshot: the compiler never falls back to a package file,
+// import directory, or GOROOT.
+func readEmbeddedExportData(target *ir.Package, path string, export base.PackageExportData) (string, error) {
+	if export.PackagePath != path || export.PackageName == "" || export.ObjectHeader == "" || len(export.Data) == 0 {
+		return "", fmt.Errorf("embedded package %q has incomplete export data", path)
+	}
+	wantHeader := objabi.HeaderStringFor(target.GOOS, target.GOARCH)
+	if !strings.HasPrefix(export.ObjectHeader, wantHeader) {
+		return "", fmt.Errorf("embedded package %q has object header %q, want target header %q", path, export.ObjectHeader, wantHeader)
+	}
+	data := string(export.Data)
+	decoder := pkgbits.NewPkgDecoder(path, data)
+	publicRoot := decoder.NewDecoder(pkgbits.SectionMeta, pkgbits.PublicRootIdx, pkgbits.SyncPublic)
+	if version := uint32(publicRoot.Version()); version != export.ExportDataVersion {
+		return "", fmt.Errorf("embedded package %q export version mismatch: record has %d, payload has %d", path, export.ExportDataVersion, version)
+	}
+	if fingerprint := decoder.Fingerprint(); fingerprint != export.Fingerprint {
+		return "", fmt.Errorf("embedded package %q export fingerprint mismatch", path)
+	}
+	return data, nil
 }
 
 // readExportData returns the contents of GC-created unified export data.

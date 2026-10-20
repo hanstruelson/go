@@ -27,6 +27,7 @@ import (
 	"cmd/compile/publicinternal/noder"
 	"cmd/compile/publicinternal/testimporter"
 	"cmd/compile/publicinternal/types2"
+	"cmd/publicinternal/goobj"
 	"publicinternal/buildcfg"
 	"publicinternal/exportdata"
 	"publicinternal/pkgbits"
@@ -42,6 +43,7 @@ type jitLinkRef struct {
 type jitSourceFile struct {
 	source noder.SourceFile
 	ast    *ast.File
+	jit    bool
 }
 
 // commandJITSourceFiles returns the command source files augmented with a
@@ -63,20 +65,31 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 			// Leave source diagnostics to the compiler's normal frontend.
 			return nil, false, nil
 		}
-		inputs = append(inputs, jitSourceFile{
+		input := jitSourceFile{
 			source: noder.SourceFile{Name: filename, Data: string(data)},
 			ast:    file,
-		})
+		}
 		for _, spec := range file.Imports {
 			importPath, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
+				continue
+			}
+			alias := ""
+			if spec.Name != nil {
+				alias = spec.Name.Name
+			}
+			if alias == "_" {
 				continue
 			}
 			resolved := resolveJITImportPath(target, importPath)
 			if isJITImportPath(importPath, resolved) && jitPath == "" {
 				jitPath, jitLiteral = resolved, importPath
 			}
+			if isJITImportPath(importPath, resolved) {
+				input.jit = true
+			}
 		}
+		inputs = append(inputs, input)
 	}
 	if jitPath == "" {
 		return nil, false, nil
@@ -87,8 +100,16 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 	if len(inputs) == 0 {
 		return nil, false, fmt.Errorf("cannot embed jit metadata in an empty package")
 	}
+	target.Flags.Cfg.JITImportFiles = make(map[string]bool)
+	for _, input := range inputs {
+		if input.jit {
+			target.Flags.Cfg.JITImportFiles[input.source.Name] = true
+		}
+	}
 
 	canonicalImports := make(map[string]string)
+	evalImports := make(map[string]string)
+	linkerImports := make(map[string]string)
 	bundleFiles := make([]jitmeta.File, 0, len(inputs))
 	for _, input := range inputs {
 		entry := jitmeta.File{Name: input.source.Name}
@@ -107,6 +128,21 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 				if _, ok := canonicalImports[resolved]; !ok {
 					canonicalImports[resolved] = importPath
 				}
+				// Package declarations and generic bodies can refer to imports
+				// from their own source files even when Eval is called from a
+				// different file. Retain those packages for late instantiation;
+				// the per-file BuildMetadata still controls which aliases Eval
+				// can name directly.
+				if alias != "_" {
+					if _, ok := linkerImports[resolved]; !ok {
+						linkerImports[resolved] = importPath
+					}
+				}
+				if input.jit && alias != "_" {
+					if _, ok := evalImports[resolved]; !ok {
+						evalImports[resolved] = importPath
+					}
+				}
 			}
 		}
 		bundleFiles = append(bundleFiles, entry)
@@ -121,13 +157,10 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 	packageAliases := make(map[string]string, len(importPaths))
 	packageExports := make(map[string]jitmeta.PackageExport)
 	for _, importPath := range importPaths {
-		// The jit package carries the compiler implementation itself. Its
-		// dependency closure is not needed just to type-check an eval that does
-		// not import those packages; avoid duplicating that closure in every
-		// importing executable. Other imports retain their transitive archive
-		// closure so runtime compilation can use the exact build-selected files.
-		includeClosure := importPath != jitPath
-		if err := collectPackageExports(target, importPath, packageExports, includeClosure); err != nil {
+		// Capture the exact export closure for every package visible to source
+		// files in this package. Eval can instantiate imported generic bodies,
+		// whose type references may load transitive package exports.
+		if err := collectPackageExports(target, importPath, packageExports, true); err != nil {
 			return nil, false, err
 		}
 		pkg, err := readJITTypes(importPath, packageExports[importPath].Data)
@@ -155,15 +188,45 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 	if runtimeAlias == "" {
 		return nil, false, fmt.Errorf("jit package %q is not in the host import configuration", jitPath)
 	}
+	jitScopePaths := make([]string, 0, len(linkerImports))
+	for importPath := range linkerImports {
+		jitScopePaths = append(jitScopePaths, importPath)
+	}
+	sort.Strings(jitScopePaths)
+	// Carry package roots separately from generated reflection references.
+	// Eval can name imports from its own file; instantiated package declarations
+	// can also use imports from their declaration files. The runtime metadata
+	// keeps those scopes distinct even though the linker retention set is a
+	// package-wide union.
+	target.Ctxt.JITScope = make([]goobj.ImportedPkg, len(jitScopePaths))
+	for i, importPath := range jitScopePaths {
+		target.Ctxt.JITScope[i].Pkg = importPath
+	}
+	registrationImportPaths := append([]string(nil), jitScopePaths...)
+	hasJITRegistrationImport := false
+	for _, importPath := range registrationImportPaths {
+		if importPath == jitPath {
+			hasJITRegistrationImport = true
+			break
+		}
+	}
+	if !hasJITRegistrationImport {
+		registrationImportPaths = append(registrationImportPaths, jitPath)
+		sort.Strings(registrationImportPaths)
+	}
 
 	var refs []jitLinkRef
 	var declarations []jitmeta.Declaration
+	localConstraints := collectLocalJITConstraints(inputs, target, packageTypes)
 	for _, input := range inputs {
-		fileRefs, fileDecls := collectLocalJITSymbols(target.Ctxt.Pkgpath, fset, input.ast, input.source.Name)
+		fileRefs, fileDecls := collectLocalJITSymbols(target.Ctxt.Pkgpath, fset, input.ast, input.source.Name, localConstraints)
 		refs = append(refs, fileRefs...)
 		declarations = append(declarations, fileDecls...)
 	}
-	for _, importPath := range importPaths {
+	for _, importPath := range jitScopePaths {
+		if _, visibleToEval := evalImports[importPath]; !visibleToEval {
+			continue
+		}
 		refs = append(refs, collectImportedJITSymbols(importPath, packageTypes[importPath], packageAliases[importPath])...)
 	}
 	if err := checkJITRefs(refs); err != nil {
@@ -181,6 +244,11 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 		GOARCH:          target.GOARCH,
 		ArchFeatures:    string(archFeatures),
 		GoVersion:       target.Flags.Lang,
+		Race:            target.Flags.Race,
+		MSan:            target.Flags.MSan,
+		ASan:            target.Flags.ASan,
+		Coverage:        target.Flags.Cfg.CoverageInfo != nil,
+		Checkptr:        target.Debug.Checkptr,
 		PackagePath:     target.Ctxt.Pkgpath,
 		PackageName:     inputs[0].ast.Name.Name,
 		Files:           bundleFiles,
@@ -198,7 +266,7 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 	generated, err := makeJITRegistrationSource(
 		inputs[0].ast.Name.Name,
 		jitLiteral,
-		importPaths,
+		registrationImportPaths,
 		canonicalImports,
 		packageAliases,
 		runtimeAlias,
@@ -215,6 +283,30 @@ func commandJITSourceFiles(target *ir.Package, filenames []string) ([]noder.Sour
 		result = append(result, input.source)
 	}
 	return result, true, nil
+}
+
+// finalizeJITScope attaches the exact package fingerprints from the imports
+// resolved by noder. This runs after frontend loading and prevents the linker
+// from treating a path alone as a sufficient package identity.
+func finalizeJITScope(target *ir.Package) error {
+	for i := range target.Ctxt.JITScope {
+		pkg := &target.Ctxt.JITScope[i]
+		var found bool
+		for _, imported := range target.Ctxt.Imports {
+			if imported.Pkg != pkg.Pkg {
+				continue
+			}
+			if found && pkg.Fingerprint != imported.Fingerprint {
+				return fmt.Errorf("conflicting import fingerprints for JIT package %q", pkg.Pkg)
+			}
+			pkg.Fingerprint = imported.Fingerprint
+			found = true
+		}
+		if !found || pkg.Fingerprint.IsZero() {
+			return fmt.Errorf("missing linker fingerprint for JIT package %q", pkg.Pkg)
+		}
+	}
+	return nil
 }
 
 func configuredJITImport(target *ir.Package) bool {
@@ -240,7 +332,7 @@ func isJITRuntimePackage(pkg *types2.Package) bool {
 		return false
 	}
 	for _, name := range []string{
-		"RegisterBuildMetadata", "TypeFor", "LinkReference", "FunctionLink", "VariableLink", "TypeLink",
+		"Eval", "EvalAt", "RegisterBuildMetadata", "TypeFor", "LinkReference", "FunctionLink", "VariableLink", "TypeLink",
 	} {
 		if pkg.Scope().Lookup(name) == nil {
 			return false
@@ -264,8 +356,11 @@ func resolveJITImportPath(target *ir.Package, importPath string) string {
 }
 
 func openCompilerPackage(target *ir.Package, importPath string) (io.ReadCloser, error) {
-	if filename := target.Flags.Cfg.PackageFile[importPath]; filename != "" {
-		return os.Open(filename)
+	if target.Flags.Cfg.PackageFile != nil {
+		if filename := target.Flags.Cfg.PackageFile[importPath]; filename != "" {
+			return os.Open(filename)
+		}
+		return nil, fmt.Errorf("build import configuration has no selected package file for %q", importPath)
 	}
 	for _, dir := range target.Flags.Cfg.ImportDirs {
 		for _, ext := range []string{".a", ".o"} {
@@ -341,7 +436,6 @@ func collectPackageExports(target *ir.Package, root string, exports map[string]j
 		ExportDataVersion: uint32(publicRoot.Version()),
 		Fingerprint:       decoder.Fingerprint(),
 		Data:              data,
-		Archive:           archiveData,
 	}
 	if len(exports) > 1<<16 {
 		return fmt.Errorf("jit package set is too large (more than 65536 packages)")
@@ -425,7 +519,7 @@ func readJITTypes(importPath string, data []byte) (*types2.Package, error) {
 	return pkg, nil
 }
 
-func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.File, filename string) ([]jitLinkRef, []jitmeta.Declaration) {
+func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.File, filename string, constraints map[string]bool) ([]jitLinkRef, []jitmeta.Declaration) {
 	var refs []jitLinkRef
 	var declarations []jitmeta.Declaration
 	genericTypes := make(map[string]bool)
@@ -455,7 +549,7 @@ func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.F
 					declarations = append(declarations, jitmeta.Declaration{
 						File: filename, Names: []string{spec.Name.Name}, Kind: "type", Source: source, Generic: generic,
 					})
-					if !generic {
+					if !generic && !constraints[spec.Name.Name] {
 						addJITRef(&refs, jitmeta.Symbol{PackagePath: packagePath, Name: spec.Name.Name, Kind: "type"},
 							"__jit_runtime.TypeFor["+spec.Name.Name+"]()")
 					}
@@ -496,9 +590,11 @@ func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.F
 			}
 		case *ast.FuncDecl:
 			copyDecl := *decl
-			copyDecl.Body = nil
-			source, _ := formatNode(fset, &copyDecl)
 			generic := decl.Type.TypeParams != nil && len(decl.Type.TypeParams.List) > 0
+			if !generic {
+				copyDecl.Body = nil
+			}
+			source, _ := formatNode(fset, &copyDecl)
 			if decl.Recv == nil {
 				declarations = append(declarations, jitmeta.Declaration{
 					File: filename, Names: []string{decl.Name.Name}, Kind: "func", Source: source, Generic: generic,
@@ -538,6 +634,163 @@ func collectLocalJITSymbols(packagePath string, fset *token.FileSet, file *ast.F
 	return refs, declarations
 }
 
+// collectLocalJITConstraints identifies declared interfaces that are usable
+// only as type parameter constraints. They have no runtime reflect.Type and
+// cannot be passed to jit.TypeFor, so they must not become link references.
+// The compiler metadata pass runs before noder type checking; this small AST
+// walk resolves local constraint aliases and imported interface type sets from
+// the export data already collected for the package.
+func collectLocalJITConstraints(inputs []jitSourceFile, target *ir.Package, packages map[string]*types2.Package) map[string]bool {
+	type declaration struct {
+		file     *ast.File
+		typeExpr ast.Expr
+		name     string
+	}
+	var declarations []declaration
+	localTypes := make(map[string]ast.Expr)
+	for _, input := range inputs {
+		for _, raw := range input.ast.Decls {
+			gen, ok := raw.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, rawSpec := range gen.Specs {
+				spec, ok := rawSpec.(*ast.TypeSpec)
+				if ok && spec.Name.Name != "_" {
+					declarations = append(declarations, declaration{file: input.ast, typeExpr: spec.Type, name: spec.Name.Name})
+					localTypes[spec.Name.Name] = spec.Type
+				}
+			}
+		}
+	}
+
+	constraints := make(map[string]bool)
+	for changed := true; changed; {
+		changed = false
+		for _, declaration := range declarations {
+			if constraints[declaration.name] {
+				continue
+			}
+			aliases := jitImportAliases(target, declaration.file, packages)
+			if isJITConstraintDeclaration(declaration.typeExpr, constraints, localTypes, aliases) {
+				constraints[declaration.name] = true
+				changed = true
+			}
+		}
+	}
+	return constraints
+}
+
+func jitImportAliases(target *ir.Package, file *ast.File, packages map[string]*types2.Package) map[string]*types2.Package {
+	aliases := make(map[string]*types2.Package)
+	for _, spec := range file.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		pkg := packages[resolveJITImportPath(target, importPath)]
+		if pkg == nil {
+			continue
+		}
+		alias := pkg.Name()
+		if spec.Name != nil {
+			alias = spec.Name.Name
+		}
+		if alias != "_" && alias != "." {
+			aliases[alias] = pkg
+		}
+	}
+	return aliases
+}
+
+func isJITConstraintDeclaration(expr ast.Expr, local map[string]bool, localTypes map[string]ast.Expr, imported map[string]*types2.Package) bool {
+	switch expr := expr.(type) {
+	case *ast.InterfaceType:
+		if expr.Methods == nil {
+			return false
+		}
+		for _, field := range expr.Methods.List {
+			if len(field.Names) == 0 && isJITConstraintElement(field.Type, local, localTypes, imported) {
+				return true
+			}
+		}
+	case *ast.Ident:
+		return expr.Name == "comparable" || local[expr.Name]
+	case *ast.SelectorExpr:
+		return importedJITTypeIsConstraint(expr, imported)
+	case *ast.IndexExpr:
+		return isJITConstraintDeclaration(expr.X, local, localTypes, imported)
+	case *ast.IndexListExpr:
+		return isJITConstraintDeclaration(expr.X, local, localTypes, imported)
+	case *ast.ParenExpr:
+		return isJITConstraintDeclaration(expr.X, local, localTypes, imported)
+	}
+	return false
+}
+
+func isJITConstraintElement(expr ast.Expr, local map[string]bool, localTypes map[string]ast.Expr, imported map[string]*types2.Package) bool {
+	if isJITConstraintDeclaration(expr, local, localTypes, imported) {
+		return true
+	}
+	return !isJITMethodSetInterface(expr, local, localTypes, imported, make(map[string]bool))
+}
+
+func isJITMethodSetInterface(expr ast.Expr, local map[string]bool, localTypes map[string]ast.Expr, imported map[string]*types2.Package, seen map[string]bool) bool {
+	switch expr := expr.(type) {
+	case *ast.InterfaceType:
+		return !isJITConstraintDeclaration(expr, local, localTypes, imported)
+	case *ast.Ident:
+		if local[expr.Name] || seen[expr.Name] {
+			return false
+		}
+		if localType, ok := localTypes[expr.Name]; ok {
+			seen[expr.Name] = true
+			return isJITMethodSetInterface(localType, local, localTypes, imported, seen)
+		}
+		if expr.Name == "any" || expr.Name == "error" {
+			return true
+		}
+		for _, pkg := range imported {
+			if typeName, ok := pkg.Scope().Lookup(expr.Name).(*types2.TypeName); ok && typeNameIsMethodSetInterface(typeName) {
+				return true
+			}
+		}
+	case *ast.SelectorExpr:
+		alias, ok := expr.X.(*ast.Ident)
+		if !ok || imported[alias.Name] == nil {
+			return false
+		}
+		typeName, ok := imported[alias.Name].Scope().Lookup(expr.Sel.Name).(*types2.TypeName)
+		return ok && typeNameIsMethodSetInterface(typeName)
+	case *ast.IndexExpr:
+		return isJITMethodSetInterface(expr.X, local, localTypes, imported, seen)
+	case *ast.IndexListExpr:
+		return isJITMethodSetInterface(expr.X, local, localTypes, imported, seen)
+	case *ast.ParenExpr:
+		return isJITMethodSetInterface(expr.X, local, localTypes, imported, seen)
+	}
+	return false
+}
+
+func importedJITTypeIsConstraint(expr *ast.SelectorExpr, imported map[string]*types2.Package) bool {
+	alias, ok := expr.X.(*ast.Ident)
+	if !ok || imported[alias.Name] == nil {
+		return false
+	}
+	typeName, ok := imported[alias.Name].Scope().Lookup(expr.Sel.Name).(*types2.TypeName)
+	return ok && !typeNameIsMethodSetInterface(typeName) && isInterfaceTypeName(typeName)
+}
+
+func isInterfaceTypeName(typeName *types2.TypeName) bool {
+	_, ok := typeName.Type().Underlying().(*types2.Interface)
+	return ok
+}
+
+func typeNameIsMethodSetInterface(typeName *types2.TypeName) bool {
+	iface, ok := typeName.Type().Underlying().(*types2.Interface)
+	return ok && iface.IsMethodSet()
+}
+
 func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias string) []jitLinkRef {
 	if pkg == nil || alias == "" || importPath == "unsafe" || importPath == "C" {
 		return nil
@@ -556,13 +809,28 @@ func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias str
 		case *types2.Var:
 			addJITRef(&refs, jitmeta.Symbol{PackagePath: importPath, Name: name, Kind: "variable"}, "&"+alias+"."+name)
 		case *types2.TypeName:
-			if !isGenericGoType(obj.Type()) {
+			if isJITReflectableType(obj.Type()) {
 				addJITRef(&refs, jitmeta.Symbol{PackagePath: importPath, Name: name, Kind: "type"},
 					"__jit_runtime.TypeFor["+alias+"."+name+"]()")
+			}
+			// A type alias contributes no linker identity of its own. Its
+			// target package is part of the imported package closure and emits
+			// the method references under the target type's real identity.
+			if obj.IsAlias() {
+				continue
 			}
 			named, ok := types2.Unalias(obj.Type()).(*types2.Named)
 			if !ok || named.TypeParams().Len() != 0 {
 				continue
+			}
+			// An exported type alias exposes the target type's methods, but
+			// their linker symbols belong to the package that defined the
+			// target type. Keep the generated Go expression in the importing
+			// package's scope while recording the defining package identity.
+			receiverObj := named.Obj()
+			receiverPath := importPath
+			if receiverObj.Pkg() != nil {
+				receiverPath = receiverObj.Pkg().Path()
 			}
 			for i := 0; i < named.NumMethods(); i++ {
 				method := named.Method(i)
@@ -584,7 +852,7 @@ func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias str
 					typeExpr = "(*" + typeExpr + ")"
 				}
 				addJITRef(&refs,
-					jitmeta.Symbol{PackagePath: importPath, Name: name + "." + method.Name(), Kind: "function"},
+					jitmeta.Symbol{PackagePath: receiverPath, Name: receiverObj.Name() + "." + method.Name(), Kind: "function"},
 					typeExpr+"."+method.Name())
 			}
 		}
@@ -592,9 +860,15 @@ func collectImportedJITSymbols(importPath string, pkg *types2.Package, alias str
 	return refs
 }
 
-func isGenericGoType(typ types2.Type) bool {
-	named, ok := types2.Unalias(typ).(*types2.Named)
-	return ok && named.TypeParams().Len() != 0
+func isJITReflectableType(typ types2.Type) bool {
+	typ = types2.Unalias(typ)
+	if named, ok := typ.(*types2.Named); ok && named.TypeParams().Len() != 0 {
+		return false
+	}
+	if iface, ok := typ.Underlying().(*types2.Interface); ok && !iface.IsMethodSet() {
+		return false
+	}
+	return true
 }
 
 func localReceiver(fields *ast.FieldList) (string, bool) {
@@ -653,6 +927,19 @@ func makeJITRegistrationSource(
 		literal := sourceImports[importPath]
 		if alias == "" || literal == "" {
 			continue
+		}
+		// Keep packages visible to eval in the binary even when they expose no
+		// linkable nongeneric declarations. A blank import avoids making the
+		// compiler-generated registration file fail on an unused alias.
+		used := alias == runtimeAlias // RegisterBuildMetadata uses jit directly.
+		for _, ref := range refs {
+			if ref.symbol.PackagePath == importPath {
+				used = true
+				break
+			}
+		}
+		if !used {
+			alias = "_"
 		}
 		fmt.Fprintf(&source, "%s %s\n", alias, strconv.Quote(literal))
 	}

@@ -1083,18 +1083,19 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	if size == 0 {
 		return unsafe.Pointer(&zerobase)
 	}
+	jitOwner, jitTypeDependent := jitOwnerForType(typ)
 
-	if sizeSpecializedMallocEnabled && size < uintptr(len(mallocNoScanTable)) {
+	if jitOwner == nil && !jitTypeDependent && sizeSpecializedMallocEnabled && size < uintptr(len(mallocNoScanTable)) {
 		if typ == nil || !typ.Pointers() {
 			if size >= maxTinySize {
-				return mallocNoScanTable[size](size, typ, needzero)
+				return jitFinishHeapAllocation(mallocNoScanTable[size](size, typ, needzero), nil, typ)
 			}
-			return mallocgcTinySC2(size, typ, needzero)
+			return jitFinishHeapAllocation(mallocgcTinySC2(size, typ, needzero), nil, typ)
 		} else {
 			if !needzero {
 				throw("objects with pointers must be zeroed")
 			}
-			return mallocScanTable[size](size, typ, needzero)
+			return jitFinishHeapAllocation(mallocScanTable[size](size, typ, needzero), nil, typ)
 		}
 	}
 
@@ -1106,7 +1107,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// Pre-malloc debug hooks.
 	if debug.malloc {
 		if x := preMallocgcDebug(size, typ); x != nil {
-			return x
+			return jitFinishHeapAllocation(x, jitOwner, typ)
 		}
 	}
 
@@ -1151,7 +1152,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				// Make sure secret allocations get zeroed by avoiding the tiny allocator
 				// See go.dev/issue/76356
 				gp := getg()
-				if size < maxTinySize && gp.secret == 0 {
+				if size < maxTinySize && gp.secret == 0 && jitOwner == nil && !jitTypeDependent {
 					x, elemsize = mallocgcTiny(size, typ)
 				} else {
 					x, elemsize = mallocgcSmallNoscan(size, typ, needzero)
@@ -1170,6 +1171,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			x, elemsize = mallocgcLarge(size, typ, needzero)
 		}
 	}
+	jitFinishHeapAllocation(x, jitOwner, typ)
 
 	gp := getg()
 	if goexperiment.RuntimeSecret && gp.secret > 0 {

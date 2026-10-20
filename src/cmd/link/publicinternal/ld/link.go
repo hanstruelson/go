@@ -113,6 +113,10 @@ type Link struct {
 	loader  *loader.Loader
 	cgodata []cgodata // cgo directives to load, three strings are args for loadcgo
 
+	// jitPackages is the resolved package dependency closure whose symbols
+	// must be represented in the post-deadcode runtime JIT manifest.
+	jitPackages map[string]bool
+
 	datap  []loader.Sym
 	dynexp []loader.Sym
 
@@ -125,6 +129,12 @@ type Link struct {
 	// after the symbol's been created in the output mmap.
 	generatorSyms map[loader.Sym]generatorFunc
 }
+
+// inProcessLink is reserved for callers that embed the linker. The current
+// command-line driver leaves it false and exits normally.
+var inProcessLink bool
+
+type linkExit struct{ code int }
 
 type cgodata struct {
 	file       string

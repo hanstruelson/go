@@ -6,21 +6,21 @@ package loader
 
 import (
 	"bytes"
+	"cmd/link/publicinternal/sym"
 	"cmd/publicinternal/bio"
 	"cmd/publicinternal/goobj"
 	"cmd/publicinternal/obj"
 	"cmd/publicinternal/objabi"
 	"cmd/publicinternal/sys"
-	"cmd/link/publicinternal/sym"
 	"debug/elf"
 	"fmt"
-	"publicinternal/abi"
-	"publicinternal/buildcfg"
 	"io"
 	"iter"
 	"log"
 	"math/bits"
 	"os"
+	"publicinternal/abi"
+	"publicinternal/buildcfg"
 	"sort"
 	"strings"
 )
@@ -81,12 +81,13 @@ type oReader struct {
 	unit         *sym.CompilationUnit
 	version      int // version of static symbol
 	pkgprefix    string
-	syms         []Sym    // Sym's global index, indexed by local index
-	pkg          []uint32 // indices of referenced package by PkgIdx (index into loader.objs array)
-	ndef         int      // cache goobj.Reader.NSym()
-	nhashed64def int      // cache goobj.Reader.NHashed64Def()
-	nhasheddef   int      // cache goobj.Reader.NHashedDef()
-	objidx       uint32   // index of this reader in the objs slice
+	jitScope     []goobj.ImportedPkg // packages visible to runtime Eval in this package
+	syms         []Sym               // Sym's global index, indexed by local index
+	pkg          []uint32            // indices of referenced package by PkgIdx (index into loader.objs array)
+	ndef         int                 // cache goobj.Reader.NSym()
+	nhashed64def int                 // cache goobj.Reader.NHashed64Def()
+	nhasheddef   int                 // cache goobj.Reader.NHashedDef()
+	objidx       uint32              // index of this reader in the objs slice
 }
 
 // Total number of defined symbols (package symbols, hashed symbols, and
@@ -813,6 +814,53 @@ func (l *Loader) NDef() int {
 	return int(l.extStart)
 }
 
+// JITScopePackages returns the sorted union of linker package roots recorded
+// by compiler objects that enable runtime Eval. The set is intentionally
+// distinct from per-file identifier visibility, which lives in jit metadata.
+func (l *Loader) JITScopePackages() ([]goobj.ImportedPkg, error) {
+	set := make(map[string]goobj.FingerprintType)
+	for _, obj := range l.objs {
+		if obj == nil {
+			continue
+		}
+		for _, pkg := range obj.jitScope {
+			if previous, ok := set[pkg.Pkg]; ok && previous != pkg.Fingerprint {
+				return nil, fmt.Errorf("conflicting JIT import fingerprints for package %q", pkg.Pkg)
+			}
+			set[pkg.Pkg] = pkg.Fingerprint
+		}
+	}
+	paths := make([]string, 0, len(set))
+	for pkg := range set {
+		paths = append(paths, pkg)
+	}
+	sort.Strings(paths)
+	packages := make([]goobj.ImportedPkg, len(paths))
+	for i, pkg := range paths {
+		packages[i] = goobj.ImportedPkg{Pkg: pkg, Fingerprint: set[pkg]}
+	}
+	return packages, nil
+}
+
+// JITScopeOwners returns the sorted packages whose compiler objects contain a
+// JIT scope record. The owner package is a root in its own right; its unrelated
+// imports are not automatically added to the Eval scope.
+func (l *Loader) JITScopeOwners() []string {
+	set := make(map[string]bool)
+	for _, obj := range l.objs {
+		if obj == nil || len(obj.jitScope) == 0 || obj.unit == nil || obj.unit.Lib == nil {
+			continue
+		}
+		set[obj.unit.Lib.Pkg] = true
+	}
+	packages := make([]string, 0, len(set))
+	for pkg := range set {
+		packages = append(packages, pkg)
+	}
+	sort.Strings(packages)
+	return packages
+}
+
 // Number of reachable symbols.
 func (l *Loader) NReachableSym() int {
 	return l.attrReachable.Count()
@@ -895,6 +943,9 @@ func (l *Loader) SymAttr(i Sym) uint8 {
 
 // Returns the size of the i-th symbol.
 func (l *Loader) SymSize(i Sym) int64 {
+	if i == 0 {
+		return 0
+	}
 	if l.IsExternal(i) {
 		pp := l.getPayload(i)
 		return pp.size
@@ -2210,6 +2261,10 @@ func (l *Loader) Preload(localSymVersion int, f *bio.Reader, lib *sym.Library, u
 		}
 		panic("cannot read object file")
 	}
+	jitScope, err := r.JITScope()
+	if err != nil {
+		log.Fatalf("link: malformed JIT scope in %s: %v", f.File().Name(), err)
+	}
 	pkgprefix := objabi.PathToPrefix(lib.Pkg) + "."
 	ndef := r.NSym()
 	nhashed64def := r.NHashed64def()
@@ -2219,6 +2274,7 @@ func (l *Loader) Preload(localSymVersion int, f *bio.Reader, lib *sym.Library, u
 		unit:         unit,
 		version:      localSymVersion,
 		pkgprefix:    pkgprefix,
+		jitScope:     jitScope,
 		syms:         make([]Sym, ndef+nhashed64def+nhasheddef+r.NNonpkgdef()+r.NNonpkgref()),
 		ndef:         ndef,
 		nhasheddef:   nhasheddef,
@@ -2450,7 +2506,7 @@ var blockedLinknames = map[string][]string{
 	"crypto/publicinternal/fips140.getIndicator":  {"crypto/publicinternal/fips140"},
 	"crypto/publicinternal/fips140.setIndicator":  {"crypto/publicinternal/fips140"},
 	"crypto/publicinternal/sysrand.fatal":         {"crypto/publicinternal/sysrand"},
-	"crypto/rand.fatal":                     {"crypto/rand"},
+	"crypto/rand.fatal":                           {"crypto/rand"},
 	"publicinternal/runtime/maps.errNilAssign":    {"publicinternal/runtime/maps"},
 	"publicinternal/runtime/maps.fatal":           {"publicinternal/runtime/maps"},
 	"publicinternal/runtime/maps.newarray":        {"publicinternal/runtime/maps"},
@@ -2470,10 +2526,10 @@ var blockedLinknames = map[string][]string{
 	"publicinternal/synctest.acquire":             {"publicinternal/synctest"},
 	"publicinternal/synctest.release":             {"publicinternal/synctest"},
 	"publicinternal/synctest.inBubble":            {"publicinternal/synctest"},
-	"runtime.getStaticuint64s":              {"reflect"},
-	"sync.runtime_SemacquireWaitGroup":      {"sync"},
-	"time.runtimeNow":                       {"time"},
-	"time.runtimeNano":                      {"time"},
+	"runtime.getStaticuint64s":                    {"reflect"},
+	"sync.runtime_SemacquireWaitGroup":            {"sync"},
+	"time.runtimeNow":                             {"time"},
+	"time.runtimeNano":                            {"time"},
 	// Pushed to runtime from publicinternal/runtime/maps
 	// (other map functions are already linknamed in Go 1.23)
 	"runtime.mapaccess1":         {"runtime"},
@@ -2485,13 +2541,13 @@ var blockedLinknames = map[string][]string{
 	"runtime.mapdelete_faststr":  {"runtime"},
 	// New internal linknames in Go 1.25
 	// Pushed from runtime
-	"publicinternal/cpu.riscvHWProbe":                      {"publicinternal/cpu"},
-	"publicinternal/runtime/cgroup.throw":                  {"publicinternal/runtime/cgroup"},
-	"publicinternal/runtime/maps.typeString":               {"publicinternal/runtime/maps"},
-	"publicinternal/synctest.IsInBubble":                   {"publicinternal/synctest"},
-	"publicinternal/synctest.associate":                    {"publicinternal/synctest"},
-	"publicinternal/synctest.disassociate":                 {"publicinternal/synctest"},
-	"publicinternal/synctest.isAssociated":                 {"publicinternal/synctest"},
+	"publicinternal/cpu.riscvHWProbe":                {"publicinternal/cpu"},
+	"publicinternal/runtime/cgroup.throw":            {"publicinternal/runtime/cgroup"},
+	"publicinternal/runtime/maps.typeString":         {"publicinternal/runtime/maps"},
+	"publicinternal/synctest.IsInBubble":             {"publicinternal/synctest"},
+	"publicinternal/synctest.associate":              {"publicinternal/synctest"},
+	"publicinternal/synctest.disassociate":           {"publicinternal/synctest"},
+	"publicinternal/synctest.isAssociated":           {"publicinternal/synctest"},
 	"runtime/trace.runtime_readTrace":                {"runtime/trace"},
 	"runtime/trace.runtime_traceClockUnitsPerSecond": {"runtime/trace"},
 	"sync_test.runtime_blockUntilEmptyCleanupQueue":  {"sync_test"},
@@ -2507,8 +2563,8 @@ var blockedLinknames = map[string][]string{
 	"crypto/fips140.unsetBypass":                   {"crypto/fips140"},
 	"crypto/subtle.setDITEnabled":                  {"crypto/subtle"},
 	"crypto/subtle.setDITDisabled":                 {"crypto/subtle"},
-	"publicinternal/cpu.sysctlbynameBytes":               {"publicinternal/cpu"},
-	"publicinternal/cpu.sysctlbynameInt32":               {"publicinternal/cpu"},
+	"publicinternal/cpu.sysctlbynameBytes":         {"publicinternal/cpu"},
+	"publicinternal/cpu.sysctlbynameInt32":         {"publicinternal/cpu"},
 	"runtime.pprof_goroutineLeakProfileWithLabels": {"runtime/pprof"},
 	"runtime/pprof.runtime_goroutineLeakGC":        {"runtime/pprof"},
 	"runtime/pprof.runtime_goroutineleakcount":     {"runtime/pprof"},
@@ -2523,8 +2579,8 @@ var blockedLinknames = map[string][]string{
 	"syscall.syscalln":                             {"syscall"},
 	// Others
 	"crypto/publicinternal/rand.SetTestingReader": {"testing/cryptotest"}, // pushed from crypto/publicinternal/rand
-	"testing.checkParallel":                 {"testing/cryptotest"}, // pushed from testing
-	"runtime.addmoduledata":                 {},                     // assembly symbol, disallow all packages
+	"testing.checkParallel":                       {"testing/cryptotest"}, // pushed from testing
+	"runtime.addmoduledata":                       {},                     // assembly symbol, disallow all packages
 }
 
 // check if a linkname reference to symbol s from refpkg is allowed

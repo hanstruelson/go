@@ -3270,3 +3270,35 @@ var (
 		t.Errorf("found %d instances of L, want 2", l)
 	}
 }
+
+func TestJITCallMarksVisibleVariablesUsed(t *testing.T) {
+	src := `package p
+type Code struct{}
+func Eval(string) (*Code, error) { return nil, nil }
+func f() {
+	captured := 10
+	Eval("captured")
+}
+`
+	fset := token.NewFileSet()
+	file := mustParse(fset, src)
+	if _, err := new(Config).Check("p", fset, []*ast.File{file}, nil); err == nil || !strings.Contains(err.Error(), "declared and not used: captured") {
+		t.Fatalf("without JITCall, Check error = %v; want unused captured variable", err)
+	}
+
+	called := false
+	conf := &Config{JITCall: func(_ token.Pos, callee Object) bool {
+		function, ok := callee.(*Func)
+		if ok && function.Name() == "Eval" {
+			called = true
+			return true
+		}
+		return false
+	}}
+	if _, err := conf.Check("p", fset, []*ast.File{file}, nil); err != nil {
+		t.Fatalf("with JITCall, Check error = %v", err)
+	}
+	if !called {
+		t.Fatal("JITCall was not invoked for direct Eval call")
+	}
+}

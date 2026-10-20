@@ -47,6 +47,13 @@ func NewScope(parent *Scope, pos, end syntax.Pos, comment string) *Scope {
 // Parent returns the scope's containing (parent) scope.
 func (s *Scope) Parent() *Scope { return s.parent }
 
+// Contains reports whether pos lies within the source extent of s. Scopes
+// without known source positions, such as the universe and package scopes,
+// never contain a position.
+func (s *Scope) Contains(pos syntax.Pos) bool {
+	return s != nil && s.pos.IsKnown() && s.end.IsKnown() && pos.IsKnown() && s.pos.Cmp(pos) <= 0 && pos.Cmp(s.end) <= 0
+}
+
 // Len returns the number of scope objects.
 func (s *Scope) Len() int { return len(s.objects) }
 

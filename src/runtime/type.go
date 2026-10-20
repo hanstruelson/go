@@ -306,6 +306,19 @@ func resolveNameOff(ptrInModule unsafe.Pointer, off nameOff) name {
 			return name{Bytes: (*byte)(unsafe.Pointer(res))}
 		}
 	}
+	if md, ok := jitLookupTypeModule(base); ok {
+		if off < 0 || uintptr(off) >= md.etypes-md.types {
+			println("runtime: nameOff", hex(off), "out of range", hex(md.types), "-", hex(md.etypes))
+			throw("runtime: name offset out of range")
+		}
+		res := md.types + uintptr(off)
+		KeepAlive(ptrInModule)
+		return name{Bytes: (*byte)(unsafe.Pointer(res))}
+	}
+	if res, ok := jitReflectOffsetForType(base, int32(off), JITReflectNameOffset); ok {
+		KeepAlive(ptrInModule)
+		return name{Bytes: (*byte)(res)}
+	}
 
 	// No module found. see if it is a run time name.
 	reflectOffsLock()
@@ -340,6 +353,13 @@ func resolveTypeOff(ptrInModule unsafe.Pointer, off typeOff) *_type {
 		}
 	}
 	if md == nil {
+		md, _ = jitLookupTypeModule(base)
+	}
+	if md == nil {
+		if res, ok := jitReflectOffsetForType(base, int32(off), JITReflectTypeOffset); ok {
+			KeepAlive(ptrInModule)
+			return (*_type)(res)
+		}
 		reflectOffsLock()
 		res := reflectOffs.m[int32(off)]
 		reflectOffsUnlock()
@@ -352,6 +372,10 @@ func resolveTypeOff(ptrInModule unsafe.Pointer, off typeOff) *_type {
 		}
 		return (*_type)(res)
 	}
+	if md.jitModule && (off < 0 || uintptr(off) >= md.etypes-md.types) {
+		println("runtime: typeOff", hex(off), "out of range", hex(md.types), "-", hex(md.etypes))
+		throw("runtime: type offset out of range")
+	}
 	res := md.types + uintptr(off)
 	resType := (*_type)(unsafe.Pointer(res))
 	if t := md.typemap[resType]; t != nil {
@@ -360,6 +384,9 @@ func resolveTypeOff(ptrInModule unsafe.Pointer, off typeOff) *_type {
 	if res > md.etypes {
 		println("runtime: typeOff", hex(off), "out of range", hex(md.types), "-", hex(md.etypes))
 		throw("runtime: type offset out of range")
+	}
+	if md.jitModule {
+		KeepAlive(ptrInModule)
 	}
 	return resType
 }
@@ -383,6 +410,13 @@ func (t rtype) textOff(off textOff) unsafe.Pointer {
 		}
 	}
 	if md == nil {
+		md, _ = jitLookupTypeModule(base)
+	}
+	if md == nil {
+		if res, ok := jitReflectOffsetForType(base, int32(off), JITReflectTextOffset); ok {
+			KeepAlive(t.Type)
+			return res
+		}
 		reflectOffsLock()
 		res := reflectOffs.m[int32(off)]
 		reflectOffsUnlock()
@@ -395,7 +429,14 @@ func (t rtype) textOff(off textOff) unsafe.Pointer {
 		}
 		return res
 	}
+	if md.jitModule && (off < 0 || uintptr(off) >= md.etext-md.text) {
+		println("runtime: textOff", hex(off), "out of range", hex(md.text), "-", hex(md.etext))
+		throw("runtime: text offset out of range")
+	}
 	res := md.textAddr(uint32(off))
+	if md.jitModule {
+		KeepAlive(t.Type)
+	}
 	return unsafe.Pointer(res)
 }
 

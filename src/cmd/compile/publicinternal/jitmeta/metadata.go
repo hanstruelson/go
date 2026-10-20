@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	SchemaVersion = 4
+	SchemaVersion = 6
 	maxBundleSize = 256 << 20
 	maxEntries    = 1 << 20
 )
@@ -39,6 +39,11 @@ type BuildMetadata struct {
 	GOARCH          string
 	ArchFeatures    string
 	GoVersion       string
+	Race            bool
+	MSan            bool
+	ASan            bool
+	Coverage        bool
+	Checkptr        int
 	PackagePath     string
 	PackageName     string
 	Files           []File
@@ -66,9 +71,11 @@ type Import struct {
 	Path       string
 }
 
-// Declaration is a package-scope declaration without function bodies.
-// Source preserves its Go declaration syntax, including constant values and
-// inferred variable initializers.
+// Declaration is a package-scope declaration used to reconstruct the caller's
+// compile-time scope. Source preserves its Go declaration syntax, including
+// constant values, inferred variable initializers, and generic function bodies
+// needed for runtime instantiation. Non-generic function bodies are omitted;
+// their linked host implementations are reused.
 type Declaration struct {
 	File    string
 	Names   []string
@@ -85,9 +92,9 @@ type Symbol struct {
 	Kind        string
 }
 
-// PackageExport contains compiler export data and the ordinary archive
-// selected by the host build. The custom linker must bind imported symbols
-// to the host manifest rather than link a second package instance.
+// PackageExport contains code-free compiler export data selected by the host
+// build. The custom linker must bind imported symbols to the host manifest
+// rather than link a second package instance.
 type PackageExport struct {
 	Path              string
 	Name              string
@@ -96,12 +103,11 @@ type PackageExport struct {
 	ExportDataVersion uint32
 	Fingerprint       [8]byte
 	Data              []byte
-	Archive           []byte
 }
 
 // PackageDependency records a package identity referenced by export data.
-// The current compiler action may not have the dependency's archive available;
-// in that case the identity is still preserved for later resolution.
+// The identity is retained so the runtime importer can verify that the full
+// package closure came from the same build-selected snapshot.
 type PackageDependency struct {
 	Path string
 	Name string
@@ -123,6 +129,11 @@ func Marshal(b Bundle) ([]byte, error) {
 	w.str(b.Build.GOARCH)
 	w.str(b.Build.ArchFeatures)
 	w.str(b.Build.GoVersion)
+	w.boolean(b.Build.Race)
+	w.boolean(b.Build.MSan)
+	w.boolean(b.Build.ASan)
+	w.boolean(b.Build.Coverage)
+	w.uvarint(uint64(b.Build.Checkptr))
 	w.str(b.Build.PackagePath)
 	w.str(b.Build.PackageName)
 	w.count(len(b.Build.Files))
@@ -165,7 +176,6 @@ func Marshal(b Bundle) ([]byte, error) {
 		w.uvarint(uint64(p.ExportDataVersion))
 		_, _ = payload.Write(p.Fingerprint[:])
 		w.bytes(p.Data)
-		w.bytes(p.Archive)
 	}
 	if w.err != nil {
 		return nil, w.err
@@ -237,9 +247,19 @@ func Unmarshal(data []byte) (Bundle, error) {
 		GOARCH:          r.str(),
 		ArchFeatures:    r.str(),
 		GoVersion:       r.str(),
-		PackagePath:     r.str(),
-		PackageName:     r.str(),
+		Race:            r.boolean(),
+		MSan:            r.boolean(),
+		ASan:            r.boolean(),
+		Coverage:        r.boolean(),
 	}}
+	checkptr := r.uvarint()
+	if checkptr > 2 {
+		r.err = errors.New("invalid checkptr level in jit metadata")
+	} else {
+		b.Build.Checkptr = int(checkptr)
+	}
+	b.Build.PackagePath = r.str()
+	b.Build.PackageName = r.str()
 	for n := r.count(); n > 0; n-- {
 		f := File{Name: r.str()}
 		for m := r.count(); m > 0; m-- {
@@ -274,7 +294,6 @@ func Unmarshal(data []byte) (Bundle, error) {
 			_, r.err = io.ReadFull(r.r, p.Fingerprint[:])
 		}
 		p.Data = r.bytes()
-		p.Archive = r.bytes()
 		b.Build.Packages = append(b.Build.Packages, p)
 	}
 	if r.err != nil {
@@ -292,6 +311,18 @@ func Unmarshal(data []byte) (Bundle, error) {
 func validateBundle(b Bundle) error {
 	if b.Build.PackagePath == "" || b.Build.PackageName == "" {
 		return errors.New("jit metadata is missing its package identity")
+	}
+	if b.Build.Checkptr < 0 || b.Build.Checkptr > 2 {
+		return fmt.Errorf("jit metadata has invalid checkptr level %d", b.Build.Checkptr)
+	}
+	instrumentedModes := 0
+	for _, enabled := range []bool{b.Build.Race, b.Build.MSan, b.Build.ASan} {
+		if enabled {
+			instrumentedModes++
+		}
+	}
+	if instrumentedModes > 1 {
+		return errors.New("jit metadata enables incompatible sanitizer modes")
 	}
 	if len(b.Build.Files) > maxEntries || len(b.Build.Declarations) > maxEntries ||
 		len(b.Link.Symbols) > maxEntries || len(b.Build.Packages) > maxEntries {
@@ -380,9 +411,6 @@ func validateBundle(b Bundle) error {
 		if len(p.Dependencies) > maxEntries || !addEntries(len(p.Dependencies)) {
 			return errors.New("jit metadata has too many total entries")
 		}
-		if len(p.Archive) > maxBundleSize {
-			return fmt.Errorf("jit metadata archive for %q exceeds size limit", p.Path)
-		}
 	}
 	for _, p := range b.Build.Packages {
 		if !directPackages[p.Path] {
@@ -390,7 +418,7 @@ func validateBundle(b Bundle) error {
 		}
 	}
 	for _, p := range b.Build.Packages {
-		if p.Path == "" || p.Name == "" || len(p.Data) == 0 || len(p.Archive) == 0 {
+		if p.Path == "" || p.Name == "" || len(p.Data) == 0 {
 			return errors.New("jit metadata has an incomplete package export")
 		}
 		if packages[p.Path] {
@@ -462,7 +490,6 @@ func canonicalize(b Bundle) Bundle {
 	for i := range b.Build.Packages {
 		b.Build.Packages[i].Dependencies = append([]PackageDependency(nil), b.Build.Packages[i].Dependencies...)
 		b.Build.Packages[i].Data = append([]byte(nil), b.Build.Packages[i].Data...)
-		b.Build.Packages[i].Archive = append([]byte(nil), b.Build.Packages[i].Archive...)
 		sort.Slice(b.Build.Packages[i].Dependencies, func(a, c int) bool {
 			x, y := b.Build.Packages[i].Dependencies[a], b.Build.Packages[i].Dependencies[c]
 			if x.Path != y.Path {

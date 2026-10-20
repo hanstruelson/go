@@ -53,19 +53,12 @@ func set(ptrSize int, t *types.Type, off int64, bv bitvec.BitVec, skip bool) {
 		if off&int64(ptrSize-1) != 0 {
 			panic(fmt.Sprintf("typebits.Set: invalid alignment, %v", t))
 		}
-		// The first word of an interface is a pointer, but we don't
-		// treat it as such.
-		// 1. If it is a non-empty interface, the pointer points to an itab
-		//    which is always in persistentalloc space.
-		// 2. If it is an empty interface, the pointer points to a _type.
-		//   a. If it is a compile-time-allocated type, it points into
-		//      the read-only data section.
-		//   b. If it is a reflect-allocated type, it points into the Go heap.
-		//      Reflect is responsible for keeping a reference to
-		//      the underlying type so it won't be GCd.
-		// If we ever have a moving GC, we need to change this for 2b (as
-		// well as scan itabs to update their itab._type fields).
+		// Trace both words. Static itabs and type descriptors are outside
+		// the Go heap and are ignored by the heap scanner. JIT itabs and type
+		// descriptors can belong to reclaimable modules, so their interface
+		// word must retain the module owner through the ordinary GC path.
 		bv.Set(int32(off/int64(ptrSize) + 1)) // pointer in second slot
+		bv.Set(int32(off / int64(ptrSize)))   // pointer to itab or type in first slot
 
 	case types.TSLICE:
 		// struct { byte *array; uintgo len; uintgo cap; }

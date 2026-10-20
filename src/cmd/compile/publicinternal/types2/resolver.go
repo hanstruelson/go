@@ -719,7 +719,8 @@ func (check *Checker) unusedImports() {
 	// (initialization), use the blank identifier as explicit package name."
 
 	for _, obj := range check.imports {
-		if obj.name != "_" && !check.usedPkgNames[obj] {
+		allowed := check.conf.AllowUnusedImport != nil && check.conf.AllowUnusedImport(obj.Pos(), obj.imported.path)
+		if obj.name != "_" && !check.usedPkgNames[obj] && !allowed {
 			check.errorUnusedPkg(obj)
 		}
 	}

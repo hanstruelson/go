@@ -10,6 +10,7 @@ import (
 	"publicinternal/types/errors"
 	"regexp"
 	"sort"
+	"strings"
 
 	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/midway"
@@ -62,6 +63,14 @@ recheck:
 		IgnoreBranchErrors: true, // parser already checked via syntax.CheckBranches mode
 		Importer:           &importer,
 		Sizes:              types2.SizesFor("gc", compileCtx.Target.Ctxt.Arch.Name),
+		AllowUnusedImport: func(pos syntax.Pos, importPath string) bool {
+			file := pos.FileBase()
+			return file != nil && compileCtx.Target.Flags.Cfg.JITImportFiles[file.Filename()]
+		},
+		JITCall: func(_ syntax.Pos, callee types2.Object) bool {
+			function, ok := callee.(*types2.Func)
+			return ok && isJITEvalFunction(function)
+		},
 	}
 	if compileCtx.Target.Flags.ErrorURL {
 		conf.ErrorURL = " [go.dev/e/%s]"
@@ -219,6 +228,28 @@ recheck:
 	}
 
 	return pkg, info, rangeInfo
+}
+
+func isJITEvalFunction(function *types2.Func) bool {
+	if function == nil || function.Name() != "Eval" || function.Pkg() == nil || function.Pkg().Name() != "jit" {
+		return false
+	}
+	path := function.Pkg().Path()
+	if path != "jit" && !strings.HasSuffix(path, "/jit") {
+		return false
+	}
+	signature, ok := function.Type().(*types2.Signature)
+	if !ok || signature.Recv() != nil || signature.Variadic() || signature.Params().Len() != 1 || signature.Results().Len() != 2 ||
+		!types2.Identical(signature.Params().At(0).Type(), types2.Typ[types2.String]) ||
+		!types2.Identical(signature.Results().At(1).Type(), types2.Universe.Lookup("error").Type()) {
+		return false
+	}
+	codePointer, ok := signature.Results().At(0).Type().(*types2.Pointer)
+	if !ok {
+		return false
+	}
+	codeType, ok := codePointer.Elem().(*types2.Named)
+	return ok && codeType.Obj().Name() == "Code" && codeType.Obj().Pkg() == function.Pkg()
 }
 
 func dumpSyntax(ctx *Context, pkg *types2.Package, info *types2.Info, files []*syntax.File, phase string) {

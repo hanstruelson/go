@@ -106,6 +106,13 @@ func (ci *Frames) Next() (frame Frame, more bool) {
 		} else {
 			pc, ci.callers = ci.callers[0], ci.callers[1:]
 		}
+		owner, isJIT := jitOwnerForPC(pc)
+		if isJIT && owner == nil {
+			// A raw PC can outlive generated code only if its owner was pinned.
+			// If the weak owner is already gone, this frame cannot be resolved.
+			continue
+		}
+		PinJITModule(owner)
 		funcInfo := findfunc(pc)
 		if !funcInfo.valid() {
 			if cgoSymbolizerAvailable() {
@@ -369,6 +376,11 @@ func (f *_func) funcInfo() funcInfo {
 			break
 		}
 	}
+	var owner *JITModuleOwner
+	if mod == nil {
+		mod, owner = jitLookupPCLN(ptr)
+	}
+	PinJITModule(owner)
 	return funcInfo{f, mod}
 }
 
@@ -451,9 +463,10 @@ type moduledata struct {
 	// jitModule marks runtime metadata synthesized for in-memory Go code.
 	// jitAllocBase and jitAllocSize let the runtime release its table block
 	// when the module is unregistered.
-	jitModule    bool
-	jitAllocBase unsafe.Pointer
-	jitAllocSize uintptr
+	jitModule     bool
+	jitGofuncSize uintptr
+	jitAllocBase  unsafe.Pointer
+	jitAllocSize  uintptr
 }
 
 // A modulehash is used to compare the ABI of a new module or a
@@ -789,6 +802,11 @@ func (md *moduledata) funcName(nameOff int32) string {
 // the *Func describing the innermost function, but with an entry of
 // the outermost function.
 func FuncForPC(pc uintptr) *Func {
+	owner, isJIT := jitOwnerForPC(pc)
+	if isJIT && owner == nil {
+		return nil
+	}
+	PinJITModule(owner)
 	f := findfunc(pc)
 	if !f.valid() {
 		return nil
@@ -876,7 +894,8 @@ func findmoduledatap(pc uintptr) *moduledata {
 			return datap
 		}
 	}
-	return nil
+	datap, _ := jitLookupPC(pc)
+	return datap
 }
 
 type funcInfo struct {
@@ -929,7 +948,17 @@ func badFuncInfoEntry(funcInfo) uintptr
 //go:nosplit
 //go:linkname findfunc
 func findfunc(pc uintptr) funcInfo {
-	datap := findmoduledatap(pc)
+	var datap *moduledata
+	var jitLease uintptr
+	for current := &firstmoduledata; current != nil; current = current.next {
+		if current.minpc <= pc && pc < current.maxpc {
+			datap = current
+			break
+		}
+	}
+	if datap == nil {
+		datap, _, jitLease = jitLookupPCLease(pc)
+	}
 	if datap == nil {
 		return funcInfo{}
 	}
@@ -937,6 +966,9 @@ func findfunc(pc uintptr) funcInfo {
 
 	pcOff, ok := datap.textOff(pc)
 	if !ok {
+		if jitLease != 0 {
+			jitIndexReadLeave(jitLease)
+		}
 		return funcInfo{}
 	}
 
@@ -958,7 +990,11 @@ func findfunc(pc uintptr) funcInfo {
 	}
 
 	funcoff := datap.ftab[idx].funcoff
-	return funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[funcoff])), datap}
+	result := funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[funcoff])), datap}
+	if jitLease != 0 {
+		jitIndexReadLeave(jitLease)
+	}
+	return result
 }
 
 // A srcFunc represents a logical function in the source code. This may
@@ -1183,6 +1219,10 @@ func funcfile(f funcInfo, fileno int32) string {
 		return "?"
 	}
 	// Make sure the cu index and file offset are valid
+	if fileno < 0 || f.cuOffset == ^uint32(0) || f.cuOffset >= uint32(len(datap.cutab)) ||
+		uint32(fileno) >= uint32(len(datap.cutab))-f.cuOffset {
+		return "?"
+	}
 	if fileoff := datap.cutab[f.cuOffset+uint32(fileno)]; fileoff != ^uint32(0) {
 		return gostringnocopy(&datap.filetab[fileoff])
 	}

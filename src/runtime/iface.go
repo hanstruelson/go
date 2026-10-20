@@ -45,6 +45,9 @@ func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
 	if len(inter.Methods) == 0 {
 		throw("internal error - misuse of itab")
 	}
+	if tab, handled := jitGetitab(inter, typ, canfail); handled {
+		return tab
+	}
 
 	// easy case
 	if typ.TFlag&abi.TFlagUncommon == 0 {
@@ -100,6 +103,207 @@ finish:
 	// interface function was missing, so initialize
 	// the itab again to get the missing function name.
 	panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: itabInit(m, false)})
+}
+
+// jitDynamicItab is an owner-local weak cache entry. The key contains only raw
+// addresses and the value is a weak handle, so a long-lived module cannot
+// retain transient types or other JIT modules merely because it once
+// performed a type assertion. A live interface value retains the typed itab;
+// its Inter and Type pointers then retain every required owner through the
+// ordinary GC pointer scan.
+type jitDynamicItab struct {
+	inter uintptr
+	typ   uintptr
+	weak  unsafe.Pointer
+	next  *jitDynamicItab
+}
+
+// jitGetitab handles any interface or concrete type descriptor stored in, or
+// reflectively derived from, a JIT mapping. The process-wide itabTable contains
+// generationless raw pointers and must never retain dynamic module metadata.
+// Static pairs continue through the regular cached path in getitab.
+func jitGetitab(inter *interfacetype, typ *_type, canfail bool) (*itab, bool) {
+	var typeOwner, interfaceOwner *JITModuleOwner
+	var typeInImage, interfaceInImage bool
+	if typ != nil {
+		typeOwner, typeInImage = jitOwnerForMappedAddress(uintptr(unsafe.Pointer(typ)))
+	}
+	if inter != nil {
+		interfaceOwner, interfaceInImage = jitOwnerForMappedAddress(uintptr(unsafe.Pointer(inter)))
+	}
+	if typ == nil {
+		return nil, false
+	}
+	typeIsJIT := typeInImage || jitTypeNeedsOwner(typ)
+	interfaceIsJIT := inter != nil && (interfaceInImage || jitTypeNeedsOwner(&inter.Type))
+	if !typeIsJIT && !interfaceIsJIT {
+		return nil, false
+	}
+	// Reflect-created types live on the Go heap rather than in a JIT mapping.
+	// Follow their owner edges so their dynamic itabs can use the same weak,
+	// owner-local cache as image-backed descriptors.
+	if typeOwner == nil && typeIsJIT {
+		typeOwner, _ = jitOwnerForType(typ)
+	}
+	if interfaceOwner == nil && interfaceIsJIT {
+		interfaceOwner, _ = jitOwnerForType(&inter.Type)
+	}
+	if (typeInImage && typeOwner == nil) || (interfaceInImage && interfaceOwner == nil) {
+		throw("runtime: JIT type has no live owner")
+	}
+	// Cache under one dynamic owner, but keep only a weak reference to the itab.
+	// The itab itself has typed Inter and Type fields, so a live interface value
+	// keeps its complete set of module owners alive.
+	cacheOwner := typeOwner
+	if cacheOwner == nil {
+		cacheOwner = interfaceOwner
+	}
+	if typ.TFlag&abi.TFlagUncommon == 0 {
+		KeepAlive(typeOwner)
+		KeepAlive(interfaceOwner)
+		if canfail {
+			return nil, true
+		}
+		name := toRType(&inter.Type).nameOff(inter.Methods[0].Name)
+		panic(&TypeAssertionError{nil, typ, &inter.Type, name.Name()})
+	}
+
+	if cacheOwner != nil {
+		if tab := jitLookupDynamicItab(cacheOwner, inter, typ); tab != nil {
+			KeepAlive(typeOwner)
+			KeepAlive(interfaceOwner)
+			if tab.Fun[0] != 0 {
+				return tab, true
+			}
+			if canfail {
+				return nil, true
+			}
+			panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: itabInit(tab, false)})
+		}
+	}
+
+	// itab has a trailing variable-length Fun array. Allocate enough scanned
+	// storage for it. A single object uses the itab type's exact pointer map for
+	// Inter and Type; the trailing method PCs are uintptrs and are not scanned.
+	baseSize := unsafe.Sizeof(itab{})
+	if len(inter.Methods) == 0 || uintptr(len(inter.Methods)-1) > (^uintptr(0)-baseSize)/goarch.PtrSize {
+		throw("runtime: JIT itab size overflow")
+	}
+	bytes := baseSize + uintptr(len(inter.Methods)-1)*goarch.PtrSize
+	if bytes == 0 || bytes > uintptr(^uint(0)>>1) {
+		throw("runtime: JIT itab allocation size overflow")
+	}
+	tabType := (*_type)(unsafe.Pointer(abi.TypeOf(itab{})))
+	if uintptr(tabType.Size_) != baseSize || uintptr(tabType.PtrBytes) < 2*goarch.PtrSize {
+		throw("runtime: invalid JIT itab allocation type")
+	}
+	tab := (*itab)(mallocgc(bytes, tabType, true))
+	tab.Inter = inter
+	tab.Type = typ
+	// Dynamic itabs never participate in compiler-generated type switches.
+	tab.Hash = 0
+	itabInit(tab, true)
+	if cacheOwner == nil {
+		KeepAlive(typeOwner)
+		KeepAlive(interfaceOwner)
+		if tab.Fun[0] != 0 {
+			return tab, true
+		}
+		if canfail {
+			return nil, true
+		}
+		panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: itabInit(tab, false)})
+	}
+
+	weak := internal_weak_runtime_registerWeakPointer(unsafe.Pointer(tab))
+	if weak != nil {
+		for {
+			lock(&cacheOwner.itabLock)
+			var existing *jitDynamicItab
+			for current := cacheOwner.itabs; current != nil; current = current.next {
+				if current.inter == uintptr(unsafe.Pointer(inter)) && current.typ == uintptr(unsafe.Pointer(typ)) {
+					existing = current
+					break
+				}
+			}
+			if existing == nil {
+				entry := &jitDynamicItab{
+					inter: uintptr(unsafe.Pointer(inter)),
+					typ:   uintptr(unsafe.Pointer(typ)),
+					weak:  weak,
+					next:  cacheOwner.itabs,
+				}
+				cacheOwner.itabs = entry
+				if cacheOwner.itabCaches < 64 {
+					cacheOwner.itabCaches++
+				}
+				unlock(&cacheOwner.itabLock)
+				break
+			}
+			unlock(&cacheOwner.itabLock)
+
+			cached := (*itab)(internal_weak_runtime_makeStrongFromWeak(existing.weak))
+			if cached != nil && cached.Inter == inter && cached.Type == typ {
+				// Match the canonical type pair even when two goroutines missed
+				// the cache at the same time. The unused candidate remains an
+				// ordinary unreachable heap allocation.
+				tab = cached
+				break
+			}
+
+			lock(&cacheOwner.itabLock)
+			cacheOwner.itabs = removeJITDynamicItab(cacheOwner.itabs, existing)
+			unlock(&cacheOwner.itabLock)
+		}
+	}
+	KeepAlive(typeOwner)
+	KeepAlive(interfaceOwner)
+	if tab.Fun[0] != 0 {
+		return tab, true
+	}
+	if canfail {
+		return nil, true
+	}
+	panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: itabInit(tab, false)})
+}
+
+func jitLookupDynamicItab(owner *JITModuleOwner, inter *interfacetype, typ *_type) *itab {
+	for {
+		lock(&owner.itabLock)
+		var entry *jitDynamicItab
+		for current := owner.itabs; current != nil; current = current.next {
+			if current.inter == uintptr(unsafe.Pointer(inter)) && current.typ == uintptr(unsafe.Pointer(typ)) {
+				entry = current
+				break
+			}
+		}
+		unlock(&owner.itabLock)
+		if entry == nil {
+			return nil
+		}
+
+		tab := (*itab)(internal_weak_runtime_makeStrongFromWeak(entry.weak))
+		if tab != nil && tab.Inter == inter && tab.Type == typ {
+			return tab
+		}
+
+		lock(&owner.itabLock)
+		owner.itabs = removeJITDynamicItab(owner.itabs, entry)
+		unlock(&owner.itabLock)
+	}
+}
+
+func removeJITDynamicItab(head, target *jitDynamicItab) *jitDynamicItab {
+	if head == target {
+		return head.next
+	}
+	for entry := head; entry != nil; entry = entry.next {
+		if entry.next == target {
+			entry.next = target.next
+			return head
+		}
+	}
+	return head
 }
 
 // find finds the given interface/type pair in t.
@@ -238,7 +442,8 @@ imethods:
 			t := &xmhdr[j]
 			rtyp := toRType(typ)
 			tname := rtyp.nameOff(t.Name)
-			if rtyp.typeOff(t.Mtyp) == itype && tname.Name() == iname {
+			methodType := rtyp.typeOff(t.Mtyp)
+			if methodType == itype && tname.Name() == iname {
 				pkgPath := pkgPath(tname)
 				if pkgPath == "" {
 					pkgPath = rtyp.nameOff(x.PkgPath).Name()
@@ -491,6 +696,12 @@ func typeAssert(s *abi.TypeAssert, t *_type) *itab {
 	} else {
 		tab = getitab(s.Inter, t, s.CanFail)
 	}
+	// This cache stores type and itab addresses as uintptrs in compiler-owned
+	// call-site memory. A host call site can observe arbitrary JIT generations,
+	// so never publish dynamic addresses into this generationless cache.
+	if jitTypeNeedsOwner(t) || jitTypeNeedsOwner(&s.Inter.Type) {
+		return tab
+	}
 
 	if !abi.UseInterfaceSwitchCache(goarch.ArchFamily) {
 		return tab
@@ -589,6 +800,16 @@ func interfaceSwitch(s *abi.InterfaceSwitch, t *_type) (int, *itab) {
 		if tab != nil {
 			case_ = i
 			break
+		}
+	}
+	// Interface-switch cache entries contain raw type/itab addresses and do
+	// not carry a module generation. Keep JIT descriptors out of host caches.
+	if jitTypeNeedsOwner(t) {
+		return case_, tab
+	}
+	for _, c := range cases {
+		if jitTypeNeedsOwner(&c.Type) {
+			return case_, tab
 		}
 	}
 

@@ -16,3 +16,16 @@ TEXT ·callEntryInt(SB), NOSPLIT, $0-16
 	CALL AX
 	MOVQ AX, ret+8(FP)
 	RET
+
+TEXT ·callEntryOwned(SB), NOSPLIT, $0-16
+	MOVQ entry+0(FP), CX
+	MOVQ owner+8(FP), AX
+	CALL CX
+	RET
+
+TEXT ·callEntryOwnedInt(SB), NOSPLIT, $0-24
+	MOVQ entry+0(FP), CX
+	MOVQ owner+8(FP), AX
+	CALL CX
+	MOVQ AX, ret+16(FP)
+	RET

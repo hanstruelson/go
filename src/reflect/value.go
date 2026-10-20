@@ -6,12 +6,12 @@ package reflect
 
 import (
 	"errors"
+	"iter"
+	"math"
 	"publicinternal/abi"
 	"publicinternal/goarch"
 	"publicinternal/strconv"
 	"publicinternal/unsafeheader"
-	"iter"
-	"math"
 	"runtime"
 	"unsafe"
 )
@@ -1615,12 +1615,20 @@ func (v Value) InterfaceData() [2]uintptr {
 	v.mustBe(Interface)
 	// The compiler loses track as it converts to uintptr. Force escape.
 	escapes(v.ptr)
+	// The two words are deliberately opaque uintptrs. If either refers to a
+	// JIT type descriptor, itab, or owner-tagged heap object, returning the
+	// words loses the GC-visible edge that would otherwise keep its module
+	// mapped. This deprecated unsafe API has no way to carry that edge, so pin
+	// the modules before exposing the representation.
+	words := *(*[2]uintptr)(v.ptr)
+	runtime.JITPinAddress(words[0])
+	runtime.JITPinAddress(words[1])
 	// We treat this as a read operation, so we allow
 	// it even for unexported data, because the caller
 	// has to import "unsafe" to turn it into something
 	// that can be abused.
 	// Interface value is always bigger than a word; assume flagIndir.
-	return *(*[2]uintptr)(v.ptr)
+	return words
 }
 
 // IsNil reports whether its argument v is nil. The argument must be
@@ -2043,11 +2051,11 @@ func (v Value) Pointer() uintptr {
 			if !verifyNotInHeapPtr(val) {
 				panic("reflect: reflect.Value.Pointer on an invalid notinheap pointer")
 			}
-			return val
+			return v.pinJITRawAddress(val)
 		}
 		fallthrough
 	case Chan, Map, UnsafePointer:
-		return uintptr(v.pointer())
+		return v.pinJITRawAddress(uintptr(v.pointer()))
 	case Func:
 		p := v.pointer()
 		// Non-nil func value points at data block.
@@ -2055,11 +2063,11 @@ func (v Value) Pointer() uintptr {
 		if p != nil {
 			p = *(*unsafe.Pointer)(p)
 		}
-		return uintptr(p)
+		return v.pinJITRawAddress(uintptr(p))
 	case Slice:
-		return uintptr((*unsafeheader.Slice)(v.ptr).Data)
+		return v.pinJITRawAddress(uintptr((*unsafeheader.Slice)(v.ptr).Data))
 	case String:
-		return uintptr((*unsafeheader.String)(v.ptr).Data)
+		return v.pinJITRawAddress(uintptr((*unsafeheader.String)(v.ptr).Data))
 	}
 	panic(&ValueError{"reflect.Value.Pointer", v.kind()})
 }
@@ -2528,7 +2536,7 @@ func (v Value) UnsafeAddr() uintptr {
 	}
 	// The compiler loses track as it converts to uintptr. Force escape.
 	escapes(v.ptr)
-	return uintptr(v.ptr)
+	return v.pinJITRawAddress(uintptr(v.ptr))
 }
 
 // UnsafePointer returns v's value as a [unsafe.Pointer].
@@ -2555,11 +2563,11 @@ func (v Value) UnsafePointer() unsafe.Pointer {
 			if !verifyNotInHeapPtr(*(*uintptr)(v.ptr)) {
 				panic("reflect: reflect.Value.UnsafePointer on an invalid notinheap pointer")
 			}
-			return *(*unsafe.Pointer)(v.ptr)
+			return v.pinJITRawPointer(*(*unsafe.Pointer)(v.ptr))
 		}
 		fallthrough
 	case Chan, Map, UnsafePointer:
-		return v.pointer()
+		return v.pinJITRawPointer(v.pointer())
 	case Func:
 		p := v.pointer()
 		// Non-nil func value points at data block.
@@ -2567,13 +2575,31 @@ func (v Value) UnsafePointer() unsafe.Pointer {
 		if p != nil {
 			p = *(*unsafe.Pointer)(p)
 		}
-		return p
+		return v.pinJITRawPointer(p)
 	case Slice:
-		return (*unsafeheader.Slice)(v.ptr).Data
+		return v.pinJITRawPointer((*unsafeheader.Slice)(v.ptr).Data)
 	case String:
-		return (*unsafeheader.String)(v.ptr).Data
+		return v.pinJITRawPointer((*unsafeheader.String)(v.ptr).Data)
 	}
 	panic(&ValueError{"reflect.Value.UnsafePointer", v.kind()})
+}
+
+func (v Value) pinJITRawAddress(address uintptr) uintptr {
+	typ := v.typ()
+	runtime.JITPinAddress(uintptr(unsafe.Pointer(typ)))
+	runtime.JITPinAddress(address)
+	runtime.KeepAlive(typ)
+	runtime.KeepAlive(v.ptr)
+	return address
+}
+
+func (v Value) pinJITRawPointer(address unsafe.Pointer) unsafe.Pointer {
+	typ := v.typ()
+	runtime.JITPinAddress(uintptr(unsafe.Pointer(typ)))
+	runtime.JITPinAddress(uintptr(address))
+	runtime.KeepAlive(typ)
+	runtime.KeepAlive(v.ptr)
+	return address
 }
 
 // Fields returns an iterator over each [StructField] of v along with its [Value].

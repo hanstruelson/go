@@ -1026,6 +1026,16 @@ top:
 		// work to the gcWork.
 		wbBufFlush1(pp)
 
+		// Scan pointer-bearing globals in JIT modules only after ordinary
+		// roots have reached a fixed point. These roots are conditional on
+		// their module owner already being reachable; scanning them as an
+		// ordinary root job could run before the owner is marked and either
+		// miss live globals or make dead module cycles permanent roots. Mutations
+		// after this P's callback remain covered by the active write barrier.
+		if workDone := jitScanGlobals(&pp.gcw, int(pp.id), len(allp)); workDone != 0 {
+			gcController.globalsScanWork.Add(workDone)
+		}
+
 		// Flush the gcWork, since this may create global work
 		// and set the flushedWork flag.
 		//
@@ -2070,8 +2080,12 @@ func gcSweep(mode gcMode) bool {
 	}
 
 	lock(&mheap_.lock)
+	sweepSequence := atomic.Xadd64(&jitSweepSequence, 1)
+	if sweepSequence == 0 {
+		throw("JIT sweep sequence exhausted")
+	}
 	mheap_.sweepgen += 2
-	sweep.active.reset()
+	sweep.active.reset(sweepSequence)
 	mheap_.pagesSwept.Store(0)
 	mheap_.sweepArenas = mheap_.heapArenas
 	mheap_.reclaimIndex.Store(0)

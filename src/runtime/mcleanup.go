@@ -726,6 +726,9 @@ func runCleanups() {
 		gcCleanups.beginRunningCleanups()
 		for i := 0; i < int(b.n); i++ {
 			c := b.cleanups[i]
+			call := *(**funcval)(unsafe.Pointer(&c.call))
+			callOwner := jitOwnerForFuncval(call)
+			fnOwner := jitOwnerForFuncval(c.fn)
 			b.cleanups[i] = cleanupFn{}
 
 			var racectx uintptr
@@ -744,6 +747,8 @@ func runCleanups() {
 
 			// Execute the next cleanup.
 			c.call(c.fn, c.arg)
+			KeepAlive(callOwner)
+			KeepAlive(fnOwner)
 
 			if raceenabled {
 				// Restore the old context.

@@ -7,7 +7,6 @@ package ssacompile
 import (
 	"testing"
 
-	"cmd/compile/publicinternal/base"
 	"cmd/compile/publicinternal/ir"
 	"cmd/compile/publicinternal/ssa"
 	"cmd/compile/publicinternal/typecheck"
@@ -25,12 +24,6 @@ var Opt = opt
 var Deadcode = deadcode
 var Copyelim = copyelim
 
-var testCtxts = map[string]*obj.Link{
-	"amd64": obj.Linknew(&x86.Linkamd64),
-	"s390x": obj.Linknew(&s390x.Links390x),
-	"arm64": obj.Linknew(&arm64.Linkarm64),
-}
-
 var testTarget *ir.Package
 
 func testConfig(tb testing.TB) *Conf      { return testConfigArch(tb, "amd64") }
@@ -38,10 +31,18 @@ func testConfigS390X(tb testing.TB) *Conf { return testConfigArch(tb, "s390x") }
 func testConfigARM64(tb testing.TB) *Conf { return testConfigArch(tb, "arm64") }
 
 func testConfigArch(tb testing.TB, arch string) *Conf {
-	ctxt, ok := testCtxts[arch]
-	if !ok {
+	var linkArch *obj.LinkArch
+	switch arch {
+	case "amd64":
+		linkArch = &x86.Linkamd64
+	case "s390x":
+		linkArch = &s390x.Links390x
+	case "arm64":
+		linkArch = &arm64.Linkarm64
+	default:
 		tb.Fatalf("unknown arch %s", arch)
 	}
+	ctxt := obj.Linknew(linkArch)
 	if ctxt.Arch.PtrSize != 8 {
 		tb.Fatal("testTypes is 64-bit only")
 	}
@@ -62,8 +63,8 @@ type Conf struct {
 
 func (c *Conf) Frontend() ssa.Frontend {
 	if c.fe == nil {
-		pkg := types.NewPkgInstance("my/import/path", "path")
-		fn := ir.NewFunc(nil, src.NoXPos, src.NoXPos, pkg.Lookup("function"), types.NewSignature(nil, nil, nil))
+		pkg := types.NewPkgInstanceFor(testTarget.TypeContext, "my/import/path", "path")
+		fn := ir.NewFunc(nil, src.NoXPos, src.NoXPos, pkg.Lookup("function"), types.NewSignatureIn(testTarget.TypeContext, nil, nil, nil))
 		fn.Target = testTarget
 		fn.DeclareParams(true)
 		fn.LSym = &obj.LSym{Name: "my/import/path.function"}
@@ -118,16 +119,12 @@ func (d TestFrontend) Func() *ir.Func {
 var testTypes ssa.Types
 
 func init() {
-	// TODO(mdempsky): Push into types.InitUniverse or typecheck.InitUniverse.
-	types.PtrSize = 8
-	types.RegSize = 8
-	types.MaxWidth = 1 << 50
-
-	base.Ctxt = &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
+	ctxt := &obj.Link{Arch: &obj.LinkArch{Arch: &sys.Arch{Alignment: 1, CanMergeLoads: true}}}
+	typeContext := types.NewContext(8, 8, 1<<50)
 	testTarget = &ir.Package{
-		Ctxt:        base.Ctxt,
-		TypeContext: types.NewContext(8, 8, 1<<50),
-		LocalPkg:    types.NewPkgInstance("ssacompile/test", "test"),
+		Ctxt:        ctxt,
+		TypeContext: typeContext,
+		LocalPkg:    types.NewPkgInstanceFor(typeContext, "ssacompile/test", "test"),
 	}
 	testTarget.TypeContext.Link = testTarget.Ctxt
 	testTarget.LocalPkg.Local = true

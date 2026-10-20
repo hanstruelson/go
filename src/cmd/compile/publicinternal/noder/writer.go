@@ -11,6 +11,7 @@ import (
 	"go/version"
 	"publicinternal/pkgbits"
 	"slices"
+	"strconv"
 	"strings"
 
 	"cmd/compile/publicinternal/ir"
@@ -409,6 +410,22 @@ func (w *writer) pos(p poser) {
 // bitstream.
 func (w *writer) posBase(b *syntax.PosBase) {
 	w.Reloc(pkgbits.SectionPosBase, w.p.posBaseIdx(b))
+}
+
+// stringConst writes a compiler-generated string literal at the supplied
+// source position.
+func (w *writer) stringConst(pos poser, value string) {
+	w.Code(exprConst)
+	w.pos(pos)
+	w.typ(types2.Typ[types2.String])
+	w.Value(constant.MakeString(value))
+}
+
+func (w *writer) boolConst(pos poser, value bool) {
+	w.Code(exprConst)
+	w.pos(pos)
+	w.typ(types2.Typ[types2.Bool])
+	w.Value(constant.MakeBool(value))
 }
 
 // posBaseIdx returns the index for the given PosBase.
@@ -2095,6 +2112,7 @@ func (w *writer) expr(expr syntax.Expr) {
 			w.convertExpr(tv.Type, expr.ArgList[0], false)
 			break
 		}
+		jitEvalAt := jitEvalTarget(w.p, expr.Fun)
 
 		var rtype types2.Type
 		if tv.IsBuiltin() {
@@ -2190,6 +2208,14 @@ func (w *writer) expr(expr syntax.Expr) {
 		}
 
 		writeFunExpr := func() {
+			if jitEvalAt != nil {
+				w.Bool(false) // not a method call
+				w.Bool(false) // not instantiated
+				w.Code(exprGlobal)
+				w.obj(jitEvalAt, nil)
+				return
+			}
+
 			fun := syntax.Unparen(expr.Fun)
 
 			expr := fun
@@ -2219,6 +2245,9 @@ func (w *writer) expr(expr syntax.Expr) {
 		}
 
 		sigType := types2.CoreType(tv.Type).(*types2.Signature)
+		if jitEvalAt != nil {
+			sigType = types2.CoreType(jitEvalAt.Type()).(*types2.Signature)
+		}
 		paramTypes := sigType.Params()
 
 		w.Code(exprCall)
@@ -2232,7 +2261,29 @@ func (w *writer) expr(expr syntax.Expr) {
 			return paramTypes.At(i).Type()
 		}
 
-		w.multiExpr(expr, paramType, expr.ArgList)
+		if jitEvalAt == nil {
+			w.multiExpr(expr, paramType, expr.ArgList)
+		} else {
+			// Direct jit.Eval calls are rewritten after type checking, when the
+			// package, file, and lexical variable scope are known from the
+			// compiler's resolved call site. This avoids runtime stack inspection
+			// and filename-based package guessing.
+			captures := jitEvalCaptures(w.p, expr.Pos())
+			w.Sync(pkgbits.SyncMultiExpr)
+			w.Bool(false) // N:N assignment
+			w.Len(3 + len(captures))
+			w.stringConst(expr, w.p.target.Ctxt.Pkgpath)
+			fileName := expr.Pos().FileBase().Filename()
+			if inherited := w.p.target.Flags.Cfg.JITCallSiteFile; inherited != "" {
+				fileName = inherited
+			}
+			w.stringConst(expr, fileName)
+			w.implicitConvExpr(paramType(2), expr.ArgList[0])
+			captureAPIs := jitEvalCaptureTargetsForPackage(jitEvalAt.Pkg())
+			for _, capture := range captures {
+				w.jitCaptureExpr(expr.Pos(), captureAPIs, capture)
+			}
+		}
 		w.Bool(expr.HasDots)
 		if rtype != nil {
 			w.rtype(rtype)
@@ -3199,6 +3250,647 @@ func lookupObj(p *pkgWriter, expr syntax.Expr) (obj types2.Object, inst types2.I
 		inst = p.info.Instances[name]
 	}
 	return
+}
+
+// jitEvalTarget returns the compiler support entry point for a direct call to
+// jit.Eval. The import path check deliberately uses the package identity from
+// type checking, so aliases and dot imports work and local shadowing does not
+// accidentally trigger the rewrite.
+func jitEvalTarget(p *pkgWriter, expr syntax.Expr) *types2.Func {
+	obj, _ := lookupObj(p, syntax.Unparen(expr))
+	eval, ok := obj.(*types2.Func)
+	if !ok || eval.Name() != "Eval" || eval.Pkg() == nil || eval.Pkg().Name() != "jit" {
+		return nil
+	}
+	if path := eval.Pkg().Path(); path != "jit" && !strings.HasSuffix(path, "/jit") {
+		return nil
+	}
+	if eval.Pkg().Scope().Lookup("RegisterBuildMetadata") == nil {
+		return nil
+	}
+	evalSig, ok := eval.Type().(*types2.Signature)
+	if !ok || evalSig.Recv() != nil || evalSig.Variadic() || evalSig.Params().Len() != 1 {
+		return nil
+	}
+	if !types2.Identical(evalSig.Params().At(0).Type(), types2.Typ[types2.String]) {
+		return nil
+	}
+
+	at, ok := eval.Pkg().Scope().Lookup("EvalAtCaptured").(*types2.Func)
+	if !ok {
+		return nil
+	}
+	atSig, ok := at.Type().(*types2.Signature)
+	if !ok || atSig.Recv() != nil || !atSig.Variadic() || atSig.Params().Len() != 4 || atSig.Results().Len() != evalSig.Results().Len() {
+		return nil
+	}
+	for i := 0; i < 3; i++ {
+		if !types2.Identical(atSig.Params().At(i).Type(), types2.Typ[types2.String]) {
+			return nil
+		}
+	}
+	if _, ok := types2.CoreType(atSig.Params().At(3).Type()).(*types2.Slice); !ok {
+		return nil
+	}
+	captureFn, ok := eval.Pkg().Scope().Lookup("CaptureValue").(*types2.Func)
+	if !ok {
+		return nil
+	}
+	captureSig, ok := captureFn.Type().(*types2.Signature)
+	if !ok || captureSig.Recv() != nil || !captureSig.Variadic() || captureSig.TypeParams().Len() != 1 || captureSig.Params().Len() != 5 || captureSig.Results().Len() != 1 {
+		return nil
+	}
+	captureType := types2.CoreType(atSig.Params().At(3).Type()).(*types2.Slice).Elem()
+	if !types2.Identical(captureSig.Results().At(0).Type(), captureType) {
+		return nil
+	}
+	constantFn, ok := eval.Pkg().Scope().Lookup("CaptureConstant").(*types2.Func)
+	if !ok {
+		return nil
+	}
+	constantSig, ok := constantFn.Type().(*types2.Signature)
+	if !ok || constantSig.Recv() != nil || constantSig.Variadic() == false || constantSig.TypeParams().Len() != 0 || constantSig.Params().Len() != 6 || constantSig.Results().Len() != 1 || !types2.Identical(constantSig.Results().At(0).Type(), captureType) {
+		return nil
+	}
+	typeAliasFn, ok := eval.Pkg().Scope().Lookup("CaptureTypeAlias").(*types2.Func)
+	if !ok {
+		return nil
+	}
+	typeAliasSig, ok := typeAliasFn.Type().(*types2.Signature)
+	if !ok || typeAliasSig.Recv() != nil || !typeAliasSig.Variadic() || typeAliasSig.TypeParams().Len() != 0 || typeAliasSig.Params().Len() != 4 || typeAliasSig.Results().Len() != 1 || !types2.Identical(typeAliasSig.Results().At(0).Type(), captureType) {
+		return nil
+	}
+	for i := 0; i < atSig.Results().Len(); i++ {
+		if !types2.Identical(atSig.Results().At(i).Type(), evalSig.Results().At(i).Type()) {
+			return nil
+		}
+	}
+	return at
+}
+
+const (
+	jitCaptureValue uint8 = iota + 1
+	jitCaptureConstant
+	jitCaptureTypeAlias
+)
+
+type jitCaptureInfo struct {
+	kind        uint8
+	object      types2.Object
+	variable    *types2.Var
+	typeExpr    string
+	literal     string
+	typed       bool
+	declaration string
+	unsupported string
+	imports     []string // alias/path pairs
+}
+
+type jitEvalCaptureTargets struct {
+	value     *types2.Func
+	constant  *types2.Func
+	typeAlias *types2.Func
+}
+
+func jitEvalCaptureTargetsForPackage(pkg *types2.Package) jitEvalCaptureTargets {
+	return jitEvalCaptureTargets{
+		value:     pkg.Scope().Lookup("CaptureValue").(*types2.Func),
+		constant:  pkg.Scope().Lookup("CaptureConstant").(*types2.Func),
+		typeAlias: pkg.Scope().Lookup("CaptureTypeAlias").(*types2.Func),
+	}
+}
+
+// jitEvalCaptures returns the caller's visible local variables in stable name
+// order. It also carries local constants and aliases. ScopePos is used instead
+// of declaration Pos so a short declaration's initializer cannot capture the
+// new variable before its Go scope begins.
+func jitEvalCaptures(p *pkgWriter, pos syntax.Pos) []jitCaptureInfo {
+	var innermost *types2.Scope
+	var fileScope *types2.Scope
+	depth := -1
+	for node, scope := range p.info.Scopes {
+		if file, ok := node.(*syntax.File); ok && file.Pos().FileBase() == pos.FileBase() {
+			fileScope = scope
+		}
+		if !scope.Contains(pos) || node.Pos().FileBase() != pos.FileBase() {
+			continue
+		}
+		d := 0
+		for parent := scope; parent != nil; parent = parent.Parent() {
+			d++
+		}
+		if d > depth {
+			innermost, depth = scope, d
+		}
+	}
+	if innermost == nil {
+		return nil
+	}
+	visible := make(map[string]types2.Object)
+	for scope := innermost; scope != nil && scope != fileScope; scope = scope.Parent() {
+		for _, name := range scope.Names() {
+			object := scope.Lookup(name)
+			if object == nil || name == "_" || object.Pkg() == nil {
+				continue
+			}
+			scoped, ok := object.(interface{ ScopePos() syntax.Pos })
+			if !ok || !scoped.ScopePos().IsKnown() || scoped.ScopePos().Cmp(pos) > 0 {
+				continue
+			}
+			if _, exists := visible[name]; !exists {
+				visible[name] = object
+			}
+		}
+	}
+	names := make([]string, 0, len(visible))
+	for name := range visible {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	qualifier := newJITCaptureQualifier(p, pos)
+	for _, name := range names {
+		qualifier.used[name] = true
+	}
+	captures := make([]jitCaptureInfo, 0, len(names))
+	for _, name := range names {
+		object := visible[name]
+		switch object := object.(type) {
+		case *types2.Var:
+			switch object.Kind() {
+			case types2.LocalVar, types2.RecvVar, types2.ParamVar, types2.ResultVar:
+			default:
+				continue
+			}
+			typ := object.Type()
+			qualifier.beginCapture()
+			captures = append(captures, jitCaptureInfo{
+				kind:        jitCaptureValue,
+				object:      object,
+				variable:    object,
+				typeExpr:    types2.TypeString(typ, qualifier.qualify),
+				unsupported: jitCaptureUnsupported(typ, p, make(map[types2.Type]bool)),
+				imports:     qualifier.pairs(),
+			})
+		case *types2.Const:
+			typed := !isUntyped(object.Type())
+			typeExpr := ""
+			unsupported := ""
+			qualifier.beginCapture()
+			if typed {
+				typeExpr = types2.TypeString(object.Type(), qualifier.qualify)
+				unsupported = jitCaptureUnsupported(object.Type(), p, make(map[types2.Type]bool))
+			}
+			literal, literalErr := jitCaptureConstantLiteral(object.Val(), object.Type())
+			if literalErr != "" {
+				unsupported = literalErr
+			}
+			captures = append(captures, jitCaptureInfo{
+				kind:        jitCaptureConstant,
+				object:      object,
+				typeExpr:    typeExpr,
+				literal:     literal,
+				typed:       typed,
+				unsupported: unsupported,
+				imports:     qualifier.pairs(),
+			})
+		case *types2.TypeName:
+			if _, isTypeParam := object.Type().(*types2.TypeParam); isTypeParam {
+				captures = append(captures, jitCaptureInfo{
+					kind:        jitCaptureTypeAlias,
+					object:      object,
+					unsupported: "type parameter " + object.Name() + " is not available to runtime compilation",
+				})
+				continue
+			}
+			declaration, ok := p.typDecls[object]
+			if !ok {
+				continue
+			}
+			if !object.IsAlias() && declaration.gen != 0 {
+				captures = append(captures, jitCaptureInfo{
+					kind:        jitCaptureTypeAlias,
+					object:      object,
+					unsupported: "function-local defined type identity cannot be recreated in a JIT function",
+				})
+				continue
+			}
+			decl := *declaration.TypeDecl
+			decl.Group = nil
+			qualifier.beginCapture()
+			var source strings.Builder
+			_, _ = syntax.Fprint(&source, &decl, 0)
+			qualifier.includeDeclaration(&decl, p.info)
+			captures = append(captures, jitCaptureInfo{
+				kind:        jitCaptureTypeAlias,
+				object:      object,
+				declaration: source.String(),
+				unsupported: jitCaptureDeclUnsupported(&decl, p),
+				imports:     qualifier.pairs(),
+			})
+		}
+	}
+	slices.SortFunc(captures, func(a, b jitCaptureInfo) int {
+		ap, bp := a.object.Pos(), b.object.Pos()
+		if c := ap.Cmp(bp); c != 0 {
+			return c
+		}
+		if a.object.Name() < b.object.Name() {
+			return -1
+		}
+		if a.object.Name() > b.object.Name() {
+			return 1
+		}
+		return 0
+	})
+	return captures
+}
+
+type jitCaptureQualifier struct {
+	pkg         *pkgWriter
+	file        *syntax.File
+	used        map[string]bool
+	byPath      map[string]string
+	capturePath map[string]bool
+}
+
+func (q *jitCaptureQualifier) beginCapture() {
+	q.capturePath = make(map[string]bool)
+}
+
+func (q *jitCaptureQualifier) includeDeclaration(declaration syntax.Node, info *types2.Info) {
+	syntax.Inspect(declaration, func(node syntax.Node) bool {
+		name, ok := node.(*syntax.Name)
+		if !ok {
+			return true
+		}
+		switch object := info.Uses[name].(type) {
+		case *types2.PkgName:
+			q.qualify(object.Imported())
+		case *types2.TypeName:
+			if object.Pkg() != nil {
+				q.qualify(object.Pkg())
+			}
+		}
+		return true
+	})
+}
+
+func jitCaptureDeclUnsupported(declaration *syntax.TypeDecl, p *pkgWriter) string {
+	localTypeParams := make(map[*types2.TypeName]bool)
+	self, _ := p.info.Defs[declaration.Name].(*types2.TypeName)
+	for _, field := range declaration.TParamList {
+		if field.Name == nil {
+			continue
+		}
+		if object, ok := p.info.Defs[field.Name].(*types2.TypeName); ok {
+			localTypeParams[object] = true
+		}
+	}
+	var unsupported string
+	syntax.Inspect(declaration.Type, func(node syntax.Node) bool {
+		if unsupported != "" {
+			return false
+		}
+		name, ok := node.(*syntax.Name)
+		if !ok {
+			return true
+		}
+		object, ok := p.info.Uses[name].(*types2.TypeName)
+		if !ok || object == self || object.Pkg() != p.curpkg {
+			return true
+		}
+		if _, isTypeParam := object.Type().(*types2.TypeParam); isTypeParam && !localTypeParams[object] {
+			unsupported = "type alias depends on an enclosing generic type parameter " + object.Name()
+			return false
+		}
+		if _, isLocalDeclaration := p.typDecls[object]; isLocalDeclaration {
+			if reason := jitCaptureUnsupported(object.Type(), p, make(map[types2.Type]bool)); reason != "" {
+				unsupported = "type alias depends on " + object.Name() + ": " + reason
+				return false
+			}
+		}
+		return true
+	})
+	return unsupported
+}
+
+// jitCaptureConstantLiteral emits a Go expression with the same constant
+// category and value as the source constant. ExactString alone is not always
+// valid Go syntax for rational constants, and it loses the default type of an
+// untyped rune if represented as an integer.
+func jitCaptureConstantLiteral(value constant.Value, typ types2.Type) (string, string) {
+	switch value.Kind() {
+	case constant.Bool:
+		return value.ExactString(), ""
+	case constant.String:
+		return strconv.Quote(constant.StringVal(value)), ""
+	case constant.Int:
+		if types2.Identical(typ, types2.Typ[types2.UntypedRune]) {
+			r, ok := constant.Int64Val(value)
+			if !ok || r < 0 || r > 0x10ffff {
+				return "", "untyped rune constant cannot be represented as a Go rune literal"
+			}
+			return strconv.QuoteRune(rune(r)), ""
+		}
+		return value.ExactString(), ""
+	case constant.Float:
+		literal, ok := jitCaptureFloatLiteral(value)
+		if !ok {
+			return "", "floating constant cannot be represented exactly in a JIT capture"
+		}
+		return literal, ""
+	case constant.Complex:
+		re, reOK := jitCaptureFloatLiteral(constant.Real(value))
+		im, imOK := jitCaptureFloatLiteral(constant.Imag(value))
+		if !reOK || !imOK {
+			return "", "complex constant cannot be represented exactly in a JIT capture"
+		}
+		return "complex(" + re + ", " + im + ")", ""
+	default:
+		return "", "unsupported constant kind in a JIT capture"
+	}
+}
+
+func jitCaptureFloatLiteral(value constant.Value) (string, bool) {
+	if value.Kind() == constant.Int {
+		return value.ExactString() + ".0", true
+	}
+	if value.Kind() != constant.Float {
+		return "", false
+	}
+	numerator, denominator := constant.Num(value), constant.Denom(value)
+	if numerator.Kind() != constant.Unknown && denominator.Kind() != constant.Unknown {
+		if denominator.ExactString() == "1" {
+			return numerator.ExactString() + ".0", true
+		}
+		// Both operands are untyped floating constants, so Go constant folding
+		// preserves the exact rational value rather than doing integer division.
+		return "(" + numerator.ExactString() + ".0 / " + denominator.ExactString() + ".0)", true
+	}
+	// Large binary floats may not have a practical rational representation.
+	// go/constant's exact hexadecimal form is itself a valid Go float literal.
+	return value.ExactString(), true
+}
+
+func newJITCaptureQualifier(p *pkgWriter, pos syntax.Pos) *jitCaptureQualifier {
+	q := &jitCaptureQualifier{pkg: p, used: make(map[string]bool), byPath: make(map[string]string)}
+	for node, scope := range p.info.Scopes {
+		if file, ok := node.(*syntax.File); ok && file.Pos().FileBase() == pos.FileBase() {
+			q.file = file
+			for _, name := range scope.Names() {
+				q.used[name] = true
+			}
+			break
+		}
+	}
+	for _, name := range p.curpkg.Scope().Names() {
+		q.used[name] = true
+	}
+	return q
+}
+
+func (q *jitCaptureQualifier) qualify(pkg *types2.Package) string {
+	if pkg == nil || pkg.Path() == q.pkg.curpkg.Path() {
+		return ""
+	}
+	q.capturePath[pkg.Path()] = true
+	if alias, ok := q.byPath[pkg.Path()]; ok {
+		if alias == "." {
+			return ""
+		}
+		return alias
+	}
+	if q.file != nil {
+		for _, declaration := range q.file.DeclList {
+			imp, ok := declaration.(*syntax.ImportDecl)
+			if !ok {
+				continue
+			}
+			name := q.pkg.info.PkgNameOf(imp)
+			if name == nil || name.Imported() == nil || name.Imported().Path() != pkg.Path() {
+				continue
+			}
+			alias := name.Name()
+			if alias == "_" {
+				alias = q.syntheticAlias(pkg.Path())
+			}
+			q.byPath[pkg.Path()] = alias
+			if alias == "." {
+				return ""
+			}
+			return alias
+		}
+	}
+	alias := q.syntheticAlias(pkg.Path())
+	q.byPath[pkg.Path()] = alias
+	return alias
+}
+
+func (q *jitCaptureQualifier) syntheticAlias(path string) string {
+	hash := uint64(14695981039346656037)
+	for i := 0; i < len(path); i++ {
+		hash ^= uint64(path[i])
+		hash *= 1099511628211
+	}
+	base := fmt.Sprintf("_jitpkg_%x", hash)
+	name := base
+	for suffix := 1; q.used[name]; suffix++ {
+		name = fmt.Sprintf("%s_%d", base, suffix)
+	}
+	q.used[name] = true
+	return name
+}
+
+func (q *jitCaptureQualifier) pairs() []string {
+	paths := make([]string, 0, len(q.capturePath))
+	for path := range q.capturePath {
+		paths = append(paths, path)
+	}
+	slices.Sort(paths)
+	pairs := make([]string, 0, 2*len(paths))
+	for _, path := range paths {
+		pairs = append(pairs, q.byPath[path], path)
+	}
+	return pairs
+}
+
+func jitCaptureUnsupported(typ types2.Type, p *pkgWriter, seen map[types2.Type]bool) string {
+	if typ == nil || seen[typ] {
+		return ""
+	}
+	seen[typ] = true
+	current := p.curpkg
+	unsupported := func(t types2.Type) string { return jitCaptureUnsupported(t, p, seen) }
+	switch typ := typ.(type) {
+	case *types2.TypeParam:
+		return "type depends on generic parameter " + typ.Obj().Name()
+	case *types2.Pointer:
+		return unsupported(typ.Elem())
+	case *types2.Array:
+		return unsupported(typ.Elem())
+	case *types2.Slice:
+		return unsupported(typ.Elem())
+	case *types2.Map:
+		if reason := unsupported(typ.Key()); reason != "" {
+			return reason
+		}
+		return unsupported(typ.Elem())
+	case *types2.Chan:
+		return unsupported(typ.Elem())
+	case *types2.Tuple:
+		for i := 0; i < typ.Len(); i++ {
+			if reason := unsupported(typ.At(i).Type()); reason != "" {
+				return reason
+			}
+		}
+	case *types2.Signature:
+		if typ.Recv() != nil {
+			if reason := unsupported(typ.Recv().Type()); reason != "" {
+				return reason
+			}
+		}
+		if reason := unsupported(typ.Params()); reason != "" {
+			return reason
+		}
+		return unsupported(typ.Results())
+	case *types2.Struct:
+		for i := 0; i < typ.NumFields(); i++ {
+			field := typ.Field(i)
+			if field.Pkg() != nil && field.Pkg() != current && !field.Exported() {
+				return "type contains an inaccessible field from package " + field.Pkg().Path()
+			}
+			if reason := unsupported(field.Type()); reason != "" {
+				return reason
+			}
+		}
+	case *types2.Interface:
+		for i := 0; i < typ.NumExplicitMethods(); i++ {
+			method := typ.ExplicitMethod(i)
+			if method.Pkg() != nil && method.Pkg() != current && !method.Exported() {
+				return "type contains an inaccessible method from package " + method.Pkg().Path()
+			}
+			if reason := unsupported(method.Type()); reason != "" {
+				return reason
+			}
+		}
+		for i := 0; i < typ.NumEmbeddeds(); i++ {
+			if reason := unsupported(typ.EmbeddedType(i)); reason != "" {
+				return reason
+			}
+		}
+	case *types2.Named:
+		obj := typ.Obj()
+		if obj.Pkg() != nil && obj.Pkg() != current && !obj.Exported() {
+			return "type is unexported from package " + obj.Pkg().Path()
+		}
+		if obj.Pkg() == current {
+			if declaration, ok := p.typDecls[obj]; ok && declaration.gen != 0 {
+				return "variable uses a function-local defined type whose Go type identity cannot be recreated in a JIT function"
+			}
+		}
+		if args := typ.TypeArgs(); args != nil {
+			for i := 0; i < args.Len(); i++ {
+				if reason := unsupported(args.At(i)); reason != "" {
+					return reason
+				}
+			}
+		}
+	case *types2.Alias:
+		obj := typ.Obj()
+		if obj.Pkg() != nil && obj.Pkg() != current && !obj.Exported() {
+			return "type alias is unexported from package " + obj.Pkg().Path()
+		}
+		if obj.Pkg() == current {
+			if _, ok := p.typDecls[obj]; ok {
+				if reason := unsupported(typ.Rhs()); reason != "" {
+					return reason
+				}
+			}
+		}
+		if args := typ.TypeArgs(); args != nil {
+			for i := 0; i < args.Len(); i++ {
+				if reason := unsupported(args.At(i)); reason != "" {
+					return reason
+				}
+			}
+		}
+	case *types2.Union:
+		for i := 0; i < typ.Len(); i++ {
+			if reason := unsupported(typ.Term(i).Type()); reason != "" {
+				return reason
+			}
+		}
+	}
+	return ""
+}
+
+func (w *writer) jitCaptureExpr(pos syntax.Pos, targets jitEvalCaptureTargets, capture jitCaptureInfo) {
+	switch capture.kind {
+	case jitCaptureValue:
+		if targets.value == nil {
+			w.p.fatalf(pos, "jit package is missing CaptureValue compiler support")
+			return
+		}
+		w.Code(exprCall)
+		w.Bool(false) // not a method call
+		w.Bool(true)  // instantiated generic function
+		w.pos(pos)
+		w.funcInst(targets.value, []types2.Type{capture.variable.Type()})
+		w.pos(pos)
+		w.Sync(pkgbits.SyncMultiExpr)
+		w.Bool(false) // N:N assignment
+		w.Len(4 + len(capture.imports))
+		w.stringConst(pos, capture.variable.Name())
+		w.stringConst(pos, capture.typeExpr)
+		w.Code(exprUnaryOp)
+		w.op(unOps[syntax.And])
+		w.pos(pos)
+		w.Code(exprLocal)
+		w.useLocal(pos, capture.variable)
+		w.stringConst(pos, capture.unsupported)
+		for _, value := range capture.imports {
+			w.stringConst(pos, value)
+		}
+		w.Bool(false) // no ellipsis
+	case jitCaptureConstant:
+		w.Code(exprCall)
+		w.Bool(false) // not a method call
+		w.Bool(false) // not an instantiated function
+		w.Code(exprGlobal)
+		w.obj(targets.constant, nil)
+		w.pos(pos)
+		w.Sync(pkgbits.SyncMultiExpr)
+		w.Bool(false) // N:N assignment
+		w.Len(5 + len(capture.imports))
+		w.stringConst(pos, capture.object.Name())
+		w.stringConst(pos, capture.typeExpr)
+		w.stringConst(pos, capture.literal)
+		w.boolConst(pos, capture.typed)
+		w.stringConst(pos, capture.unsupported)
+		for _, value := range capture.imports {
+			w.stringConst(pos, value)
+		}
+		w.Bool(false) // no ellipsis
+	case jitCaptureTypeAlias:
+		w.Code(exprCall)
+		w.Bool(false) // not a method call
+		w.Bool(false) // not an instantiated function
+		w.Code(exprGlobal)
+		w.obj(targets.typeAlias, nil)
+		w.pos(pos)
+		w.Sync(pkgbits.SyncMultiExpr)
+		w.Bool(false) // N:N assignment
+		w.Len(3 + len(capture.imports))
+		w.stringConst(pos, capture.object.Name())
+		w.stringConst(pos, capture.declaration)
+		w.stringConst(pos, capture.unsupported)
+		for _, value := range capture.imports {
+			w.stringConst(pos, value)
+		}
+		w.Bool(false) // no ellipsis
+	default:
+		w.p.fatalf(pos, "unknown JIT capture kind %d", capture.kind)
+	}
 }
 
 // isPkgQual reports whether the given selector expression is a

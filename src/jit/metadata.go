@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"cmd/compile/publicinternal/jitmeta"
@@ -20,9 +21,13 @@ import (
 // Go compiler for a package that imports jit.
 type BuildMetadata = jitmeta.BuildMetadata
 
-// PackageExport contains the compiler export data and archive for one
-// build-selected package.
+// PackageExport contains code-free compiler export data for one build-selected
+// package.
 type PackageExport = jitmeta.PackageExport
+
+// Declaration is one package-scope declaration preserved for runtime
+// compilation in the same package context.
+type Declaration = jitmeta.Declaration
 
 // LinkKind identifies the kind of Go object retained by a link reference.
 type LinkKind string
@@ -31,6 +36,7 @@ const (
 	FunctionLink LinkKind = "function"
 	VariableLink LinkKind = "variable"
 	TypeLink     LinkKind = "type"
+	ITableLink   LinkKind = "itab"
 )
 
 // LinkReference is emitted into the host package as an ordinary Go reference.
@@ -46,13 +52,16 @@ type LinkReference struct {
 // LinkedSymbol describes a resolved function, package variable, or runtime
 // type descriptor in the final executable.
 type LinkedSymbol struct {
-	PackagePath string
-	Name        string
-	Kind        LinkKind
-	Address     uintptr
-	PC          uintptr
-	Type        reflect.Type
-	Value       any
+	PackagePath  string
+	Name         string
+	Kind         LinkKind
+	ABI          uint16
+	Address      uintptr
+	PC           uintptr
+	TypeAddress  uintptr
+	Type         reflect.Type
+	Value        any
+	FromManifest bool
 }
 
 // LinkMetadata contains runtime-resolved addresses for symbols retained by
@@ -65,14 +74,29 @@ type LinkMetadata struct {
 // one host package. Treat its exported slices as read-only. Values for
 // VariableLink symbols point at the package's live mutable storage.
 type Metadata struct {
-	Build BuildMetadata
-	Link  LinkMetadata
+	Build            BuildMetadata
+	Link             LinkMetadata
+	manifestPackages map[string][8]byte
+	manifestSymbols  map[linkerSymbolKey]LinkedSymbol
+}
+
+type linkerSymbolKey struct {
+	packagePath string
+	name        string
+	abi         uint16
 }
 
 var metadataRegistry = struct {
 	sync.RWMutex
 	byPackage map[string]*Metadata
 }{byPackage: make(map[string]*Metadata)}
+
+var linkerManifestCache struct {
+	sync.Once
+	packages []linkerManifestPackage
+	symbols  []LinkedSymbol
+	err      error
+}
 
 // TypeFor returns the runtime type descriptor for T. It is also used by the
 // compiler-generated link table to keep named package types reachable.
@@ -120,14 +144,228 @@ func RegisterBuildMetadata(encoded string, refs []LinkReference) {
 	if len(seen) != len(declared) {
 		panic(fmt.Errorf("jit: linker emitted %d references for %d metadata symbols", len(seen), len(declared)))
 	}
+	manifestPackages, manifestSymbols, err := cachedLinkerManifest()
+	if err != nil {
+		panic(err)
+	}
+	// Registration is also exposed to compiler-generated init functions in
+	// packages that can initialize concurrently in unusual embedded runtimes.
+	// Keep the process-wide decoded linker snapshot immutable: reflected types
+	// below are package-specific enrichments of a private copy.
+	manifestSymbols = append([]LinkedSymbol(nil), manifestSymbols...)
+	packageFingerprints, err := manifestPackagesForBuild(bundle.Build, manifestPackages)
+	if err != nil {
+		panic(err)
+	}
+	if err := validateResolvedLinkReferences(resolved, manifestSymbols); err != nil {
+		panic(err)
+	}
+	manifestSymbols = filterManifestSymbols(manifestSymbols, packageFingerprints)
+	reflectedTypes := make(map[string]reflect.Type, len(resolved))
+	for _, symbol := range resolved {
+		if symbol.Type == nil {
+			continue
+		}
+		key := symbolKey(symbol.PackagePath, symbol.Name, symbol.Kind)
+		if previous := reflectedTypes[key]; previous != nil && previous != symbol.Type {
+			panic(fmt.Errorf("jit: conflicting reflected type identities for %s.%s", symbol.PackagePath, symbol.Name))
+		}
+		reflectedTypes[key] = symbol.Type
+	}
+	for i := range manifestSymbols {
+		if typ := reflectedTypes[symbolKey(manifestSymbols[i].PackagePath, manifestSymbols[i].Name, manifestSymbols[i].Kind)]; typ != nil {
+			manifestSymbols[i].Type = typ
+		}
+	}
+	manifestIndex := make(map[linkerSymbolKey]LinkedSymbol, len(manifestSymbols))
+	for _, symbol := range manifestSymbols {
+		key := linkerSymbolKey{packagePath: symbol.PackagePath, name: symbol.Name, abi: symbol.ABI}
+		if _, exists := manifestIndex[key]; exists {
+			panic(fmt.Errorf("jit: ambiguous linker manifest identity %s.%s ABI %d", symbol.PackagePath, symbol.Name, symbol.ABI))
+		}
+		manifestIndex[key] = symbol
+	}
+	resolved = append(resolved, manifestSymbols...)
 
-	metadata := &Metadata{Build: bundle.Build, Link: LinkMetadata{Symbols: resolved}}
+	metadata := &Metadata{
+		Build:            bundle.Build,
+		Link:             LinkMetadata{Symbols: resolved},
+		manifestPackages: packageFingerprints,
+		manifestSymbols:  manifestIndex,
+	}
 	metadataRegistry.Lock()
 	defer metadataRegistry.Unlock()
 	if _, exists := metadataRegistry.byPackage[bundle.Build.PackagePath]; exists {
 		panic(fmt.Errorf("jit: metadata already registered for package %q", bundle.Build.PackagePath))
 	}
 	metadataRegistry.byPackage[bundle.Build.PackagePath] = metadata
+}
+
+// validateResolvedLinkReferences proves that compiler-generated references
+// resolve to the exact addresses selected by cmd/link. The generated Go
+// references themselves keep those symbols reachable; this check binds their
+// resolved values to the runtime manifest before Eval can use either view.
+// A source type alias has no distinct linker descriptor, so a TypeLink with no
+// same-named manifest entry is allowed; aliases resolve to their target type.
+func validateResolvedLinkReferences(references, manifest []LinkedSymbol) error {
+	byIdentity := make(map[string][]LinkedSymbol, len(manifest))
+	for _, symbol := range manifest {
+		if !symbol.FromManifest {
+			continue
+		}
+		key := symbolKey(symbol.PackagePath, symbol.Name, symbol.Kind)
+		byIdentity[key] = append(byIdentity[key], symbol)
+	}
+	for _, ref := range references {
+		candidates := byIdentity[symbolKey(ref.PackagePath, ref.Name, ref.Kind)]
+		if len(candidates) == 0 && ref.Kind == FunctionLink {
+			if alias := methodReceiverAlias(ref.Name); alias != "" {
+				candidates = byIdentity[symbolKey(ref.PackagePath, alias, ref.Kind)]
+			}
+		}
+		if len(candidates) == 0 {
+			if ref.Kind == TypeLink {
+				continue
+			}
+			var aliases []string
+			for _, symbol := range manifest {
+				if symbol.FromManifest && symbol.Kind == ref.Kind && symbol.Address == ref.Address {
+					aliases = append(aliases, symbol.PackagePath+"."+symbol.Name)
+				}
+			}
+			if len(aliases) != 0 {
+				return fmt.Errorf("jit: compiler link reference %s.%s (%s) resolves to linker symbol alias %s", ref.PackagePath, ref.Name, ref.Kind, strings.Join(aliases, ", "))
+			}
+			pcName := ""
+			if ref.PC != 0 {
+				if fn := runtime.FuncForPC(ref.PC); fn != nil {
+					pcName = fn.Name()
+				}
+			}
+			return fmt.Errorf("jit: compiler link reference %s.%s (%s) at %#x (%s) is absent from the linker manifest", ref.PackagePath, ref.Name, ref.Kind, ref.Address, pcName)
+		}
+		matchedAddress := false
+		for _, candidate := range candidates {
+			if candidate.Address != ref.Address {
+				continue
+			}
+			matchedAddress = true
+			if candidate.Type != nil && ref.Type != nil && candidate.Type != ref.Type {
+				return fmt.Errorf("jit: compiler link reference %s.%s has a different reflected type from the linker manifest", ref.PackagePath, ref.Name)
+			}
+			break
+		}
+		if !matchedAddress {
+			return fmt.Errorf("jit: compiler link reference %s.%s does not resolve to a linker-selected address", ref.PackagePath, ref.Name)
+		}
+	}
+	return nil
+}
+
+func cachedLinkerManifest() ([]linkerManifestPackage, []LinkedSymbol, error) {
+	linkerManifestCache.Do(func() {
+		linkerManifestCache.packages, linkerManifestCache.symbols, linkerManifestCache.err = loadLinkerManifest()
+	})
+	return linkerManifestCache.packages, linkerManifestCache.symbols, linkerManifestCache.err
+}
+
+func validateManifestForBuild(build BuildMetadata, manifest []linkerManifestPackage) error {
+	_, err := manifestPackagesForBuild(build, manifest)
+	return err
+}
+
+func manifestPackagesForBuild(build BuildMetadata, manifest []linkerManifestPackage) (map[string][8]byte, error) {
+	if build.CompilerVersion != runtime.Version() {
+		return nil, fmt.Errorf("jit: compiler metadata version %q does not match runtime %q", build.CompilerVersion, runtime.Version())
+	}
+	manifestByPath := make(map[string][8]byte, len(manifest))
+	for _, pkg := range manifest {
+		if pkg.path == "" || pkg.fingerprint == [8]byte{} {
+			return nil, fmt.Errorf("jit: linker manifest contains an incomplete package identity")
+		}
+		if _, exists := manifestByPath[pkg.path]; exists {
+			return nil, fmt.Errorf("jit: linker manifest contains duplicate package %q", pkg.path)
+		}
+		manifestByPath[pkg.path] = pkg.fingerprint
+	}
+	if _, ok := manifestByPath[build.PackagePath]; !ok {
+		return nil, fmt.Errorf("jit: linker manifest is missing Eval caller package %q", build.PackagePath)
+	}
+	exports := make(map[string]PackageExport, len(build.Packages))
+	for _, pkg := range build.Packages {
+		if pkg.Path == "" || pkg.Fingerprint == [8]byte{} {
+			return nil, fmt.Errorf("jit: compiler metadata contains an incomplete package identity")
+		}
+		if _, exists := exports[pkg.Path]; exists {
+			return nil, fmt.Errorf("jit: compiler metadata contains duplicate package %q", pkg.Path)
+		}
+		exports[pkg.Path] = pkg
+	}
+	// The object format records package fingerprints and calling ABI, but does
+	// not carry a full type signature on each relocation. Bind the complete
+	// export closure visible to Eval to the exact package fingerprints selected
+	// by cmd/link before resolving any package/name/ABI symbol identity.
+	checked := make(map[string]bool, len(exports)+1)
+	var checkPackage func(string) error
+	checkPackage = func(path string) error {
+		if checked[path] {
+			return nil
+		}
+		pkg, ok := exports[path]
+		if !ok {
+			return fmt.Errorf("jit: compiler metadata has no export data for linked dependency %q", path)
+		}
+		fingerprint, ok := manifestByPath[path]
+		if !ok {
+			return fmt.Errorf("jit: linker manifest is missing Eval package dependency %q", path)
+		}
+		if fingerprint != pkg.Fingerprint {
+			return fmt.Errorf("jit: linker manifest fingerprint for package %q does not match compiler export metadata", path)
+		}
+		checked[path] = true
+		for _, dependency := range pkg.Dependencies {
+			if dependency.Path == "builtin" || dependency.Path == "unsafe" {
+				continue
+			}
+			if err := checkPackage(dependency.Path); err != nil {
+				return fmt.Errorf("jit: validate dependency of package %q: %w", path, err)
+			}
+		}
+		return nil
+	}
+	checked[build.PackagePath] = true
+	for _, file := range build.Files {
+		for _, imp := range file.Imports {
+			if imp.Alias == "_" || imp.Path == "unsafe" || imp.Path == "C" {
+				continue
+			}
+			if err := checkPackage(imp.Path); err != nil {
+				return nil, fmt.Errorf("jit: validate Eval-visible package %q: %w", imp.Path, err)
+			}
+		}
+	}
+	result := make(map[string][8]byte, len(checked))
+	for path := range checked {
+		fingerprint, ok := manifestByPath[path]
+		if !ok {
+			return nil, fmt.Errorf("jit: linker manifest is missing Eval package %q", path)
+		}
+		if pkg, hasExport := exports[path]; hasExport && fingerprint != pkg.Fingerprint {
+			return nil, fmt.Errorf("jit: linker manifest fingerprint for package %q does not match compiler export metadata", path)
+		}
+		result[path] = fingerprint
+	}
+	return result, nil
+}
+
+func filterManifestSymbols(symbols []LinkedSymbol, packages map[string][8]byte) []LinkedSymbol {
+	filtered := make([]LinkedSymbol, 0, len(symbols))
+	for _, symbol := range symbols {
+		if _, allowed := packages[symbol.PackagePath]; allowed {
+			filtered = append(filtered, symbol)
+		}
+	}
+	return filtered
 }
 
 // MetadataFor returns the metadata registered for packagePath.
@@ -165,6 +403,101 @@ func (m *Metadata) LookupSymbol(packagePath, name string) (LinkedSymbol, bool) {
 		}
 	}
 	return LinkedSymbol{}, false
+}
+
+// LookupLinkerSymbol returns the exact linker-selected package symbol for the
+// ABI encoded in a compiled object relocation.
+func (m *Metadata) LookupLinkerSymbol(packagePath, name string, abi uint16) (LinkedSymbol, bool) {
+	if m == nil {
+		return LinkedSymbol{}, false
+	}
+	if m.manifestPackages != nil {
+		if _, allowed := m.manifestPackages[packagePath]; !allowed {
+			return LinkedSymbol{}, false
+		}
+	}
+	if m.manifestSymbols != nil {
+		key := linkerSymbolKey{packagePath: packagePath, name: name, abi: abi}
+		if symbol, ok := m.manifestSymbols[key]; ok {
+			return symbol, true
+		}
+		// Compiler object method references can use the unwrapped receiver
+		// spelling while the final linker identity uses the pointer receiver
+		// spelling (or vice versa). Resolve only the same method with the same
+		// ABI, and only when the exact identity is absent.
+		if alias := methodReceiverAlias(name); alias != "" {
+			symbol, ok := m.manifestSymbols[linkerSymbolKey{packagePath: packagePath, name: alias, abi: abi}]
+			return symbol, ok && symbol.Kind == FunctionLink
+		}
+		return LinkedSymbol{}, false
+	}
+	for _, symbol := range m.Link.Symbols {
+		if symbol.FromManifest && symbol.PackagePath == packagePath && symbol.Name == name && symbol.ABI == abi {
+			return symbol, true
+		}
+	}
+	if alias := methodReceiverAlias(name); alias != "" {
+		for _, symbol := range m.Link.Symbols {
+			if symbol.FromManifest && symbol.PackagePath == packagePath && symbol.Name == alias && symbol.ABI == abi && symbol.Kind == FunctionLink {
+				return symbol, true
+			}
+		}
+	}
+	return LinkedSymbol{}, false
+}
+
+// lookupUnnamedType resolves a compiler-emitted unnamed type descriptor to an
+// identical type already linked into the host executable. Go's runtime uses
+// descriptor pointer identity for interface method signatures and reflection,
+// so carrying a duplicate descriptor in a JIT image would break assertions
+// even when its structure is identical.
+func (m *Metadata) lookupUnnamedType(typeString string) (LinkedSymbol, bool, error) {
+	if m == nil || typeString == "" {
+		return LinkedSymbol{}, false, nil
+	}
+	var match LinkedSymbol
+	for _, symbol := range m.Link.Symbols {
+		if symbol.Kind != TypeLink || symbol.Type == nil || symbol.Type.Name() != "" || symbol.Type.String() != typeString {
+			continue
+		}
+		if match.Address != 0 && (match.Address != symbol.Address || match.Type != symbol.Type) {
+			return LinkedSymbol{}, false, fmt.Errorf("jit: host manifest has ambiguous unnamed type identity %q", typeString)
+		}
+		match = symbol
+	}
+	if match.Address == 0 {
+		// Predeclared and structural runtime types are not necessarily listed
+		// in the package link manifest. Resolve their canonical descriptors
+		// from the running executable so JIT interfaces use the same Go type
+		// identity as statically compiled code.
+		typ, ok := runtimeTypeFromExpr(typeString)
+		if !ok || typ == nil || typ.Name() != "" || typ.String() != typeString {
+			return LinkedSymbol{}, false, nil
+		}
+		address, ok := runtimeTypeAddress(typeString)
+		if !ok || address == 0 {
+			return LinkedSymbol{}, false, nil
+		}
+		return LinkedSymbol{
+			PackagePath: "runtime", Name: "type:" + typeString, Kind: TypeLink,
+			Address: address, TypeAddress: address, Type: typ,
+		}, true, nil
+	}
+	return match, true, nil
+}
+
+func methodReceiverAlias(name string) string {
+	if strings.HasPrefix(name, "(*") {
+		if close := strings.Index(name, ")."); close > 2 {
+			return name[2:close] + name[close+1:]
+		}
+		return ""
+	}
+	dot := strings.LastIndexByte(name, '.')
+	if dot <= 0 || dot == len(name)-1 || strings.ContainsAny(name[:dot], "()") {
+		return ""
+	}
+	return "(*" + name[:dot] + ")" + name[dot:]
 }
 
 // ContextForFile returns the package name and imports recorded for one source

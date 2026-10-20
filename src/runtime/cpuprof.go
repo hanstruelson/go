@@ -95,6 +95,10 @@ func setCPUProfileRate(hz int, warn bool) {
 		cpuprof.log = newProfBuf(1, profBufWordCount, profBufTagCount)
 		hdr := [1]uint64{uint64(hz)}
 		cpuprof.log.write(nil, nanotime(), hdr[:], nil)
+		// Samples store raw PCs asynchronously, including after the stack
+		// that produced each sample has returned. Keep all current and future
+		// JIT modules alive before enabling the sampling signal.
+		pinAllJITModules()
 		setcpuprofilerate(int32(hz))
 	} else if cpuprof.on {
 		setcpuprofilerate(0)

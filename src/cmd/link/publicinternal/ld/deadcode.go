@@ -43,6 +43,7 @@ func (d *deadcodePass) init() {
 		d.ldr.Reachparent = make([]loader.Sym, d.ldr.NSym())
 	}
 	d.dynlink = d.ctxt.DynlinkingGo()
+	d.markJITPackageRoots()
 	if d.ctxt.BuildMode == BuildModeShared {
 		// Mark all symbols defined in this library as reachable when
 		// building a shared library.
@@ -129,6 +130,93 @@ func (d *deadcodePass) init() {
 	}
 	if d.ctxt.mainInittasks != 0 {
 		d.mark(d.ctxt.mainInittasks, 0)
+	}
+}
+
+// markJITPackageRoots retains the package definitions that runtime Eval may
+// resolve by name. The compiler records only imports visible in files that
+// import jit; the linker's ordinary import graph supplies their transitive
+// dependencies. Package-wide rooting is deliberately conservative: the
+// snippet is parsed after linking, so static reachability cannot predict
+// which declaration it will name.
+func (d *deadcodePass) markJITPackageRoots() {
+	packages, err := d.ldr.JITScopePackages()
+	if err != nil {
+		d.ctxt.Errorf(0, "invalid JIT package roots: %v", err)
+		return
+	}
+	owners := d.ldr.JITScopeOwners()
+	if len(packages) == 0 && len(owners) == 0 {
+		return
+	}
+	if !d.ctxt.IsLinux() || !d.ctxt.IsAMD64() || d.ctxt.LinkMode != LinkInternal || d.ctxt.linkShared ||
+		(d.ctxt.BuildMode != BuildModeExe && d.ctxt.BuildMode != BuildModePIE) {
+		d.ctxt.Errorf(0, "JIT Eval package roots are supported only for statically linked Linux/amd64 executables")
+		return
+	}
+	for _, pkg := range packages {
+		lib := d.ctxt.LibraryByPkg[pkg.Pkg]
+		if lib == nil {
+			continue
+		}
+		if pkg.Fingerprint.IsZero() || lib.Fingerprint.IsZero() || lib.Fingerprint != pkg.Fingerprint {
+			d.ctxt.Errorf(0, "JIT Eval package %q fingerprint does not match the selected linked package", pkg.Pkg)
+		}
+	}
+
+	seen := make(map[string]bool)
+	linked := make(map[string]bool)
+	var visit func(string)
+	visit = func(pkg string) {
+		if seen[pkg] {
+			return
+		}
+		seen[pkg] = true
+		lib := d.ctxt.LibraryByPkg[pkg]
+		if lib == nil {
+			d.ctxt.Errorf(0, "JIT Eval package %q is not present in the static link", pkg)
+			return
+		}
+		if lib.Shlib != "" {
+			d.ctxt.Errorf(0, "JIT Eval package %q is provided by shared library %q", pkg, lib.Shlib)
+			return
+		}
+		linked[pkg] = true
+		for _, imported := range lib.Imports {
+			if imported == nil {
+				d.ctxt.Errorf(0, "JIT Eval package %q has an unresolved package dependency", pkg)
+				continue
+			}
+			visit(imported.Pkg)
+		}
+	}
+	for _, pkg := range packages {
+		visit(pkg.Pkg)
+	}
+	// Keep the Eval caller package's definitions available by exact symbol
+	// identity. Do not traverse all of its imports here: imports are file-local
+	// in Go, and only the JITScope block above describes the Eval import scope.
+	for _, pkg := range owners {
+		lib := d.ctxt.LibraryByPkg[pkg]
+		if lib == nil {
+			d.ctxt.Errorf(0, "JIT Eval owner package %q is not present in the static link", pkg)
+			continue
+		}
+		if lib.Shlib != "" {
+			d.ctxt.Errorf(0, "JIT Eval owner package %q is provided by shared library %q", pkg, lib.Shlib)
+			continue
+		}
+		if lib.Fingerprint.IsZero() {
+			d.ctxt.Errorf(0, "JIT Eval owner package %q has no selected package fingerprint", pkg)
+		}
+		linked[pkg] = true
+	}
+	d.ctxt.jitPackages = linked
+	for i := 1; i < d.ldr.NDef(); i++ {
+		s := loader.Sym(i)
+		if linked[d.ldr.SymPkg(s)] {
+			d.mark(s, 0)
+		}
 	}
 }
 

@@ -9,8 +9,8 @@ package types_test
 
 import (
 	"go/build"
-	"publicinternal/testenv"
 	"os"
+	"publicinternal/testenv"
 	"testing"
 )
 

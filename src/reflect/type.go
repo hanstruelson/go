@@ -16,11 +16,14 @@
 package reflect
 
 import (
+	"bytes"
+	"iter"
 	"publicinternal/abi"
 	"publicinternal/bytealg"
 	"publicinternal/goarch"
-	"iter"
+	"publicinternal/stringslite"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"unicode"
@@ -564,22 +567,46 @@ func resolveTextOff(rtype unsafe.Pointer, off int32) unsafe.Pointer
 //go:noescape
 func addReflectOff(ptr unsafe.Pointer) int32
 
-// resolveReflectName adds a name to the reflection lookup map in the runtime.
-// It returns a new nameOff that can be used to refer to the pointer.
-func resolveReflectName(n abi.Name) aNameOff {
+// jitReflectOffsetBuilder gives offsets in one reflect-created type descriptor
+// local identities. The runtime stores their targets beside that descriptor,
+// where the GC can keep them live without a process-global root.
+type jitReflectOffsetBuilder struct {
+	offsets []runtime.JITReflectOffset
+}
+
+func (b *jitReflectOffsetBuilder) add(kind uint8, ptr unsafe.Pointer) int32 {
+	if b == nil {
+		return addReflectOff(ptr)
+	}
+	if len(b.offsets) > int(^uint32(0)>>1)-2 {
+		panic("reflect: too many JIT reflection offsets")
+	}
+	b.offsets = append(b.offsets, runtime.JITReflectOffset{Target: ptr, Kind: kind})
+	return -int32(len(b.offsets) + 1)
+}
+
+// resolveReflectName adds a name to either the ordinary runtime reflection
+// offset map or the local offset table for a JIT-dependent reflected type.
+func resolveReflectName(n abi.Name, offsets *jitReflectOffsetBuilder) aNameOff {
+	if offsets != nil {
+		return aNameOff(offsets.add(runtime.JITReflectNameOffset, unsafe.Pointer(n.Bytes)))
+	}
 	return aNameOff(addReflectOff(unsafe.Pointer(n.Bytes)))
 }
 
-// resolveReflectType adds a *rtype to the reflection lookup map in the runtime.
-// It returns a new typeOff that can be used to refer to the pointer.
-func resolveReflectType(t *abi.Type) aTypeOff {
+// resolveReflectType adds a type descriptor to the appropriate offset table.
+func resolveReflectType(t *abi.Type, offsets *jitReflectOffsetBuilder) aTypeOff {
+	if offsets != nil {
+		return aTypeOff(offsets.add(runtime.JITReflectTypeOffset, unsafe.Pointer(t)))
+	}
 	return aTypeOff(addReflectOff(unsafe.Pointer(t)))
 }
 
-// resolveReflectText adds a function pointer to the reflection lookup map in
-// the runtime. It returns a new textOff that can be used to refer to the
-// pointer.
-func resolveReflectText(ptr unsafe.Pointer) aTextOff {
+// resolveReflectText adds a function pointer to the appropriate offset table.
+func resolveReflectText(ptr unsafe.Pointer, offsets *jitReflectOffsetBuilder) aTextOff {
+	if offsets != nil {
+		return aTextOff(offsets.add(runtime.JITReflectTextOffset, ptr))
+	}
 	return aTextOff(addReflectOff(ptr))
 }
 
@@ -602,9 +629,9 @@ func textOffFor(t *abi.Type, off aTextOff) unsafe.Pointer {
 func (t *rtype) String() string {
 	s := t.nameOff(t.t.Str).Name()
 	if t.t.TFlag&abi.TFlagExtraStar != 0 {
-		return s[1:]
+		s = s[1:]
 	}
-	return s
+	return stableTypeString(&t.t, s)
 }
 
 func (t *rtype) Size() uintptr { return t.t.Size() }
@@ -653,7 +680,7 @@ func (t *rtype) Method(i int) (m Method) {
 	}
 	p := methods[i]
 	pname := t.nameOff(p.Name)
-	m.Name = pname.Name()
+	m.Name = stableTypeString(&t.t, pname.Name())
 	fl := flag(Func)
 	mtyp := t.typeOff(p.Mtyp)
 	ft := (*funcType)(unsafe.Pointer(mtyp))
@@ -739,7 +766,17 @@ func (t *rtype) PkgPath() string {
 	if ut == nil {
 		return ""
 	}
-	return t.nameOff(ut.PkgPath).Name()
+	return stableTypeString(&t.t, t.nameOff(ut.PkgPath).Name())
+}
+
+// stableTypeString detaches strings that are views into JIT image metadata.
+// A string can outlive the reflect.Type that produced it; copying lets that
+// string remain valid without retaining the entire executable module.
+func stableTypeString(t *abi.Type, s string) string {
+	if hasJITType(t) {
+		return stringslite.Clone(s)
+	}
+	return s
 }
 
 func pkgPathFor(t *abi.Type) string {
@@ -1055,11 +1092,11 @@ func (t *interfaceType) Method(i int) (m Method) {
 	}
 	p := &t.Methods[i]
 	pname := t.nameOff(p.Name)
-	m.Name = pname.Name()
+	m.Name = stableTypeString(&t.Type, pname.Name())
 	if !pname.IsExported() {
-		m.PkgPath = pkgPath(pname)
+		m.PkgPath = stableTypeString(&t.Type, pkgPath(pname))
 		if m.PkgPath == "" {
-			m.PkgPath = t.PkgPath.Name()
+			m.PkgPath = stableTypeString(&t.Type, t.PkgPath.Name())
 		}
 	}
 	m.Type = toType(t.typeOff(p.Typ))
@@ -1194,13 +1231,13 @@ func (t *structType) Field(i int) (f StructField) {
 	}
 	p := &t.Fields[i]
 	f.Type = toType(p.Typ)
-	f.Name = p.Name.Name()
+	f.Name = stableTypeString(&t.Type, p.Name.Name())
 	f.Anonymous = p.Embedded()
 	if !p.Name.IsExported() {
-		f.PkgPath = t.PkgPath.Name()
+		f.PkgPath = stableTypeString(&t.Type, t.PkgPath.Name())
 	}
 	if tag := p.Name.Tag(); tag != "" {
-		f.Tag = StructTag(tag)
+		f.Tag = StructTag(stableTypeString(&t.Type, tag))
 	}
 	f.Offset = p.Offset
 
@@ -1398,6 +1435,171 @@ func TypeFor[T any]() Type {
 	return toRType(abi.TypeFor[T]())
 }
 
+// hasJITType reports whether t is stored in a reclaimable JIT image or is a
+// reflect-created type that depends on one. Such types cannot be retained by
+// reflect's process-global structural caches: those caches have no eviction
+// point at which they could release the JIT module owner.
+func hasJITType(t *abi.Type) bool {
+	return t != nil && runtime.JITTypeNeedsOwner(unsafe.Pointer(t))
+}
+
+func jitOffsetsForType(offsets *jitReflectOffsetBuilder, typ *abi.Type) *jitReflectOffsetBuilder {
+	if hasJITType(typ) {
+		return offsets
+	}
+	return nil
+}
+
+// jitReflectCacheKey encodes the structural identity of constructor inputs.
+// Unnamed Go types are identical by shape, while named dynamic types are
+// distinct per module generation even when their package path and name match.
+// The serialized key contains no descriptor pointers, so the global weak
+// cache cannot keep a descriptor or accidentally confuse a recycled mapping
+// address with its previous generation.
+func jitReflectCacheKey(extra uintptr, types []*abi.Type, text string) []byte {
+	key := make([]byte, 0, 16+len(text)+len(types)*16)
+	key = appendJITIdentityUint(key, uint64(extra))
+	key = appendJITIdentityString(key, text)
+	key = appendVarint(key, uintptr(len(types)))
+	for _, typ := range types {
+		key = appendJITTypeIdentity(key, typ, make(map[*abi.Type]bool))
+	}
+	return key
+}
+
+func appendJITIdentityUint(dst []byte, value uint64) []byte {
+	for i := 0; i < 8; i++ {
+		dst = append(dst, byte(value))
+		value >>= 8
+	}
+	return dst
+}
+
+func appendJITIdentityString(dst []byte, value string) []byte {
+	dst = appendVarint(dst, uintptr(len(value)))
+	return append(dst, value...)
+}
+
+func appendJITTypeIdentity(dst []byte, typ *abi.Type, active map[*abi.Type]bool) []byte {
+	if typ == nil {
+		return append(dst, 0)
+	}
+	if typ.TFlag&abi.TFlagNamed != 0 {
+		if generation, identity, ok := runtime.JITTypeIdentity(unsafe.Pointer(typ)); ok {
+			dst = append(dst, 'J')
+			dst = appendJITIdentityUint(dst, generation)
+			return appendJITIdentityUint(dst, identity)
+		}
+		rt := toRType(typ)
+		dst = append(dst, 'N')
+		dst = appendJITIdentityString(dst, rt.PkgPath())
+		return appendJITIdentityString(dst, rt.Name())
+	}
+	if active[typ] {
+		panic("reflect: recursive unnamed type in JIT cache identity")
+	}
+	active[typ] = true
+	defer delete(active, typ)
+	dst = append(dst, 'U', byte(typ.Kind()))
+	switch typ.Kind() {
+	case abi.Array:
+		t := (*abi.ArrayType)(unsafe.Pointer(typ))
+		dst = appendVarint(dst, t.Len)
+		return appendJITTypeIdentity(dst, t.Elem, active)
+	case abi.Chan:
+		t := (*abi.ChanType)(unsafe.Pointer(typ))
+		dst = appendVarint(dst, uintptr(t.Dir))
+		return appendJITTypeIdentity(dst, t.Elem, active)
+	case abi.Func:
+		t := (*abi.FuncType)(unsafe.Pointer(typ))
+		dst = appendVarint(dst, uintptr(t.NumIn()))
+		dst = appendVarint(dst, uintptr(t.NumOut()))
+		if t.IsVariadic() {
+			dst = append(dst, 1)
+		} else {
+			dst = append(dst, 0)
+		}
+		for _, parameter := range t.InSlice() {
+			dst = appendJITTypeIdentity(dst, parameter, active)
+		}
+		for _, result := range t.OutSlice() {
+			dst = appendJITTypeIdentity(dst, result, active)
+		}
+		return dst
+	case abi.Interface:
+		t := (*interfaceType)(unsafe.Pointer(typ))
+		dst = appendJITIdentityString(dst, t.PkgPath.Name())
+		methods := make([][]byte, len(t.Methods))
+		for i, method := range t.Methods {
+			name := t.nameOff(method.Name)
+			methodKey := appendJITIdentityString(nil, name.Name())
+			methodKey = appendJITIdentityString(methodKey, pkgPath(name))
+			methodKey = appendJITTypeIdentity(methodKey, t.typeOff(method.Typ), active)
+			methods[i] = methodKey
+		}
+		sort.Slice(methods, func(i, j int) bool { return bytes.Compare(methods[i], methods[j]) < 0 })
+		dst = appendVarint(dst, uintptr(len(methods)))
+		for _, method := range methods {
+			dst = appendVarint(dst, uintptr(len(method)))
+			dst = append(dst, method...)
+		}
+		return dst
+	case abi.Map:
+		t := (*abi.MapType)(unsafe.Pointer(typ))
+		dst = appendJITTypeIdentity(dst, t.Key, active)
+		return appendJITTypeIdentity(dst, t.Elem, active)
+	case abi.Pointer:
+		t := (*abi.PtrType)(unsafe.Pointer(typ))
+		return appendJITTypeIdentity(dst, t.Elem, active)
+	case abi.Slice:
+		t := (*abi.SliceType)(unsafe.Pointer(typ))
+		return appendJITTypeIdentity(dst, t.Elem, active)
+	case abi.Struct:
+		t := (*structType)(unsafe.Pointer(typ))
+		dst = appendJITIdentityString(dst, t.PkgPath.Name())
+		dst = appendVarint(dst, uintptr(len(t.Fields)))
+		for i := range t.Fields {
+			field := &t.Fields[i]
+			dst = appendJITIdentityString(dst, field.Name.Name())
+			dst = appendJITIdentityString(dst, pkgPath(field.Name))
+			dst = appendJITIdentityString(dst, field.Name.Tag())
+			if field.Embedded() {
+				dst = append(dst, 1)
+			} else {
+				dst = append(dst, 0)
+			}
+			dst = appendJITTypeIdentity(dst, field.Typ, active)
+		}
+		return dst
+	default:
+		return dst
+	}
+}
+
+func jitReflectTypeCache(kind Kind, key []byte, dependencies []*abi.Type, candidate *abi.Type) *abi.Type {
+	deps := make([]unsafe.Pointer, len(dependencies))
+	for i, dependency := range dependencies {
+		deps[i] = unsafe.Pointer(dependency)
+	}
+	result := runtime.JITReflectTypeCache(uint8(kind), key, deps, unsafe.Pointer(candidate))
+	if result == nil {
+		return nil
+	}
+	return (*abi.Type)(result)
+}
+
+func registerJITReflectType(typ *abi.Type, dependencies []*abi.Type, offsets *jitReflectOffsetBuilder) {
+	deps := make([]unsafe.Pointer, len(dependencies))
+	for i, dependency := range dependencies {
+		deps[i] = unsafe.Pointer(dependency)
+	}
+	var jitOffsets []runtime.JITReflectOffset
+	if offsets != nil {
+		jitOffsets = offsets.offsets
+	}
+	runtime.JITRegisterReflectType(unsafe.Pointer(typ), deps, jitOffsets)
+}
+
 // rtypeOf directly extracts the *rtype of the provided value.
 func rtypeOf(i any) *abi.Type {
 	return abi.TypeOf(i)
@@ -1428,10 +1630,19 @@ func (t *rtype) ptrTo() *abi.Type {
 	if at.PtrToThis != 0 {
 		return t.typeOff(at.PtrToThis)
 	}
+	jitDependent := hasJITType(at)
+	jitKey := jitReflectCacheKey(0, []*abi.Type{at}, "")
+	if jitDependent {
+		if cached := jitReflectTypeCache(Pointer, jitKey, []*abi.Type{at}, nil); cached != nil {
+			return cached
+		}
+	}
 
 	// Check the cache.
-	if pi, ok := ptrMap.Load(t); ok {
-		return &pi.(*ptrType).Type
+	if !jitDependent {
+		if pi, ok := ptrMap.Load(t); ok {
+			return &pi.(*ptrType).Type
+		}
 	}
 
 	// Look in known types.
@@ -1440,6 +1651,9 @@ func (t *rtype) ptrTo() *abi.Type {
 		p := (*ptrType)(unsafe.Pointer(tt))
 		if p.Elem != &t.t {
 			continue
+		}
+		if jitDependent {
+			return &p.Type
 		}
 		pi, _ := ptrMap.LoadOrStore(t, p)
 		return &pi.(*ptrType).Type
@@ -1451,8 +1665,13 @@ func (t *rtype) ptrTo() *abi.Type {
 	prototype := *(**ptrType)(unsafe.Pointer(&iptr))
 	pp := *prototype
 
-	pp.Str = resolveReflectName(newName(s, "", false, false))
+	var jitOffsets jitReflectOffsetBuilder
+	offsetBuilder := jitOffsetsForType(&jitOffsets, at)
+	pp.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
 	pp.PtrToThis = 0
+	if jitDependent {
+		pp.TFlag |= abi.TFlagJITDependent
+	}
 
 	// For the type structures linked into the binary, the
 	// compiler provides a good hash of the string.
@@ -1463,6 +1682,10 @@ func (t *rtype) ptrTo() *abi.Type {
 
 	pp.Elem = at
 
+	if jitDependent {
+		registerJITReflectType(&pp.Type, []*abi.Type{at}, offsetBuilder)
+		return jitReflectTypeCache(Pointer, jitKey, []*abi.Type{at}, &pp.Type)
+	}
 	pi, _ := ptrMap.LoadOrStore(t, &pp)
 	return &pi.(*ptrType).Type
 }
@@ -1846,11 +2069,21 @@ var funcLookupCache struct {
 func ChanOf(dir ChanDir, t Type) Type {
 	typ := t.common()
 	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
+	jitDependent := hasJITType(typ)
+	jitDeps := []*abi.Type{typ}
+	jitKey := jitReflectCacheKey(uintptr(dir), jitDeps, "")
+	if jitDependent {
+		if cached := jitReflectTypeCache(Chan, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Look in cache.
 	ckey := cacheKey{Chan, typ, nil, uintptr(dir)}
-	if ch, ok := lookupCache.Load(ckey); ok {
-		return ch.(*rtype)
+	if !jitDependent {
+		if ch, ok := lookupCache.Load(ckey); ok {
+			return ch.(*rtype)
+		}
 	}
 
 	// This restriction is imposed by the gc compiler and the runtime.
@@ -1882,6 +2115,9 @@ func ChanOf(dir ChanDir, t Type) Type {
 	for _, tt := range typesByString(s) {
 		ch := (*chanType)(unsafe.Pointer(tt))
 		if ch.Elem == typ && ch.Dir == abi.ChanDir(dir) {
+			if jitDependent {
+				return toRType(tt)
+			}
 			ti, _ := lookupCache.LoadOrStore(ckey, toRType(tt))
 			return ti.(Type)
 		}
@@ -1892,11 +2128,20 @@ func ChanOf(dir ChanDir, t Type) Type {
 	prototype := *(**chanType)(unsafe.Pointer(&ichan))
 	ch := *prototype
 	ch.TFlag = abi.TFlagRegularMemory | abi.TFlagDirectIface
+	if jitDependent {
+		ch.TFlag |= abi.TFlagJITDependent
+	}
 	ch.Dir = abi.ChanDir(dir)
-	ch.Str = resolveReflectName(newName(s, "", false, false))
+	var jitOffsets jitReflectOffsetBuilder
+	offsetBuilder := jitOffsetsForType(&jitOffsets, typ)
+	ch.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
 	ch.Hash = fnv1(typ.Hash, 'c', byte(dir))
 	ch.Elem = typ
 
+	if jitDependent {
+		registerJITReflectType(&ch.Type, jitDeps, offsetBuilder)
+		return toRType(jitReflectTypeCache(Chan, jitKey, jitDeps, &ch.Type))
+	}
 	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&ch.Type))
 	return ti.(Type)
 }
@@ -1949,6 +2194,8 @@ func FuncOf(in, out []Type, variadic bool) Type {
 	if n > 128 {
 		panic("reflect.FuncOf: too many arguments")
 	}
+	jitDependent := false
+	jitDeps := make([]*abi.Type, 0, n)
 
 	o := New(initFuncTypes(n)).Elem()
 	ft := (*funcType)(unsafe.Pointer(o.Field(0).Addr().Pointer()))
@@ -1960,6 +2207,8 @@ func FuncOf(in, out []Type, variadic bool) Type {
 	for _, in := range in {
 		t := in.(*rtype)
 		args = append(args, t)
+		jitDependent = jitDependent || hasJITType(&t.t)
+		jitDeps = append(jitDeps, &t.t)
 		hash = fnv1(hash, byte(t.t.Hash>>24), byte(t.t.Hash>>16), byte(t.t.Hash>>8), byte(t.t.Hash))
 	}
 	if variadic {
@@ -1969,38 +2218,60 @@ func FuncOf(in, out []Type, variadic bool) Type {
 	for _, out := range out {
 		t := out.(*rtype)
 		args = append(args, t)
+		jitDependent = jitDependent || hasJITType(&t.t)
+		jitDeps = append(jitDeps, &t.t)
 		hash = fnv1(hash, byte(t.t.Hash>>24), byte(t.t.Hash>>16), byte(t.t.Hash>>8), byte(t.t.Hash))
 	}
 
 	ft.TFlag = abi.TFlagDirectIface
+	if jitDependent {
+		ft.TFlag |= abi.TFlagJITDependent
+	}
 	ft.Hash = hash
 	ft.InCount = uint16(len(in))
 	ft.OutCount = uint16(len(out))
 	if variadic {
 		ft.OutCount |= 1 << 15
 	}
+	jitExtra := uintptr(0)
+	if variadic {
+		jitExtra = 1
+	}
+	jitKey := jitReflectCacheKey(jitExtra, jitDeps, strconv.Itoa(len(in))+":"+strconv.Itoa(len(out)))
+	if jitDependent {
+		if cached := jitReflectTypeCache(Func, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Look in cache.
-	if ts, ok := funcLookupCache.m.Load(hash); ok {
-		for _, t := range ts.([]*abi.Type) {
-			if haveIdenticalUnderlyingType(&ft.Type, t, true) {
-				return toRType(t)
+	if !jitDependent {
+		if ts, ok := funcLookupCache.m.Load(hash); ok {
+			for _, t := range ts.([]*abi.Type) {
+				if haveIdenticalUnderlyingType(&ft.Type, t, true) {
+					return toRType(t)
+				}
 			}
 		}
 	}
 
 	// Not in cache, lock and retry.
-	funcLookupCache.Lock()
-	defer funcLookupCache.Unlock()
-	if ts, ok := funcLookupCache.m.Load(hash); ok {
-		for _, t := range ts.([]*abi.Type) {
-			if haveIdenticalUnderlyingType(&ft.Type, t, true) {
-				return toRType(t)
+	if !jitDependent {
+		funcLookupCache.Lock()
+		defer funcLookupCache.Unlock()
+		if ts, ok := funcLookupCache.m.Load(hash); ok {
+			for _, t := range ts.([]*abi.Type) {
+				if haveIdenticalUnderlyingType(&ft.Type, t, true) {
+					return toRType(t)
+				}
 			}
 		}
 	}
 
 	addToCache := func(tt *abi.Type) Type {
+		if jitDependent {
+			return toType(tt)
+		}
 		var rts []*abi.Type
 		if rti, ok := funcLookupCache.m.Load(hash); ok {
 			rts = rti.([]*abi.Type)
@@ -2011,15 +2282,26 @@ func FuncOf(in, out []Type, variadic bool) Type {
 
 	// Look in known types for the same string representation.
 	str := funcStr(ft)
-	for _, tt := range typesByString(str) {
-		if haveIdenticalUnderlyingType(&ft.Type, tt, true) {
-			return addToCache(tt)
+	if !jitDependent {
+		for _, tt := range typesByString(str) {
+			if haveIdenticalUnderlyingType(&ft.Type, tt, true) {
+				return addToCache(tt)
+			}
 		}
 	}
 
 	// Populate the remaining fields of ft and store in cache.
-	ft.Str = resolveReflectName(newName(str, "", false, false))
+	var jitOffsets jitReflectOffsetBuilder
+	var offsetBuilder *jitReflectOffsetBuilder
+	if jitDependent {
+		offsetBuilder = &jitOffsets
+	}
+	ft.Str = resolveReflectName(newName(str, "", false, false), offsetBuilder)
 	ft.PtrToThis = 0
+	if jitDependent {
+		registerJITReflectType(&ft.Type, jitDeps, offsetBuilder)
+		return toRType(jitReflectTypeCache(Func, jitKey, jitDeps, &ft.Type))
+	}
 	return addToCache(&ft.Type)
 }
 func stringFor(t *abi.Type) string {
@@ -2154,11 +2436,21 @@ func emitGCMask(out []byte, base uintptr, typ *abi.Type, n uintptr) {
 func SliceOf(t Type) Type {
 	typ := t.common()
 	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
+	jitDependent := hasJITType(typ)
+	jitDeps := []*abi.Type{typ}
+	jitKey := jitReflectCacheKey(0, jitDeps, "")
+	if jitDependent {
+		if cached := jitReflectTypeCache(Slice, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Look in cache.
 	ckey := cacheKey{Slice, typ, nil, 0}
-	if slice, ok := lookupCache.Load(ckey); ok {
-		return slice.(Type)
+	if !jitDependent {
+		if slice, ok := lookupCache.Load(ckey); ok {
+			return slice.(Type)
+		}
 	}
 
 	// Look in known types.
@@ -2166,6 +2458,9 @@ func SliceOf(t Type) Type {
 	for _, tt := range typesByString(s) {
 		slice := (*sliceType)(unsafe.Pointer(tt))
 		if slice.Elem == typ {
+			if jitDependent {
+				return toRType(tt)
+			}
 			ti, _ := lookupCache.LoadOrStore(ckey, toRType(tt))
 			return ti.(Type)
 		}
@@ -2176,11 +2471,20 @@ func SliceOf(t Type) Type {
 	prototype := *(**sliceType)(unsafe.Pointer(&islice))
 	slice := *prototype
 	slice.TFlag = 0
-	slice.Str = resolveReflectName(newName(s, "", false, false))
+	if jitDependent {
+		slice.TFlag |= abi.TFlagJITDependent
+	}
+	var jitOffsets jitReflectOffsetBuilder
+	offsetBuilder := jitOffsetsForType(&jitOffsets, typ)
+	slice.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
 	slice.Hash = fnv1(typ.Hash, '[')
 	slice.Elem = typ
 	slice.PtrToThis = 0
 
+	if jitDependent {
+		registerJITReflectType(&slice.Type, jitDeps, offsetBuilder)
+		return toRType(jitReflectTypeCache(Slice, jitKey, jitDeps, &slice.Type))
+	}
 	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&slice.Type))
 	return ti.(Type)
 }
@@ -2279,11 +2583,13 @@ func isPaddedField(t Type, i int) bool {
 // and panics if passed unexported StructFields.
 func StructOf(fields []StructField) Type {
 	var (
-		hash       = fnv1(0, []byte("struct {")...)
-		size       uintptr
-		typalign   uint8
-		comparable = true
-		methods    []abi.Method
+		hash         = fnv1(0, []byte("struct {")...)
+		size         uintptr
+		typalign     uint8
+		comparable   = true
+		jitDependent bool
+		methods      []abi.Method
+		jitOffsets   jitReflectOffsetBuilder
 
 		fs   = make([]structField, len(fields))
 		repr = make([]byte, 0, 64)
@@ -2305,6 +2611,7 @@ func StructOf(fields []StructField) Type {
 		}
 		f, fpkgpath := runtimeStructField(field)
 		ft := f.Typ
+		jitDependent = jitDependent || hasJITType(ft)
 		if fpkgpath != "" {
 			if pkgpath == "" {
 				pkgpath = fpkgpath
@@ -2331,22 +2638,24 @@ func StructOf(fields []StructField) Type {
 			switch Kind(f.Typ.Kind()) {
 			case Interface:
 				ift := (*interfaceType)(unsafe.Pointer(ft))
+				methodOffsets := jitOffsetsForType(&jitOffsets, ft)
 				for _, m := range ift.Methods {
 					if pkgPath(ift.nameOff(m.Name)) != "" {
 						// TODO(sbinet).  Issue 15924.
 						panic("reflect: embedded interface with unexported method(s) not implemented")
 					}
 
-					fnStub := resolveReflectText(unsafe.Pointer(abi.FuncPCABIInternal(embeddedIfaceMethStub)))
+					fnStub := resolveReflectText(unsafe.Pointer(abi.FuncPCABIInternal(embeddedIfaceMethStub)), methodOffsets)
 					methods = append(methods, abi.Method{
-						Name: resolveReflectName(ift.nameOff(m.Name)),
-						Mtyp: resolveReflectType(ift.typeOff(m.Typ)),
+						Name: resolveReflectName(ift.nameOff(m.Name), methodOffsets),
+						Mtyp: resolveReflectType(ift.typeOff(m.Typ), methodOffsets),
 						Ifn:  fnStub,
 						Tfn:  fnStub,
 					})
 				}
 			case Pointer:
 				ptr := (*ptrType)(unsafe.Pointer(ft))
+				methodOffsets := jitOffsetsForType(&jitOffsets, ft)
 				if unt := ptr.Uncommon(); unt != nil {
 					if i > 0 && unt.Mcount > 0 {
 						// Issue 15924.
@@ -2363,14 +2672,15 @@ func StructOf(fields []StructField) Type {
 							panic("reflect: embedded interface with unexported method(s) not implemented")
 						}
 						methods = append(methods, abi.Method{
-							Name: resolveReflectName(mname),
-							Mtyp: resolveReflectType(typeOffFor(ft, m.Mtyp)),
-							Ifn:  resolveReflectText(textOffFor(ft, m.Ifn)),
-							Tfn:  resolveReflectText(textOffFor(ft, m.Tfn)),
+							Name: resolveReflectName(mname, methodOffsets),
+							Mtyp: resolveReflectType(typeOffFor(ft, m.Mtyp), methodOffsets),
+							Ifn:  resolveReflectText(textOffFor(ft, m.Ifn), methodOffsets),
+							Tfn:  resolveReflectText(textOffFor(ft, m.Tfn), methodOffsets),
 						})
 					}
 				}
 				if unt := ptr.Elem.Uncommon(); unt != nil {
+					methodOffsets := jitOffsetsForType(&jitOffsets, ptr.Elem)
 					for _, m := range unt.Methods() {
 						mname := nameOffFor(ft, m.Name)
 						if pkgPath(mname) != "" {
@@ -2379,14 +2689,15 @@ func StructOf(fields []StructField) Type {
 							panic("reflect: embedded interface with unexported method(s) not implemented")
 						}
 						methods = append(methods, abi.Method{
-							Name: resolveReflectName(mname),
-							Mtyp: resolveReflectType(typeOffFor(ptr.Elem, m.Mtyp)),
-							Ifn:  resolveReflectText(textOffFor(ptr.Elem, m.Ifn)),
-							Tfn:  resolveReflectText(textOffFor(ptr.Elem, m.Tfn)),
+							Name: resolveReflectName(mname, methodOffsets),
+							Mtyp: resolveReflectType(typeOffFor(ptr.Elem, m.Mtyp), methodOffsets),
+							Ifn:  resolveReflectText(textOffFor(ptr.Elem, m.Ifn), methodOffsets),
+							Tfn:  resolveReflectText(textOffFor(ptr.Elem, m.Tfn), methodOffsets),
 						})
 					}
 				}
 			default:
+				methodOffsets := jitOffsetsForType(&jitOffsets, ft)
 				if unt := ft.Uncommon(); unt != nil {
 					if i > 0 && unt.Mcount > 0 {
 						// Issue 15924.
@@ -2403,10 +2714,10 @@ func StructOf(fields []StructField) Type {
 							panic("reflect: embedded interface with unexported method(s) not implemented")
 						}
 						methods = append(methods, abi.Method{
-							Name: resolveReflectName(mname),
-							Mtyp: resolveReflectType(typeOffFor(ft, m.Mtyp)),
-							Ifn:  resolveReflectText(textOffFor(ft, m.Ifn)),
-							Tfn:  resolveReflectText(textOffFor(ft, m.Tfn)),
+							Name: resolveReflectName(mname, methodOffsets),
+							Mtyp: resolveReflectType(typeOffFor(ft, m.Mtyp), methodOffsets),
+							Ifn:  resolveReflectText(textOffFor(ft, m.Ifn), methodOffsets),
+							Tfn:  resolveReflectText(textOffFor(ft, m.Tfn), methodOffsets),
 						})
 
 					}
@@ -2517,30 +2828,47 @@ func StructOf(fields []StructField) Type {
 	if pkgpath != "" {
 		typ.PkgPath = newName(pkgpath, "", false, false)
 	}
+	jitDeps := make([]*abi.Type, len(fs))
+	for i := range fs {
+		jitDeps[i] = fs[i].Typ
+	}
+	jitKey := jitReflectCacheKey(uintptr(hash), jitDeps, str+"\x00"+pkgpath)
+	if jitDependent {
+		if cached := jitReflectTypeCache(Struct, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Look in cache.
-	if ts, ok := structLookupCache.m.Load(hash); ok {
-		for _, st := range ts.([]Type) {
-			t := st.common()
-			if haveIdenticalUnderlyingType(&typ.Type, t, true) {
-				return toType(t)
+	if !jitDependent {
+		if ts, ok := structLookupCache.m.Load(hash); ok {
+			for _, st := range ts.([]Type) {
+				t := st.common()
+				if haveIdenticalUnderlyingType(&typ.Type, t, true) {
+					return toType(t)
+				}
 			}
 		}
 	}
 
 	// Not in cache, lock and retry.
-	structLookupCache.Lock()
-	defer structLookupCache.Unlock()
-	if ts, ok := structLookupCache.m.Load(hash); ok {
-		for _, st := range ts.([]Type) {
-			t := st.common()
-			if haveIdenticalUnderlyingType(&typ.Type, t, true) {
-				return toType(t)
+	if !jitDependent {
+		structLookupCache.Lock()
+		defer structLookupCache.Unlock()
+		if ts, ok := structLookupCache.m.Load(hash); ok {
+			for _, st := range ts.([]Type) {
+				t := st.common()
+				if haveIdenticalUnderlyingType(&typ.Type, t, true) {
+					return toType(t)
+				}
 			}
 		}
 	}
 
 	addToCache := func(t Type) Type {
+		if jitDependent {
+			return t
+		}
 		var ts []Type
 		if ti, ok := structLookupCache.m.Load(hash); ok {
 			ts = ti.([]Type)
@@ -2550,20 +2878,29 @@ func StructOf(fields []StructField) Type {
 	}
 
 	// Look in known types.
-	for _, t := range typesByString(str) {
-		if haveIdenticalUnderlyingType(&typ.Type, t, true) {
-			// even if 't' wasn't a structType with methods, we should be ok
-			// as the 'u uncommonType' field won't be accessed except when
-			// tflag&abi.TFlagUncommon is set.
-			return addToCache(toType(t))
+	if !jitDependent {
+		for _, t := range typesByString(str) {
+			if haveIdenticalUnderlyingType(&typ.Type, t, true) {
+				// even if 't' wasn't a structType with methods, we should be ok
+				// as the 'u uncommonType' field won't be accessed except when
+				// tflag&abi.TFlagUncommon is set.
+				return addToCache(toType(t))
+			}
 		}
 	}
 
-	typ.Str = resolveReflectName(newName(str, "", false, false))
+	var offsetBuilder *jitReflectOffsetBuilder
+	if jitDependent {
+		offsetBuilder = &jitOffsets
+	}
+	typ.Str = resolveReflectName(newName(str, "", false, false), offsetBuilder)
 	if isRegularMemory(toType(&typ.Type)) {
 		typ.TFlag = abi.TFlagRegularMemory
 	} else {
 		typ.TFlag = 0
+	}
+	if jitDependent {
+		typ.TFlag |= abi.TFlagJITDependent
 	}
 	typ.Hash = hash
 	typ.Size_ = size
@@ -2612,6 +2949,10 @@ func StructOf(fields []StructField) Type {
 		typ.TFlag &^= abi.TFlagDirectIface
 	}
 
+	if jitDependent {
+		registerJITReflectType(&typ.Type, jitDeps, offsetBuilder)
+		return addToCache(toRType(jitReflectTypeCache(Struct, jitKey, jitDeps, &typ.Type)))
+	}
 	return addToCache(toType(&typ.Type))
 }
 
@@ -2636,7 +2977,9 @@ func runtimeStructField(field StructField) (structField, string) {
 		}
 	}
 
-	resolveReflectType(field.Type.common()) // install in runtime
+	if !hasJITType(field.Type.common()) {
+		resolveReflectType(field.Type.common(), nil) // install in runtime
+	}
 	f := structField{
 		Name:   newName(field.Name, string(field.Tag), field.IsExported(), field.Anonymous),
 		Typ:    field.Type.common(),
@@ -2683,11 +3026,21 @@ func ArrayOf(length int, elem Type) Type {
 
 	typ := elem.common()
 	elem = toType(typ) // for #80332, ensure elem's exported methods are not shadowed
+	jitDependent := hasJITType(typ)
+	jitDeps := []*abi.Type{typ}
+	jitKey := jitReflectCacheKey(uintptr(length), jitDeps, "")
+	if jitDependent {
+		if cached := jitReflectTypeCache(Array, jitKey, jitDeps, nil); cached != nil {
+			return toRType(cached)
+		}
+	}
 
 	// Look in cache.
 	ckey := cacheKey{Array, typ, nil, uintptr(length)}
-	if array, ok := lookupCache.Load(ckey); ok {
-		return array.(Type)
+	if !jitDependent {
+		if array, ok := lookupCache.Load(ckey); ok {
+			return array.(Type)
+		}
 	}
 
 	// Look in known types.
@@ -2695,6 +3048,9 @@ func ArrayOf(length int, elem Type) Type {
 	for _, tt := range typesByString(s) {
 		array := (*arrayType)(unsafe.Pointer(tt))
 		if array.Elem == typ {
+			if jitDependent {
+				return toRType(tt)
+			}
 			ti, _ := lookupCache.LoadOrStore(ckey, toRType(tt))
 			return ti.(Type)
 		}
@@ -2705,7 +3061,12 @@ func ArrayOf(length int, elem Type) Type {
 	prototype := *(**arrayType)(unsafe.Pointer(&iarray))
 	array := *prototype
 	array.TFlag = typ.TFlag & abi.TFlagRegularMemory
-	array.Str = resolveReflectName(newName(s, "", false, false))
+	if jitDependent {
+		array.TFlag |= abi.TFlagJITDependent
+	}
+	var jitOffsets jitReflectOffsetBuilder
+	offsetBuilder := jitOffsetsForType(&jitOffsets, typ)
+	array.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
 	array.Hash = fnv1(typ.Hash, '[')
 	for n := uint32(length); n > 0; n >>= 8 {
 		array.Hash = fnv1(array.Hash, byte(n))
@@ -2785,6 +3146,10 @@ func ArrayOf(length int, elem Type) Type {
 		array.TFlag &^= abi.TFlagDirectIface
 	}
 
+	if jitDependent {
+		registerJITReflectType(&array.Type, jitDeps, offsetBuilder)
+		return toRType(jitReflectTypeCache(Array, jitKey, jitDeps, &array.Type))
+	}
 	ti, _ := lookupCache.LoadOrStore(ckey, toRType(&array.Type))
 	return ti.(Type)
 }
@@ -2878,9 +3243,16 @@ func funcLayout(t *funcType, rcvr *abi.Type) (frametype *abi.Type, framePool *sy
 		panic("reflect: funcLayout with interface receiver " + stringFor(rcvr))
 	}
 	k := layoutKey{t, rcvr}
-	if lti, ok := layoutCache.Load(k); ok {
-		lt := lti.(layoutType)
-		return lt.t, lt.framePool, lt.abid
+	jitDependent := hasJITType(&t.Type) || hasJITType(rcvr)
+	jitDeps := []*abi.Type{&t.Type}
+	if rcvr != nil {
+		jitDeps = append(jitDeps, rcvr)
+	}
+	if !jitDependent {
+		if lti, ok := layoutCache.Load(k); ok {
+			lt := lti.(layoutType)
+			return lt.t, lt.framePool, lt.abid
+		}
 	}
 
 	// Compute the ABI layout.
@@ -2896,6 +3268,9 @@ func funcLayout(t *funcType, rcvr *abi.Type) (frametype *abi.Type, framePool *sy
 		Size_:    align(abid.retOffset+abid.ret.stackBytes, goarch.PtrSize),
 		PtrBytes: uintptr(abid.stackPtrs.n) * goarch.PtrSize,
 	}
+	if jitDependent {
+		x.TFlag |= abi.TFlagJITDependent
+	}
 	if abid.stackPtrs.n > 0 {
 		x.GCData = &abid.stackPtrs.data[0]
 	}
@@ -2906,17 +3281,29 @@ func funcLayout(t *funcType, rcvr *abi.Type) (frametype *abi.Type, framePool *sy
 	} else {
 		s = "funcargs(" + stringFor(&t.Type) + ")"
 	}
-	x.Str = resolveReflectName(newName(s, "", false, false))
+	var jitOffsets jitReflectOffsetBuilder
+	var offsetBuilder *jitReflectOffsetBuilder
+	if jitDependent {
+		offsetBuilder = &jitOffsets
+	}
+	x.Str = resolveReflectName(newName(s, "", false, false), offsetBuilder)
+	if jitDependent {
+		registerJITReflectType(x, jitDeps, offsetBuilder)
+	}
 
 	// cache result for future callers
 	framePool = &sync.Pool{New: func() any {
 		return unsafe_New(x)
 	}}
-	lti, _ := layoutCache.LoadOrStore(k, layoutType{
+	computed := layoutType{
 		t:         x,
 		framePool: framePool,
 		abid:      abid,
-	})
+	}
+	if jitDependent {
+		return computed.t, computed.framePool, computed.abid
+	}
+	lti, _ := layoutCache.LoadOrStore(k, computed)
 	lt := lti.(layoutType)
 	return lt.t, lt.framePool, lt.abid
 }

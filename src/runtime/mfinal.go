@@ -269,7 +269,9 @@ func runFinalizers() {
 					throw("bad type kind in finalizer")
 				}
 				fingStatus.Or(fingRunningFinalizer)
+				fnOwner := jitOwnerForFuncval(f.fn)
 				reflectcall(nil, unsafe.Pointer(f.fn), frame, uint32(framesz), uint32(framesz), uint32(framesz), &regs)
+				KeepAlive(fnOwner)
 				fingStatus.And(^fingRunningFinalizer)
 
 				// Drop finalizer queue heap references
