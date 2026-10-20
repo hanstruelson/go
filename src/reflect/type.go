@@ -822,6 +822,11 @@ func (t *rtype) ChanDir() ChanDir {
 }
 
 func toRType(t *abi.Type) *rtype {
+	if t != nil {
+		// A reflect.Type interface stores only this descriptor pointer. Pin
+		// image-backed descriptors until an owner-bearing Type wrapper exists.
+		runtime.JITPinType(unsafe.Pointer(t))
+	}
 	return (*rtype)(unsafe.Pointer(t))
 }
 

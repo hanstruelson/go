@@ -8,6 +8,7 @@ package reflectlite
 
 import (
 	"publicinternal/abi"
+	"runtime"
 	"unsafe"
 )
 
@@ -299,6 +300,11 @@ func (t rtype) Name() string {
 }
 
 func toRType(t *abi.Type) rtype {
+	if t != nil {
+		// reflectlite.Type is a value copy with no owner field. Pin dynamic
+		// descriptors before exposing the copy through its Type interface.
+		runtime.JITPinType(unsafe.Pointer(t))
+	}
 	return rtype{t}
 }
 
