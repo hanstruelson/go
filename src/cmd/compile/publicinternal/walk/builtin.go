@@ -387,10 +387,14 @@ func (w *walkState) walkMakeMap(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 			w.appendWalkStmt(init, ir.NewAssignStmt(w.curfunc.Target.Pos, ir.NewSelectorExpr(w.curfunc.Target.Pos, ir.ODOT, m, seedSym), typecheck.Conv(w.curfunc, rand, w.curfunc.Target.Type(types.TUINTPTR))))
 			return typecheck.ConvNop(w.curfunc, m, t)
 		}
-		// Call runtime.makemap_small to allocate a
-		// map on the heap and initialize the map's seed field.
-		fn := typecheck.LookupRuntime(w.curfunc.Target, "makemap_small", t.Key(), t.Elem())
-		return w.mkcall1(fn, n.Type(), init)
+		// Use the typed runtime path for heap maps even when the hint is small.
+		// makemap_small has no type argument, so it cannot attach a JIT owner
+		// edge to a named dynamic map descriptor before the map escapes.
+		fn := typecheck.LookupRuntime(w.curfunc.Target, "makemap", mapType, t.Key(), t.Elem())
+		mapTypeArg := reflectdata.MakeMapRType(w.curfunc, w.curfunc.Target.Pos, n)
+		zeroHint := ir.NewInt(w.curfunc.Target.Pos, 0)
+		mapbuf := typecheck.NodNilAt(w.curfunc.Target, w.curfunc.Target.Pos)
+		return w.mkcall1(fn, n.Type(), init, mapTypeArg, zeroHint, mapbuf)
 	}
 
 	if n.Esc() != ir.EscNone {
