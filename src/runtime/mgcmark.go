@@ -494,6 +494,8 @@ func gcScanFinalizer(spf *specialfinalizer, s *mspan, gcw *gcWork) {
 	scanblock(uintptr(unsafe.Pointer(&spf.fint)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
 	scanblock(uintptr(unsafe.Pointer(&spf.ot)), goarch.PtrSize, &oneptrmask[0], gcw, nil)
 	jitMarkFuncvalOwner(spf.fn, gcw)
+	jitMarkTypeOwner(spf.fint, gcw)
+	jitMarkTypeOwner((*_type)(unsafe.Pointer(spf.ot)), gcw)
 }
 
 // gcScanCleanup scans the relevant parts of a cleanup special as a root.

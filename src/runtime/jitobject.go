@@ -387,6 +387,26 @@ func jitMarkFuncvalOwner(fn *funcval, gcw *gcWork) {
 	}
 }
 
+// jitMarkTypeOwner follows a type descriptor held in runtime-owned metadata.
+// Descriptor pointers are either direct addresses in a JIT image or pointers
+// to reflected heap objects whose side-table edge carries the source owners.
+// Ordinary static descriptors take the fast no-op path.
+//
+//go:nowritebarrier
+//go:nosplit
+func jitMarkTypeOwner(typ *_type, gcw *gcWork) {
+	if typ == nil {
+		return
+	}
+	address := uintptr(unsafe.Pointer(typ))
+	if jitMarkOwnerAddr(address, gcw) {
+		return
+	}
+	if obj, span, index := findObject(address, 0, 0); obj != 0 {
+		jitMarkSpanOwner(span, index, gcw)
+	}
+}
+
 // jitMarkCleanupOwners follows both code addresses stored in a runtime cleanup
 // record. The closure and argument pointers are scanned by the ordinary
 // cleanup root mask; these function values' code words are uintptrs.
