@@ -138,6 +138,7 @@ func packEface(v Value) any {
 		// Value is direct, and so is the interface.
 		e.Data = v.ptr
 	}
+	jitPinTypeWithoutOwnerEdge(t, e.Data)
 	// Now, fill in the type portion. We're very careful here not
 	// to have any operation between the e.word and e.typ assignments
 	// that would let the garbage collector observe the partially-built
@@ -154,11 +155,19 @@ func unpackEface(i any) Value {
 	if t == nil {
 		return Value{}
 	}
+	jitPinTypeWithoutOwnerEdge(t, e.Data)
 	f := flag(t.Kind())
 	if !t.IsDirectIface() {
 		f |= flagIndir
 	}
 	return Value{t, e.Data, f}
+}
+
+func jitPinTypeWithoutOwnerEdge(t *abi.Type, data unsafe.Pointer) {
+	if t == nil || (t.Size() != 0 && data != nil && (!t.IsDirectIface() || t.Pointers()) && !(t.Kind() == abi.Pointer && t.Elem().Size() == 0)) {
+		return
+	}
+	runtime.JITPinType(unsafe.Pointer(t))
 }
 
 // A ValueError occurs when a Value method is invoked on

@@ -361,7 +361,7 @@ func (v Value) SetIterKey(iter *MapIter) {
 	ktype := t.Key
 
 	iter.m.mustBeExported() // do not let unexported m leak
-	key := Value{ktype, iterkey, iter.m.flag | flag(ktype.Kind()) | flagIndir}
+	key := iter.m.jitDerivedValue(ktype, iterkey, iter.m.flag|flag(ktype.Kind())|flagIndir)
 	key = key.assignTo("reflect.MapIter.SetKey", v.typ(), target)
 	typedmemmove(v.typ(), v.ptr, key.ptr)
 }
@@ -405,7 +405,7 @@ func (v Value) SetIterValue(iter *MapIter) {
 	vtype := t.Elem
 
 	iter.m.mustBeExported() // do not let unexported m leak
-	elem := Value{vtype, iterelem, iter.m.flag | flag(vtype.Kind()) | flagIndir}
+	elem := iter.m.jitDerivedValue(vtype, iterelem, iter.m.flag|flag(vtype.Kind())|flagIndir)
 	elem = elem.assignTo("reflect.MapIter.SetValue", v.typ(), target)
 	typedmemmove(v.typ(), v.ptr, elem.ptr)
 }

@@ -697,7 +697,14 @@ func (t *rtype) Method(i int) (m Method) {
 	m.Type = mt
 	tfn := t.textOff(p.Tfn)
 	fn := unsafe.Pointer(&tfn)
-	m.Func = Value{&mt.(*rtype).t, fn, fl}
+	// Method expressions store the code word in a raw func value with no
+	// owner-bearing closure environment. Pin a reclaimable method target before
+	// exposing that value through Method.Func.
+	runtime.JITPinAddress(uintptr(tfn))
+	// Keep both the method-expression type and the receiver's source module
+	// alive. The method PC is a raw word in the function value and the
+	// synthesized FuncOf descriptor may not itself carry the receiver owner.
+	m.Func = jitValue(&t.t, nil, 0).jitDerivedValue(&mt.(*rtype).t, fn, fl)
 
 	m.Index = i
 	return m

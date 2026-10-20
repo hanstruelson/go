@@ -64,6 +64,46 @@ type Value struct {
 	// like r.Read for some receiver r. The Value's ptr points to a
 	// heap-allocated methodValue closure, which contains the receiver
 	// and the method information, and the flag has flagMethod set.
+
+	// jitOwnerRoots keeps reclaimable type descriptors and their source
+	// modules alive while a Value is retained. It is a pointer to a traced
+	// owner set so Value remains comparable, as it has always been. typ_ can
+	// point into an unmapped JIT image and is not itself a sufficient lifetime
+	// edge for an escaped Value.
+	jitOwnerRoots *jitValueOwnerSet
+}
+
+type jitValueOwnerSet struct {
+	owners []*runtime.JITModuleOwner
+}
+
+func jitOwnerSet(owners []*runtime.JITModuleOwner) *jitValueOwnerSet {
+	if len(owners) == 0 {
+		return nil
+	}
+	return &jitValueOwnerSet{owners: owners}
+}
+
+func jitValue(t *abi.Type, p unsafe.Pointer, f flag) Value {
+	return Value{typ_: t, ptr: p, flag: f, jitOwnerRoots: jitOwnerSet(runtime.JITOwnersForType(unsafe.Pointer(t)))}
+}
+
+func (v Value) jitDerivedValue(t *abi.Type, p unsafe.Pointer, f flag) Value {
+	var owners []*runtime.JITModuleOwner
+	if v.jitOwnerRoots != nil {
+		owners = v.jitOwnerRoots.owners
+	}
+	if typeOwners := runtime.JITOwnersForType(unsafe.Pointer(t)); len(typeOwners) != 0 {
+		owners = append(append([]*runtime.JITModuleOwner(nil), owners...), typeOwners...)
+	}
+	return Value{typ_: t, ptr: p, flag: f, jitOwnerRoots: jitOwnerSet(owners)}
+}
+
+func jitPinTypeWithoutOwnerEdge(t *abi.Type, data unsafe.Pointer) {
+	if t == nil || (t.Size() != 0 && data != nil && (!t.IsDirectIface() || t.Pointers()) && !(t.Kind() == abi.Pointer && t.Elem().Size() == 0)) {
+		return
+	}
+	runtime.JITPinType(unsafe.Pointer(t))
 }
 
 type flag uintptr
@@ -127,6 +167,7 @@ func packEface(v Value) any {
 // if v were to be stored in an interface.
 func packEfaceData(v Value) unsafe.Pointer {
 	t := v.typ()
+	var data unsafe.Pointer
 	switch {
 	case !t.IsDirectIface():
 		if v.flag&flagIndir == 0 {
@@ -139,15 +180,17 @@ func packEfaceData(v Value) unsafe.Pointer {
 			typedmemmove(t, c, ptr)
 			ptr = c
 		}
-		return ptr
+		data = ptr
 	case v.flag&flagIndir != 0:
 		// Value is indirect, but interface is direct. We need
 		// to load the data at v.ptr into the interface data word.
-		return *(*unsafe.Pointer)(v.ptr)
+		data = *(*unsafe.Pointer)(v.ptr)
 	default:
 		// Value is direct, and so is the interface.
-		return v.ptr
+		data = v.ptr
 	}
+	jitPinTypeWithoutOwnerEdge(t, data)
+	return data
 }
 
 // unpackEface converts the empty interface i to a Value.
@@ -161,7 +204,7 @@ func unpackEface(i any) Value {
 	if !t.IsDirectIface() {
 		f |= flagIndir
 	}
-	return Value{t, e.Data, f}
+	return jitValue(t, e.Data, f)
 }
 
 // A ValueError occurs when a Value method is invoked on
@@ -269,7 +312,7 @@ func (v Value) Addr() Value {
 	// Preserve flagRO instead of using v.flag.ro() so that
 	// v.Addr().Elem() is equivalent to v (#32772)
 	fl := v.flag & flagRO
-	return Value{ptrTo(v.typ()), v.ptr, fl | flag(Pointer)}
+	return v.jitDerivedValue(ptrTo(v.typ()), v.ptr, fl|flag(Pointer))
 }
 
 // Bool returns v's underlying value.
@@ -623,7 +666,7 @@ func (v Value) call(op string, in []Value) []Value {
 				// allocated, the entire value is according to the ABI. So
 				// just make an indirection into the allocated frame.
 				fl := flagIndir | flag(tv.Kind())
-				ret[i] = Value{tv, add(stackArgs, st.stkOff, "tv.Size() != 0"), fl}
+				ret[i] = jitValue(tv, add(stackArgs, st.stkOff, "tv.Size() != 0"), fl)
 				// Note: this does introduce false sharing between results -
 				// if any result is live, they are all live.
 				// (And the space for the args is live as well, but as we've
@@ -639,7 +682,7 @@ func (v Value) call(op string, in []Value) []Value {
 					print("kind=", steps[0].kind, ", type=", stringFor(tv), "\n")
 					panic("mismatch between ABI description and types")
 				}
-				ret[i] = Value{tv, regArgs.Ptrs[steps[0].ireg], flag(tv.Kind())}
+				ret[i] = jitValue(tv, regArgs.Ptrs[steps[0].ireg], flag(tv.Kind()))
 				continue
 			}
 
@@ -670,7 +713,7 @@ func (v Value) call(op string, in []Value) []Value {
 					panic("unknown ABI part kind")
 				}
 			}
-			ret[i] = Value{tv, s, flagIndir | flag(tv.Kind())}
+			ret[i] = jitValue(tv, s, flagIndir|flag(tv.Kind()))
 		}
 	}
 
@@ -719,7 +762,7 @@ func callReflect(ctxt *makeFuncImpl, frame unsafe.Pointer, retValid *bool, regs 
 			in = append(in, Zero(toRType(typ)))
 			continue
 		}
-		v := Value{typ, nil, flag(typ.Kind())}
+		v := jitValue(typ, nil, flag(typ.Kind()))
 		steps := abid.call.stepsForValue(i)
 		if st := steps[0]; st.kind == abiStepStack {
 			if !typ.IsDirectIface() {
@@ -1235,7 +1278,7 @@ func (v Value) Elem() Value {
 		if x.flag != 0 {
 			x.flag |= v.flag.ro()
 		}
-		return x
+		return v.jitDerivedValue(x.typ_, x.ptr, x.flag)
 	case Pointer:
 		ptr := v.ptr
 		if v.flag&flagIndir != 0 {
@@ -1264,7 +1307,7 @@ func (v Value) Elem() Value {
 		typ := tt.Elem
 		fl := v.flag&flagRO | flagIndir | flagAddr
 		fl |= flag(typ.Kind())
-		return Value{typ, ptr, fl}
+		return v.jitDerivedValue(typ, ptr, fl)
 	}
 	panic(&ValueError{"reflect.Value.Elem", v.kind()})
 }
@@ -1301,7 +1344,7 @@ func (v Value) Field(i int) Value {
 		// We use &zeroVal[0] instead of v.ptr as it doesn't matter and
 		// we can avoid pinning a possibly now-unused object.
 		// Don't use nil, see issue 77779.
-		return Value{typ, unsafe.Pointer(&zeroVal[0]), fl | flagIndir}
+		return v.jitDerivedValue(typ, unsafe.Pointer(&zeroVal[0]), fl|flagIndir)
 	}
 
 	// Either flagIndir is set and v.ptr points at struct,
@@ -1310,7 +1353,7 @@ func (v Value) Field(i int) Value {
 	// In the latter case, we must have field.offset = 0,
 	// so v.ptr + field.offset is still the correct address.
 	ptr := add(v.ptr, field.Offset, "same as non-reflect &v.field")
-	return Value{typ, ptr, fl}
+	return v.jitDerivedValue(typ, ptr, fl)
 }
 
 // FieldByIndex returns the nested field corresponding to index.
@@ -1424,7 +1467,7 @@ func (v Value) Index(i int) Value {
 		// so v.ptr + offset is still the correct address.
 		val := add(v.ptr, offset, "same as &v[i], i < tt.len")
 		fl := v.flag&(flagIndir|flagAddr) | v.flag.ro() | flag(typ.Kind()) // bits same as overall array
-		return Value{typ, val, fl}
+		return v.jitDerivedValue(typ, val, fl)
 
 	case Slice:
 		// Element flag same as Elem of Pointer.
@@ -1437,7 +1480,7 @@ func (v Value) Index(i int) Value {
 		typ := tt.Elem
 		val := arrayAt(s.Data, i, typ.Size(), "i < s.Len")
 		fl := flagAddr | flagIndir | v.flag.ro() | flag(typ.Kind())
-		return Value{typ, val, fl}
+		return v.jitDerivedValue(typ, val, fl)
 
 	case String:
 		s := (*unsafeheader.String)(v.ptr)
@@ -1446,7 +1489,7 @@ func (v Value) Index(i int) Value {
 		}
 		p := arrayAt(s.Data, i, 1, "i < s.Len")
 		fl := v.flag.ro() | flag(Uint8) | flagIndir
-		return Value{uint8Type, p, fl}
+		return v.jitDerivedValue(uint8Type, p, fl)
 	}
 	panic(&ValueError{"reflect.Value.Index", v.kind()})
 }
@@ -1595,6 +1638,7 @@ func TypeAssert[T any](v Value) (T, bool) {
 		var zero T
 		return zero, false
 	}
+	jitPinTypeWithoutOwnerEdge(v.typ(), v.ptr)
 	if v.flag&flagIndir == 0 {
 		return *(*T)(unsafe.Pointer(&v.ptr)), true
 	}
@@ -1607,12 +1651,19 @@ func TypeAssert[T any](v Value) (T, bool) {
 func packIfaceValueIntoEmptyIface(v Value) any {
 	// Empty interface has one layout, all interfaces with
 	// methods have a second layout.
+	var i any
 	if v.NumMethod() == 0 {
-		return *(*any)(v.ptr)
-	}
-	return *(*interface {
+		i = *(*any)(v.ptr)
+	} else {
+		i = *(*interface {
 		M()
 	})(v.ptr)
+	}
+	if i != nil {
+		e := (*abi.EmptyInterface)(unsafe.Pointer(&i))
+		jitPinTypeWithoutOwnerEdge(e.Type, e.Data)
+	}
+	return i
 }
 
 // InterfaceData returns a pair of unspecified uintptr values.
@@ -1903,9 +1954,9 @@ func copyVal(typ *abi.Type, fl flag, ptr unsafe.Pointer) Value {
 		// won't change the underlying value.
 		c := unsafe_New(typ)
 		typedmemmove(typ, c, ptr)
-		return Value{typ, c, fl | flagIndir}
+		return jitValue(typ, c, fl|flagIndir)
 	}
-	return Value{typ, *(*unsafe.Pointer)(ptr), fl}
+	return jitValue(typ, *(*unsafe.Pointer)(ptr), fl)
 }
 
 // Method returns a function value corresponding to v's i'th method.
@@ -2104,7 +2155,7 @@ func (v Value) recv(nb bool) (val Value, ok bool) {
 		panic("reflect: recv on send-only channel")
 	}
 	t := tt.Elem
-	val = Value{t, nil, flag(t.Kind())}
+	val = v.jitDerivedValue(t, nil, flag(t.Kind()))
 	var p unsafe.Pointer
 	if !t.IsDirectIface() {
 		p = unsafe_New(t)
@@ -2363,7 +2414,7 @@ func (v Value) Slice(i, j int) Value {
 		if i < s.Len {
 			t = unsafeheader.String{Data: arrayAt(s.Data, i, 1, "i < s.Len"), Len: j - i}
 		}
-		return Value{v.typ(), unsafe.Pointer(&t), v.flag}
+		return v.jitDerivedValue(v.typ(), unsafe.Pointer(&t), v.flag)
 	}
 
 	if i < 0 || j < i || j > cap {
@@ -2385,7 +2436,7 @@ func (v Value) Slice(i, j int) Value {
 	}
 
 	fl := v.flag.ro() | flagIndir | flag(Slice)
-	return Value{typ.Common(), unsafe.Pointer(&x), fl}
+	return v.jitDerivedValue(typ.Common(), unsafe.Pointer(&x), fl)
 }
 
 // Slice3 is the 3-index form of the slice operation: it returns v[i:j:k].
@@ -2437,7 +2488,7 @@ func (v Value) Slice3(i, j, k int) Value {
 	}
 
 	fl := v.flag.ro() | flagIndir | flag(Slice)
-	return Value{typ.Common(), unsafe.Pointer(&x), fl}
+	return v.jitDerivedValue(typ.Common(), unsafe.Pointer(&x), fl)
 }
 
 // String returns the string v's underlying value, as a string.
@@ -3027,9 +3078,9 @@ func select0(cases []SelectCase, runcases []runtimeSelect) (chosen int, recv Val
 		p := runcases[chosen].val
 		fl := flag(t.Kind())
 		if !t.IsDirectIface() {
-			recv = Value{t, p, fl | flagIndir}
+			recv = jitValue(t, p, fl|flagIndir)
 		} else {
-			recv = Value{t, *(*unsafe.Pointer)(p), fl}
+			recv = jitValue(t, *(*unsafe.Pointer)(p), fl)
 		}
 	}
 	return chosen, recv, recvOK
@@ -3065,7 +3116,7 @@ func MakeSlice(typ Type, len, cap int) Value {
 	}
 
 	s := unsafeheader.Slice{Data: unsafe_NewArray(&(typ.Elem().(*rtype).t), cap), Len: len, Cap: cap}
-	return Value{&typ.(*rtype).t, unsafe.Pointer(&s), flagIndir | flag(Slice)}
+	return jitValue(&typ.(*rtype).t, unsafe.Pointer(&s), flagIndir|flag(Slice))
 }
 
 // SliceAt returns a [Value] representing a slice whose underlying
@@ -3074,8 +3125,13 @@ func MakeSlice(typ Type, len, cap int) Value {
 // This is like [unsafe.Slice].
 func SliceAt(typ Type, p unsafe.Pointer, n int) Value {
 	unsafeslice(typ.common(), p, n)
+	sliceTyp := SliceOf(typ).common()
+	// SliceAt accepts storage with no runtime allocation metadata, so the
+	// resulting interface cannot prove an owner edge for a dynamic element
+	// type. Keep that module pinned for the raw storage's lifetime.
+	runtime.JITPinType(unsafe.Pointer(sliceTyp))
 	s := unsafeheader.Slice{Data: p, Len: n, Cap: n}
-	return Value{SliceOf(typ).common(), unsafe.Pointer(&s), flagIndir | flag(Slice)}
+	return jitValue(sliceTyp, unsafe.Pointer(&s), flagIndir|flag(Slice))
 }
 
 // MakeChan creates a new channel with the specified type and buffer size.
@@ -3092,7 +3148,7 @@ func MakeChan(typ Type, buffer int) Value {
 	}
 	t := typ.common()
 	ch := makechan(t, buffer)
-	return Value{t, ch, flag(Chan)}
+	return jitValue(t, ch, flag(Chan))
 }
 
 // MakeMap creates a new map with the specified type.
@@ -3109,7 +3165,7 @@ func MakeMapWithSize(typ Type, n int) Value {
 	}
 	t := typ.common()
 	m := makemap(t, n)
-	return Value{t, m, flag(Map)}
+	return jitValue(t, m, flag(Map))
 }
 
 // Indirect returns the value that v points to.
@@ -3149,9 +3205,9 @@ func Zero(typ Type) Value {
 		} else {
 			p = unsafe_New(t)
 		}
-		return Value{t, p, fl | flagIndir}
+		return jitValue(t, p, fl|flagIndir)
 	}
-	return Value{t, nil, fl}
+	return jitValue(t, nil, fl)
 }
 
 //go:linkname zeroVal runtime.zeroVal
@@ -3171,7 +3227,7 @@ func New(typ Type) Value {
 	}
 	ptr := unsafe_New(t)
 	fl := flag(Pointer)
-	return Value{pt, ptr, fl}
+	return jitValue(pt, ptr, fl)
 }
 
 // NewAt returns a Value representing a pointer to a value of the
@@ -3179,7 +3235,10 @@ func New(typ Type) Value {
 func NewAt(typ Type, p unsafe.Pointer) Value {
 	fl := flag(Pointer)
 	t := typ.(*rtype)
-	return Value{t.ptrTo(), p, fl}
+	// NewAt can point at foreign or pointer-free storage, which carries no
+	// side-table edge back to a reclaimable type descriptor.
+	runtime.JITPinType(unsafe.Pointer(t.ptrTo()))
+	return jitValue(t.ptrTo(), p, fl)
 }
 
 // assignTo returns a value v that can be assigned directly to dst.
@@ -3194,14 +3253,14 @@ func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Va
 		// Same memory layout, so no harm done.
 		fl := v.flag&(flagAddr|flagIndir) | v.flag.ro()
 		fl |= flag(dst.Kind())
-		return Value{dst, v.ptr, fl}
+		return v.jitDerivedValue(dst, v.ptr, fl)
 
 	case implements(dst, v.typ()):
 		if v.Kind() == Interface && v.IsNil() {
 			// A nil ReadWriter passed to nil Reader is OK,
 			// but using ifaceE2I below will panic.
 			// Avoid the panic by returning a nil dst (e.g., Reader) explicitly.
-			return Value{dst, nil, flag(Interface)}
+			return v.jitDerivedValue(dst, nil, flag(Interface))
 		}
 		x := valueInterface(v, false)
 		if target == nil {
@@ -3212,7 +3271,7 @@ func (v Value) assignTo(context string, dst *abi.Type, target unsafe.Pointer) Va
 		} else {
 			ifaceE2I(dst, x, target)
 		}
-		return Value{dst, target, flagIndir | flag(Interface)}
+		return v.jitDerivedValue(dst, target, flagIndir|flag(Interface))
 	}
 
 	// Failed.
@@ -3480,7 +3539,7 @@ func makeInt(f flag, bits uint64, t Type) Value {
 	case 8:
 		*(*uint64)(ptr) = bits
 	}
-	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
+	return jitValue(typ, ptr, f|flagIndir|flag(typ.Kind()))
 }
 
 // makeFloat returns a Value of type t equal to v (possibly truncated to float32),
@@ -3494,7 +3553,7 @@ func makeFloat(f flag, v float64, t Type) Value {
 	case 8:
 		*(*float64)(ptr) = v
 	}
-	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
+	return jitValue(typ, ptr, f|flagIndir|flag(typ.Kind()))
 }
 
 // makeFloat32 returns a Value of type t equal to v, where t is a float32 type.
@@ -3502,7 +3561,7 @@ func makeFloat32(f flag, v float32, t Type) Value {
 	typ := t.common()
 	ptr := unsafe_New(typ)
 	*(*float32)(ptr) = v
-	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
+	return jitValue(typ, ptr, f|flagIndir|flag(typ.Kind()))
 }
 
 // makeComplex returns a Value of type t equal to v (possibly truncated to complex64),
@@ -3516,7 +3575,7 @@ func makeComplex(f flag, v complex128, t Type) Value {
 	case 16:
 		*(*complex128)(ptr) = v
 	}
-	return Value{typ, ptr, f | flagIndir | flag(typ.Kind())}
+	return jitValue(typ, ptr, f|flagIndir|flag(typ.Kind()))
 }
 
 func makeString(f flag, v string, t Type) Value {
@@ -3636,7 +3695,7 @@ func cvtSliceArrayPtr(v Value, t Type) Value {
 		panic("reflect: cannot convert slice with length " + strconv.Itoa(v.Len()) + " to pointer to array with length " + strconv.Itoa(n))
 	}
 	h := (*unsafeheader.Slice)(v.ptr)
-	return Value{t.common(), h.Data, v.flag&^(flagIndir|flagAddr|flagKindMask) | flag(Pointer)}
+	return v.jitDerivedValue(t.common(), h.Data, v.flag&^(flagIndir|flagAddr|flagKindMask)|flag(Pointer))
 }
 
 // convertOp: []T -> [N]T
@@ -3652,7 +3711,7 @@ func cvtSliceArray(v Value, t Type) Value {
 	typedmemmove(typ, c, ptr)
 	ptr = c
 
-	return Value{typ, ptr, v.flag&^(flagAddr|flagKindMask) | flag(Array)}
+	return v.jitDerivedValue(typ, ptr, v.flag&^(flagAddr|flagKindMask)|flag(Array))
 }
 
 // convertOp: direct copy
@@ -3667,7 +3726,7 @@ func cvtDirect(v Value, typ Type) Value {
 		ptr = c
 		f &^= flagAddr
 	}
-	return Value{t, ptr, v.flag.ro() | f} // v.flag.ro()|f == f?
+	return v.jitDerivedValue(t, ptr, v.flag.ro()|f) // v.flag.ro()|f == f?
 }
 
 // convertOp: concrete -> interface
@@ -3679,7 +3738,7 @@ func cvtT2I(v Value, typ Type) Value {
 	} else {
 		ifaceE2I(typ.common(), x, target)
 	}
-	return Value{typ.common(), target, v.flag.ro() | flagIndir | flag(Interface)}
+	return v.jitDerivedValue(typ.common(), target, v.flag.ro()|flagIndir|flag(Interface))
 }
 
 // convertOp: interface -> interface

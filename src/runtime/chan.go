@@ -74,6 +74,12 @@ func makechan64(t *chantype, size int64) *hchan {
 
 func makechan(t *chantype, size int) *hchan {
 	elem := t.Elem
+	// Channels whose storage is allocated with a nil type descriptor do not
+	// otherwise leave a GC-visible edge to a JIT-dependent element type. Keep
+	// the channel's type association in the allocation side table so the
+	// element descriptor and its module owner remain live for the channel's
+	// lifetime.
+	jitOwner, jitDependent := jitOwnerForType(elem)
 
 	// compiler checks this but be safe.
 	if elem.Size_ >= 1<<16 {
@@ -97,12 +103,18 @@ func makechan(t *chantype, size int) *hchan {
 	case mem == 0:
 		// Queue or element size is zero.
 		c = (*hchan)(mallocgc(hchanSize, nil, true))
+		if jitDependent {
+			jitFinishHeapAllocation(unsafe.Pointer(c), jitOwner, elem)
+		}
 		// Race detector uses this location for synchronization.
 		c.buf = c.raceaddr()
 	case !elem.Pointers():
 		// Elements do not contain pointers.
 		// Allocate hchan and buf in one call.
 		c = (*hchan)(mallocgc(hchanSize+mem, nil, true))
+		if jitDependent {
+			jitFinishHeapAllocation(unsafe.Pointer(c), jitOwner, elem)
+		}
 		c.buf = add(unsafe.Pointer(c), hchanSize)
 	default:
 		// Elements contain pointers.

@@ -64,7 +64,14 @@ func makemap(t *abi.MapType, hint int, m *maps.Map) *maps.Map {
 		hint = 0
 	}
 
-	return maps.NewMap(t, uintptr(hint), m, maxAlloc)
+	result := maps.NewMap(t, uintptr(hint), m, maxAlloc)
+	// maps.Map does not retain its ABI type descriptor. If this map header
+	// escapes with a JIT-dependent map type, attach that descriptor to the
+	// header so an empty map still keeps its source module reachable.
+	if owner, dependent := jitOwnerForType((*_type)(unsafe.Pointer(t))); dependent {
+		jitFinishHeapAllocation(unsafe.Pointer(result), owner, (*_type)(unsafe.Pointer(t)))
+	}
+	return result
 }
 
 // mapaccess1 returns a pointer to h[key].  Never returns nil, instead

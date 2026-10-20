@@ -9,6 +9,7 @@ package reflect
 import (
 	"publicinternal/abi"
 	"publicinternal/goarch"
+	"runtime"
 	"unsafe"
 )
 
@@ -21,6 +22,10 @@ type makeFuncImpl struct {
 	makeFuncCtxt
 	ftyp *funcType
 	fn   func([]Value) []Value
+	// A MakeFunc result can cross an interface boundary without retaining the
+	// reflect.Value that created it. Keep the dynamic function descriptor's
+	// source owners in the closure object itself.
+	jitOwnerRoots *jitValueOwnerSet
 }
 
 // MakeFunc returns a new function of the given [Type]
@@ -67,9 +72,10 @@ func MakeFunc(typ Type, fn func(args []Value) (results []Value)) Value {
 		},
 		ftyp: ftyp,
 		fn:   fn,
+		jitOwnerRoots: jitOwnerSet(runtime.JITOwnersForType(unsafe.Pointer(t))),
 	}
 
-	return Value{t, unsafe.Pointer(impl), flag(Func)}
+	return jitValue(t, unsafe.Pointer(impl), flag(Func))
 }
 
 // makeFuncStub is an assembly function that is the code half of
@@ -126,7 +132,7 @@ func makeMethodValue(v Value, i int) Value {
 		rcvr:   v,
 	}
 
-	return Value{ftyp.Common(), unsafe.Pointer(fv), v.flag.ro() | flagMethod | flag(Func)}
+	return v.jitDerivedValue(ftyp.Common(), unsafe.Pointer(fv), v.flag.ro()|flagMethod|flag(Func))
 }
 
 func methodValueCallCodePtr() uintptr {

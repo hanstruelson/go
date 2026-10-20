@@ -142,6 +142,36 @@ func JITTypeNeedsOwner(typ unsafe.Pointer) bool {
 	return jitTypeNeedsOwner((*_type)(typ))
 }
 
+// JITOwnersForType returns a GC-visible owner set for a type descriptor that
+// may live in a reclaimable JIT image. Reflect.Value uses this edge because a
+// Value can retain a descriptor even when it has no typed heap object of its
+// own. A dependent descriptor with incomplete metadata pins all modules so a
+// missing side-table edge cannot turn into a dangling type pointer.
+func JITOwnersForType(typ unsafe.Pointer) []*JITModuleOwner {
+	if typ == nil {
+		return nil
+	}
+	owners, dependent := jitOwnersForType((*_type)(typ))
+	if !dependent {
+		return nil
+	}
+	if len(owners) == 0 {
+		pinAllJITModules()
+		return nil
+	}
+	return append([]*JITModuleOwner(nil), owners...)
+}
+
+// JITPinType permanently retains the module owners for a dynamic type
+// descriptor. It is used at ABI boundaries, such as interface conversion,
+// where the returned value has no place to carry an additional owner edge.
+func JITPinType(typ unsafe.Pointer) {
+	if typ == nil || !jitTypeNeedsOwner((*_type)(typ)) {
+		return
+	}
+	jitPinTypeOwners((*_type)(typ))
+}
+
 // JITTypeUsesGCMaskOnDemand reports whether a compiler-emitted type descriptor
 // requires the runtime to mutate its GC mask cache. Image descriptors are
 // immutable after publication, so the loader rejects this form; reflect-made
